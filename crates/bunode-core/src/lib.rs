@@ -1,10 +1,22 @@
 //! Bunode's process-management core.
 //!
-//! This crate will hold the Supervisor and everything it needs: Run state
-//! machines, Process Discovery, port scanning, the log collector and the
-//! Project repository. It must not depend on the UI, on the FFI layer
-//! (UniFFI) or on any Apple framework, so that it can later be hosted by a
-//! standalone Supervisor daemon unchanged (ADR-0001, ADR-0002).
+//! This crate holds the Supervisor and everything it needs: the Project
+//! repository, Run state machines, Process Discovery, port scanning and the
+//! log collector. It must not depend on the UI, on the FFI layer (UniFFI) or
+//! on any Apple framework, so that it can later be hosted by a standalone
+//! Supervisor daemon unchanged (ADR-0001, ADR-0002).
+
+pub mod error;
+pub mod model;
+pub mod package;
+pub mod snapshot;
+pub mod store;
+pub mod supervisor;
+
+pub use error::{Error, Result};
+pub use model::PackageManager;
+pub use snapshot::{AddProjectOutcome, ProjectState, ServiceState, SettingsState, Snapshot};
+pub use supervisor::{Listener, Supervisor, SupervisorOptions};
 
 /// The version of `bunode-core`, as set in its `Cargo.toml`.
 pub fn version() -> &'static str {

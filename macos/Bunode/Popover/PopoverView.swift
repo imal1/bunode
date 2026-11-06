@@ -5,8 +5,8 @@ import SwiftUI
 /// shows the version of the Rust core, which proves the SwiftUI → UniFFI →
 /// Rust path works; the Project and Service list replaces it.
 struct PopoverView: View {
-    let coreVersion: String
-    let openSettings: () -> Void
+    let model: AppModel
+    let openSettings: (SettingsPane?, Bool) -> Void
     let quit: () -> Void
 
     var body: some View {
@@ -17,7 +17,7 @@ struct PopoverView: View {
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
                 .padding(.bottom, 4)
-            MenuRow(title: "Settings…", key: ",", action: openSettings)
+            MenuRow(title: "Settings…", key: ",", action: { openSettings(nil, false) })
             MenuRow(title: "Quit Bunode", key: "q", action: quit)
         }
         .padding(6)
@@ -33,7 +33,7 @@ struct PopoverView: View {
     }
 
     private var content: some View {
-        Text("Rust core \(coreVersion)")
+        Text("Rust core \(Core.version)")
             .font(.caption)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
@@ -79,5 +79,9 @@ private struct MenuRow: View {
 }
 
 #Preview {
-    PopoverView(coreVersion: "0.1.0", openSettings: {}, quit: {})
+    PopoverView(
+        model: AppModel(dataDirectory: URL.temporaryDirectory.appending(path: "BunodePreview")),
+        openSettings: { _, _ in },
+        quit: {}
+    )
 }

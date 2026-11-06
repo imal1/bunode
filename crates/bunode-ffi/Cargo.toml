@@ -17,3 +17,7 @@ crate-type = ["lib", "staticlib"]
 [dependencies]
 bunode-core.workspace = true
 uniffi.workspace = true
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"

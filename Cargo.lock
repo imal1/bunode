@@ -91,12 +91,20 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 [[package]]
 name = "bunode-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
 
 [[package]]
 name = "bunode-ffi"
 version = "0.1.0"
 dependencies = [
  "bunode-core",
+ "tempfile",
+ "thiserror",
  "uniffi",
 ]
 

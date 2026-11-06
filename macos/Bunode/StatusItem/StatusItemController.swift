@@ -11,12 +11,14 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// When the popover last closed; see `togglePopover(_:)`.
     private var lastClosed = Date.distantPast
 
-    init(coreVersion: String, openSettings: @escaping () -> Void) {
+    /// `openSettings(pane, addProject)` opens the Settings window, optionally
+    /// on a pane and with the Add Project folder picker.
+    init(model: AppModel, openSettings: @escaping (SettingsPane?, Bool) -> Void) {
         super.init()
 
         let content = NSHostingController(
             rootView: PopoverView(
-                coreVersion: coreVersion,
+                model: model,
                 openSettings: openSettings,
                 quit: { NSApp.terminate(nil) }
             )
