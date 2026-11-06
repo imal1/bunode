@@ -82,6 +82,13 @@ private struct ProjectSection: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
+                if project.isMissing {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .help("\(project.path.abbreviatingWithTilde) is missing.")
+                        .accessibilityLabel("\(project.path.abbreviatingWithTilde) is missing.")
+                }
                 Spacer(minLength: 0)
                 Button {
                     router.push(.addService(projectID: project.id))
@@ -109,6 +116,9 @@ private struct ProjectSection: View {
                 }
                 .focusable()
                 .focused(focus, equals: service.id)
+                if model.rowNotice?.serviceID == service.id {
+                    RowNoticeView(model: model)
+                }
             }
         }
     }
@@ -238,6 +248,34 @@ private struct RowAction: View {
                 .buttonStyle(.borderless)
                 .help(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
                 .accessibilityLabel(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
+            }
+        }
+    }
+}
+
+/// The warning bar under a Service row: the Project's folder is missing
+/// (design-handoff §7). One at a time.
+struct RowNoticeView: View {
+    let model: AppModel
+
+    var body: some View {
+        if case .missingFolder(_, let projectID) = model.rowNotice, let project = model.project(projectID) {
+            InlineNotice(text: String(localized: "\(project.path.abbreviatingWithTilde) is missing.")) {
+                Button("Locate…") { locate(project) }
+                    .buttonStyle(.borderedProminent)
+                Button("Cancel") { model.dismissNotice() }
+                    .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func locate(_ project: ProjectState) {
+        Task {
+            let parent = URL(filePath: project.path).deletingLastPathComponent()
+            guard let url = await Panels.chooseFolder(prompt: String(localized: "Locate"), startingAt: parent, in: nil) else { return }
+            // On failure (not a folder, already a Project) the bar stays.
+            if model.relocateProject(project.id, to: url) != nil {
+                NSSound.beep()
             }
         }
     }

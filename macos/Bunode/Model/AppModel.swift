@@ -13,6 +13,19 @@ final class AppModel {
     private(set) var optimistic: [UInt64: RunStatus] = [:]
     /// Services the Supervisor has kept in Starting or Stopping for too long.
     private(set) var notResponding: Set<UInt64> = []
+    /// The one warning bar shown under a Service row (design-handoff §5.3, §7).
+    private(set) var rowNotice: RowNotice?
+
+    enum RowNotice: Equatable {
+        /// Start was refused because the Project's folder is gone.
+        case missingFolder(serviceID: UInt64, projectID: UInt64)
+
+        var serviceID: UInt64 {
+            switch self {
+            case .missingFolder(let serviceID, _): serviceID
+            }
+        }
+    }
 
     @ObservationIgnored private var busyWatch = BusyWatch()
     @ObservationIgnored private var watchdog: Task<Void, Never>?
@@ -155,6 +168,13 @@ final class AppModel {
     // MARK: - Runs
 
     func start(_ serviceID: UInt64) {
+        if let service = service(serviceID), let project = project(service.projectId), project.isMissing {
+            rowNotice = .missingFolder(serviceID: serviceID, projectID: project.id)
+            return
+        }
+        if rowNotice?.serviceID == serviceID {
+            rowNotice = nil
+        }
         send(serviceID, showing: .starting) { core in
             try? core.start(serviceId: serviceID)
         }
@@ -270,6 +290,69 @@ final class AppModel {
     func setForceStopAfter(_ seconds: UInt32) {
         try? core.setForceStopAfter(seconds: seconds)
         refresh()
+    }
+
+    func dismissNotice() {
+        rowNotice = nil
+    }
+
+    // MARK: - Projects
+
+    /// Settings › Projects › package manager; `nil` is Auto.
+    func setPackageManager(_ projectID: UInt64, _ manager: PackageManager?) {
+        try? core.setPackageManager(projectId: projectID, manager: manager)
+        refresh()
+    }
+
+    /// Points a Project whose folder moved at its new place. Returns a
+    /// problem to show, if any.
+    func relocateProject(_ projectID: UInt64, to url: URL) -> String? {
+        do {
+            try core.relocateProject(projectId: projectID, path: url.path(percentEncoded: false))
+            refresh()
+            if case .missingFolder(_, projectID) = rowNotice {
+                rowNotice = nil
+            }
+            return nil
+        } catch {
+            return error.userMessage
+        }
+    }
+
+    /// Removes a Project; its Runs are stopped first. Returns the toast once
+    /// the Supervisor has removed it.
+    func removeProject(_ projectID: UInt64) async -> String {
+        guard let project = project(projectID) else {
+            return String(localized: "This Project is no longer in Bunode.")
+        }
+        let core = self.core
+        let result = await Task.detached { Result { try core.removeProject(projectId: projectID) } }.value
+        if case .failure(let error) = result {
+            return error.userMessage
+        }
+        let deadline = Date.now.addingTimeInterval(responseTimeout + 10)
+        while self.project(projectID) != nil, Date.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+            refresh()
+        }
+        return String(localized: "Removed \(project.name). Files untouched.")
+    }
+
+    /// Body of the Remove alert: what leaves, what stays, what stops.
+    static func removalMessage(for project: ProjectState, running: Int) -> String {
+        var sentences = [
+            String(localized: "Its \(project.services.count) Services leave Bunode."),
+            String(localized: "Files in \(project.path.abbreviatingWithTilde) stay on disk."),
+        ]
+        if running > 0 {
+            sentences.append(String(localized: "\(running) running Services will be stopped first."))
+        }
+        return sentences.joined(separator: " ")
+    }
+
+    /// The Services of a Project with a live Run.
+    func runningCount(in project: ProjectState) -> Int {
+        project.services.count(where: { status(of: $0).isLive })
     }
 
     /// The scripts the New Service view offers, read fresh from disk.

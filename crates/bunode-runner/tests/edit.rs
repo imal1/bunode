@@ -107,3 +107,42 @@ fn deleting_a_running_service_stops_it_first() {
     wait_until_dead(&tree);
     assert!(fixture("process-tree").join("tree.js").exists());
 }
+
+#[test]
+fn removing_a_project_stops_its_runs_first() {
+    require_tool("node");
+    let h = Harness::new();
+    let pids = h.pid_file("pids");
+    let running = h.service(
+        "process-tree",
+        &format!("node tree.js 1 {}", pids.display()),
+    );
+    let idle = h.service("process-tree", "node tree.js 0 /dev/null");
+    let project_id = h.state(running).project_id;
+    h.supervisor.start(running).unwrap();
+    h.wait(running, "Running", |s| s.status == RunStatus::Running);
+    let tree = wait_for_pids(&pids, 2);
+
+    h.supervisor.remove_project(project_id).unwrap();
+    let snapshot = h.supervisor.snapshot();
+    let project = snapshot.projects.iter().find(|p| p.id == project_id);
+    // The idle Service is gone at once; the running one waits for its Run.
+    assert!(project.is_some_and(|p| p.services.iter().all(|s| s.id != idle)));
+
+    let deadline = std::time::Instant::now() + TIMEOUT;
+    while h
+        .supervisor
+        .snapshot()
+        .projects
+        .iter()
+        .any(|p| p.id == project_id)
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the Project was never removed"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    wait_until_dead(&tree);
+    assert!(fixture("process-tree").join("package.json").exists());
+}

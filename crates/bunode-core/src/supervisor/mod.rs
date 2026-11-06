@@ -109,6 +109,8 @@ struct State {
     environment: EnvironmentInfo,
     /// The Logs search of each Service; a new Run keeps it.
     log_filters: HashMap<ServiceId, String>,
+    /// Projects to remove once their last live Run has ended.
+    removing_projects: std::collections::HashSet<ProjectId>,
 }
 
 struct EnvironmentInfo {
@@ -203,6 +205,7 @@ impl Supervisor {
                         tools: Vec::new(),
                     },
                     log_filters: HashMap::new(),
+                    removing_projects: Default::default(),
                 }),
                 notifier: Notifier::new(listener),
                 runner_path: options.runner_path,
@@ -475,6 +478,111 @@ impl Supervisor {
         }
         self.shared.save(&config)?;
         state.config = config;
+        drop(state);
+        self.shared.notifier.notify();
+        Ok(())
+    }
+
+    /// Settings › Projects › package manager: `None` is Auto (detected).
+    /// Applies to Services added from now on and their Runs.
+    pub fn set_package_manager(
+        &self,
+        project_id: ProjectId,
+        manager: Option<PackageManager>,
+    ) -> Result<()> {
+        let mut state = self.shared.lock();
+        let mut config = state.config.clone();
+        let project = config
+            .project_mut(project_id)
+            .ok_or(Error::UnknownProject)?;
+        if project.package_manager == manager {
+            return Ok(());
+        }
+        project.package_manager = manager;
+        self.shared.save(&config)?;
+        state.config = config;
+        drop(state);
+        self.shared.notifier.notify();
+        Ok(())
+    }
+
+    /// Settings › Projects › Remove…: removes a Project and its Services from
+    /// Bunode. Live Runs are stopped first; the Project goes once the last
+    /// one has ended. Files in its folder are never touched.
+    pub fn remove_project(&self, project_id: ProjectId) -> Result<()> {
+        let mut state = self.shared.lock();
+        let project = state
+            .config
+            .project(project_id)
+            .ok_or(Error::UnknownProject)?;
+        let services: Vec<ServiceId> = project.services.iter().map(|s| s.id).collect();
+        let mut waiting = false;
+        for id in &services {
+            if let Some(run) = state.runs.get_mut(id)
+                && run.status.is_live()
+            {
+                waiting = true;
+                run.delete_after = true;
+                run.restart_after = false;
+                run.stop_requested = true;
+                if let Some(control) = &run.control {
+                    let _ = control.send(Control::Stop);
+                }
+                run.status = RunStatus::Stopping;
+            }
+        }
+        state.removing_projects.insert(project_id);
+        drop(state);
+        // Services without a live Run go at once.
+        for id in services {
+            let live = self
+                .shared
+                .lock()
+                .runs
+                .get(&id)
+                .is_some_and(|r| r.status.is_live());
+            if !live {
+                self.shared.remove_service(id)?;
+            }
+        }
+        if !waiting {
+            self.shared.remove_project_if_done(project_id)?;
+        }
+        self.shared.notifier.notify();
+        Ok(())
+    }
+
+    /// Home › Locate…: the Project's folder moved; point the Project at
+    /// its new place and detect its package manager again.
+    pub fn relocate_project(&self, project_id: ProjectId, path: &Path) -> Result<()> {
+        let not_a_folder = || Error::NotAFolder {
+            path: path.display().to_string(),
+        };
+        let path = fs::canonicalize(path).map_err(|_| not_a_folder())?;
+        if !path.is_dir() {
+            return Err(not_a_folder());
+        }
+        let detection = package::detect(&path);
+        let mut state = self.shared.lock();
+        if state
+            .config
+            .projects
+            .iter()
+            .any(|p| p.id != project_id && p.path == path)
+        {
+            return Err(Error::Invalid(format!(
+                "{} is already a Project.",
+                path.display()
+            )));
+        }
+        let mut config = state.config.clone();
+        let project = config
+            .project_mut(project_id)
+            .ok_or(Error::UnknownProject)?;
+        project.path = path;
+        self.shared.save(&config)?;
+        state.config = config;
+        state.detections.insert(project_id, detection);
         drop(state);
         self.shared.notifier.notify();
         Ok(())
@@ -844,9 +952,16 @@ impl Shared {
         })
     }
 
-    /// Removes a Service that has no live Run.
+    /// Removes a Service that has no live Run, and its Project when that
+    /// was being removed and this was its last Service.
     fn remove_service(&self, service_id: ServiceId) -> Result<()> {
         let mut state = self.lock();
+        let project_id = state
+            .config
+            .projects
+            .iter()
+            .find(|p| p.services.iter().any(|s| s.id == service_id))
+            .map(|p| p.id);
         let mut config = state.config.clone();
         for project in &mut config.projects {
             project.services.retain(|s| s.id != service_id);
@@ -857,7 +972,32 @@ impl Shared {
         state.log_filters.remove(&service_id);
         drop(state);
         self.log_files.remove_service(service_id);
+        if let Some(project_id) = project_id {
+            self.remove_project_if_done(project_id)?;
+        }
         self.notifier.notify();
+        Ok(())
+    }
+
+    /// Removes a Project being removed once none of its Services is left.
+    fn remove_project_if_done(&self, project_id: ProjectId) -> Result<()> {
+        let mut state = self.lock();
+        if !state.removing_projects.contains(&project_id) {
+            return Ok(());
+        }
+        let empty = state
+            .config
+            .project(project_id)
+            .is_none_or(|p| p.services.is_empty());
+        if !empty {
+            return Ok(());
+        }
+        let mut config = state.config.clone();
+        config.projects.retain(|p| p.id != project_id);
+        self.save(&config)?;
+        state.config = config;
+        state.detections.remove(&project_id);
+        state.removing_projects.remove(&project_id);
         Ok(())
     }
 
@@ -1072,6 +1212,7 @@ fn project_state(project: &Project, state: &State) -> ProjectState {
         detected_package_manager: detection.manager,
         package_manager_choice: project.package_manager,
         several_lockfiles: detection.several_lockfiles && project.package_manager.is_none(),
+        is_missing: !project.path.is_dir(),
         services: project
             .services
             .iter()
@@ -1486,6 +1627,72 @@ mod tests {
             supervisor.delete_service(id),
             Err(Error::UnknownService)
         ));
+    }
+
+    #[test]
+    fn picking_a_package_manager_clears_the_lockfile_warning() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        fs::write(
+            code.path().join("package.json"),
+            r#"{"scripts": {"dev": "vite"}}"#,
+        )
+        .unwrap();
+        fs::write(code.path().join("yarn.lock"), "").unwrap();
+        fs::write(code.path().join("package-lock.json"), "").unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+        assert!(project.several_lockfiles);
+
+        supervisor
+            .set_package_manager(project.id, Some(PackageManager::Npm))
+            .unwrap();
+        let project = supervisor.snapshot().projects[0].clone();
+        assert!(!project.several_lockfiles);
+        assert_eq!(project.package_manager, PackageManager::Npm);
+        assert_eq!(project.detected_package_manager, PackageManager::Yarn);
+        let scripts = supervisor.project_scripts(project.id).unwrap();
+        assert_eq!(scripts.groups[0].scripts[0].command, "npm run dev");
+
+        supervisor.set_package_manager(project.id, None).unwrap();
+        assert!(supervisor.snapshot().projects[0].several_lockfiles);
+    }
+
+    #[test]
+    fn removing_a_project_keeps_its_files() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        fs::write(code.path().join("package.json"), "{}").unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+        supervisor
+            .add_service(project.id, new_service("dev", "bun run dev"))
+            .unwrap();
+        supervisor.remove_project(project.id).unwrap();
+        assert!(supervisor.snapshot().projects.is_empty());
+        assert!(code.path().join("package.json").exists());
+        drop(supervisor);
+        assert!(open(data.path()).0.snapshot().projects.is_empty());
+    }
+
+    #[test]
+    fn a_moved_folder_is_missing_until_located() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        let old = code.path().join("api");
+        fs::create_dir(&old).unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, &old);
+        assert!(!project.is_missing);
+
+        let new = code.path().join("api-moved");
+        fs::rename(&old, &new).unwrap();
+        assert!(supervisor.snapshot().projects[0].is_missing);
+
+        supervisor.relocate_project(project.id, &new).unwrap();
+        let located = supervisor.snapshot().projects[0].clone();
+        assert!(!located.is_missing);
+        assert!(located.path.ends_with("api-moved"));
     }
 
     #[test]

@@ -227,3 +227,44 @@ private struct HoverHighlight: ViewModifier {
             }
     }
 }
+
+/// A warning bar with actions (design-handoff §4, InlineNotice): port
+/// conflicts, missing folders. Announced once when it appears.
+struct InlineNotice<Actions: View>: View {
+    let text: String
+    var detail: String?
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(text)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.callout)
+            if let detail {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                actions
+            }
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+        .padding(EdgeInsets(top: 2, leading: 2, bottom: 6, trailing: 2))
+        .onAppear {
+            NSAccessibility.post(
+                element: NSApp as Any,
+                notification: .announcementRequested,
+                userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+            )
+        }
+    }
+}

@@ -68,6 +68,8 @@ pub struct ProjectState {
     /// Lockfiles of several package managers were found and the user has
     /// not picked one yet.
     pub several_lockfiles: bool,
+    /// The Project's folder is gone (moved or deleted).
+    pub is_missing: bool,
     /// In creation order.
     pub services: Vec<ServiceState>,
 }

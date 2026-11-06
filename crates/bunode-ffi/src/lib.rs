@@ -73,6 +73,7 @@ pub struct ProjectState {
     pub detected_package_manager: PackageManager,
     pub package_manager_choice: Option<PackageManager>,
     pub several_lockfiles: bool,
+    pub is_missing: bool,
     pub services: Vec<ServiceState>,
 }
 
@@ -262,6 +263,27 @@ impl BunodeCore {
     /// Registers a folder as a Project.
     pub fn add_project(&self, path: String) -> Result<AddProjectOutcome, CoreError> {
         Ok(self.supervisor.add_project(&PathBuf::from(path))?)
+    }
+
+    /// Settings › Projects › package manager; `None` is Auto.
+    pub fn set_package_manager(
+        &self,
+        project_id: u64,
+        manager: Option<PackageManager>,
+    ) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_package_manager(project_id, manager)?)
+    }
+
+    /// Removes a Project, stopping its Runs first. Returns at once.
+    pub fn remove_project(&self, project_id: u64) -> Result<(), CoreError> {
+        Ok(self.supervisor.remove_project(project_id)?)
+    }
+
+    /// Points a Project whose folder moved at its new place.
+    pub fn relocate_project(&self, project_id: u64, path: String) -> Result<(), CoreError> {
+        Ok(self
+            .supervisor
+            .relocate_project(project_id, std::path::Path::new(&path))?)
     }
 
     /// The scripts the New Service view offers, read fresh from disk.

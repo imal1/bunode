@@ -69,6 +69,52 @@
           }
         }
       }
+    },
+    "%lld running Services will be stopped first.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld running Service will be stopped first."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld running Services will be stopped first."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Its %lld Services leave Bunode.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Its %lld Service leaves Bunode."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Its %lld Services leave Bunode."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "version": "1.0"

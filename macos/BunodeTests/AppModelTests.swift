@@ -164,3 +164,51 @@ struct MonorepoTests {
         #expect(web.displayName == "web › dev")
     }
 }
+
+@MainActor
+struct ManageProjectTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func picksAPackageManagerAndRemovesProjects() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        let api = code.folder("api", files: ["package.json": "{}", "yarn.lock": "", "package-lock.json": ""])
+        _ = await model.addProject(at: api)
+        let project = try #require(model.snapshot.projects.first)
+        #expect(project.severalLockfiles)
+
+        model.setPackageManager(project.id, .npm)
+        #expect(model.project(project.id)?.severalLockfiles == false)
+        #expect(model.project(project.id)?.packageManagerChoice == .npm)
+
+        _ = try await model.addService(to: project.id, name: "dev", command: "sleep 30", folder: nil).get()
+        let current = try #require(model.project(project.id))
+        #expect(AppModel.removalMessage(for: current, running: 1) == "Its 1 Service leaves Bunode. Files in \(current.path.abbreviatingWithTilde) stay on disk. 1 running Service will be stopped first.")
+
+        let message = await model.removeProject(project.id)
+        #expect(message == "Removed api. Files untouched.")
+        #expect(model.snapshot.projects.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: api.appending(path: "package.json").path(percentEncoded: false)))
+    }
+
+    @Test func startingInAMissingFolderAsksToLocateIt() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        let api = code.folder("api")
+        _ = await model.addProject(at: api)
+        let project = try #require(model.snapshot.projects.first)
+        let service = try await model.addService(to: project.id, name: "dev", command: "sleep 30", folder: nil).get()
+
+        let moved = code.url.appending(path: "api-moved")
+        try FileManager.default.moveItem(at: api, to: moved)
+        model.refresh()
+        #expect(model.project(project.id)?.isMissing == true)
+
+        model.start(service.id)
+        #expect(model.rowNotice == .missingFolder(serviceID: service.id, projectID: project.id))
+        #expect(model.service(service.id)?.status == .stopped)
+
+        #expect(model.relocateProject(project.id, to: moved) == nil)
+        #expect(model.rowNotice == nil)
+        #expect(model.project(project.id)?.isMissing == false)
+    }
+}
