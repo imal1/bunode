@@ -62,3 +62,31 @@ fn reports_a_command_that_cannot_start() {
     assert_eq!(output.status.code(), Some(127));
     drop(ours);
 }
+
+#[test]
+fn if_the_runner_itself_is_killed_the_supervisor_ends_the_group() {
+    require_tool("node");
+    let h = Harness::new();
+    let pids = h.pid_file("pids");
+    let id = h.service(
+        "process-tree",
+        &format!("node tree.js 2 {}", pids.display()),
+    );
+    h.supervisor.start(id).unwrap();
+    h.wait(id, "Running", |s| {
+        s.status == bunode_core::RunStatus::Running
+    });
+    let tree = wait_for_pids(&pids, 3);
+
+    // The runner is the parent of the tree's first process.
+    let runner = bunode_core::sys::process(tree[0]).unwrap().ppid;
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(runner),
+        nix::sys::signal::Signal::SIGKILL,
+    )
+    .unwrap();
+
+    let ended = h.wait(id, "the Run to end", |s| !s.status.is_live());
+    assert_eq!(ended.status, bunode_core::RunStatus::Crashed, "{ended:?}");
+    wait_until_dead(&tree);
+}

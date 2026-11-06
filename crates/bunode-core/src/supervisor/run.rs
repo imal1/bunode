@@ -206,6 +206,12 @@ pub(crate) async fn drive(
     }
 
     let status = runner.wait().await;
+    // The runner normally leaves an empty group behind. If it was killed
+    // itself, end the group here; a process group's ID is never reused
+    // while the group exists, so signalling it is safe.
+    if let Some(group) = group {
+        end_group(group, spec.stop_timeout).await;
+    }
     for collector in collectors {
         let _ = tokio::time::timeout(DRAIN_GRACE, collector).await;
     }
@@ -213,6 +219,23 @@ pub(crate) async fn drive(
         Ok(status) => Outcome::Lost(format!("bunode-runner exited unexpectedly ({status}).")),
         Err(e) => Outcome::Lost(format!("Lost track of bunode-runner: {e}")),
     })
+}
+
+/// Ends whatever is left of a Run's process group: SIGTERM, then SIGKILL
+/// after `timeout`.
+async fn end_group(group: Pid, timeout: Duration) {
+    let alive = || killpg(group, None).is_ok();
+    if !alive() {
+        return;
+    }
+    let _ = killpg(group, Signal::SIGTERM);
+    let deadline = Instant::now() + timeout;
+    while alive() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    if alive() {
+        let _ = killpg(group, Signal::SIGKILL);
+    }
 }
 
 /// Spawns the runner with a fresh lifeline on its standard input.
