@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
@@ -69,7 +70,7 @@ struct SettingsView: View {
             case .projects:
                 ProjectsPane(model: model, navigation: navigation, toaster: toaster)
             case .advanced:
-                AdvancedPane(model: model)
+                AdvancedPane(model: model, toaster: toaster)
             }
         }
     }
@@ -129,9 +130,16 @@ struct GeneralPane: View {
 
 struct AdvancedPane: View {
     let model: AppModel
+    let toaster: Toaster
 
     var body: some View {
         Form {
+            Section("Env") {
+                ShellEnvironmentRow(model: model, toaster: toaster)
+                ForEach(model.snapshot.environment.tools, id: \.tool) { tool in
+                    ToolRow(model: model, tool: tool, toaster: toaster)
+                }
+            }
             Section("Stop") {
                 Picker(selection: Binding(
                     get: { model.snapshot.settings.forceStopAfterSecs },
@@ -149,6 +157,141 @@ struct AdvancedPane: View {
         }
         .formStyle(.grouped)
         .controlSize(.small)
+    }
+}
+
+/// Advanced › Shell environment: where Runs get PATH and friends from.
+private struct ShellEnvironmentRow: View {
+    let model: AppModel
+    let toaster: Toaster
+    @State private var reloadRequested = false
+
+    private var environment: EnvironmentState { model.snapshot.environment }
+
+    var body: some View {
+        LabeledContent {
+            Button {
+                reloadRequested = true
+                model.reloadEnvironment()
+            } label: {
+                if environment.isLoading {
+                    HStack(spacing: 4) {
+                        ProgressView().controlSize(.mini)
+                        Text("Reloading")
+                    }
+                } else {
+                    Text("Reload")
+                }
+            }
+            .disabled(environment.isLoading)
+        } label: {
+            Text("Shell environment")
+            if let problem = environment.problem {
+                Text(problem)
+                    .foregroundStyle(Color(nsColor: .systemRed))
+                    .help(problem)
+            } else {
+                Text(summary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .onChange(of: environment.isLoading) { wasLoading, isLoading in
+            if wasLoading, !isLoading, reloadRequested {
+                reloadRequested = false
+                if environment.problem == nil {
+                    toaster.show(String(localized: "Environment reloaded. New Runs get it."))
+                }
+            }
+        }
+    }
+
+    /// "87 variables from /bin/zsh · today 09:58"
+    private var summary: String {
+        guard let loadedAt = environment.loadedAt else {
+            return String(localized: "Reading from \(environment.shell)…")
+        }
+        let date = Date(timeIntervalSince1970: TimeInterval(loadedAt))
+        return String(localized: "\(Int(environment.variableCount)) variables from \(environment.shell) · \(EnvironmentTime.describe(date))")
+    }
+}
+
+enum EnvironmentTime {
+    /// "just now", "today 09:58", or a date and time.
+    static func describe(_ date: Date, now: Date = .now) -> String {
+        if now.timeIntervalSince(date) < 60 {
+            return String(localized: "just now")
+        }
+        let time = date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+        if Calendar.current.isDate(date, inSameDayAs: now) {
+            return String(localized: "today \(time)")
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+/// Advanced › Node.js / Bun: the executable Runs use, and its version.
+private struct ToolRow: View {
+    let model: AppModel
+    let tool: ToolState
+    let toaster: Toaster
+
+    private var name: String {
+        switch tool.tool {
+        case .node: "Node.js"
+        case .bun: "Bun"
+        }
+    }
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                if let version = tool.version {
+                    Text(verbatim: version)
+                        .foregroundStyle(.secondary)
+                }
+                if tool.isCustom {
+                    Button("Use PATH") {
+                        if let message = model.setToolPath(tool.tool, to: nil) {
+                            toaster.show(message)
+                        }
+                    }
+                }
+                Button("Change…", action: choose)
+            }
+        } label: {
+            Text(verbatim: name)
+            if let path = tool.path {
+                Text(path.abbreviatingWithTilde)
+                    .font(.caption.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(path)
+            } else {
+                Text("Not found")
+                    .foregroundStyle(Color(nsColor: .systemRed))
+            }
+        }
+    }
+
+    private func choose() {
+        Task {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = false
+            panel.showsHiddenFiles = true
+            panel.treatsFilePackagesAsDirectories = true
+            panel.prompt = String(localized: "Use")
+            panel.message = String(localized: "Choose the \(name) executable.")
+            if let path = tool.path {
+                panel.directoryURL = URL(filePath: path).deletingLastPathComponent()
+            }
+            guard let url = await Panels.run(panel, in: NSApp.keyWindow) else { return }
+            if let message = model.setToolPath(tool.tool, to: url) {
+                toaster.show(message)
+            }
+        }
     }
 }
 

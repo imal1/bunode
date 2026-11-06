@@ -115,7 +115,13 @@ fn main() -> ExitCode {
     let mut child = match child {
         Ok(child) => child,
         Err(e) => {
-            let message = format!("couldn't start {}: {e}", args.program);
+            let message = if e.kind() == io::ErrorKind::NotFound && !args.program.contains('/') {
+                format!("{} wasn't found in PATH.", args.program)
+            } else if e.kind() == io::ErrorKind::NotFound {
+                format!("{} doesn't exist.", args.program)
+            } else {
+                format!("Couldn't start {}: {e}", args.program)
+            };
             report.line(&format!("spawn-failed {message}"));
             eprintln!("bunode-runner: {message}");
             return ExitCode::from(127);

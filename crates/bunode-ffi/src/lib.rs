@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bunode_core::{
-    AddProjectOutcome, NewService, PackageManager, ProjectScripts, ProjectState, RunStatus,
-    ScriptGroup, ScriptOption, ServiceState, SettingsState, Snapshot,
+    AddProjectOutcome, EnvironmentState, NewService, PackageManager, ProjectScripts, ProjectState,
+    RunStatus, ScriptGroup, ScriptOption, ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -35,7 +35,32 @@ pub enum PackageManager {
 pub struct Snapshot {
     pub projects: Vec<ProjectState>,
     pub settings: SettingsState,
+    pub environment: EnvironmentState,
     pub config_issue: Option<String>,
+}
+
+#[uniffi::remote(Record)]
+pub struct EnvironmentState {
+    pub shell: String,
+    pub variable_count: u32,
+    pub loaded_at: Option<i64>,
+    pub is_loading: bool,
+    pub problem: Option<String>,
+    pub tools: Vec<ToolState>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum Tool {
+    Node,
+    Bun,
+}
+
+#[uniffi::remote(Record)]
+pub struct ToolState {
+    pub tool: Tool,
+    pub path: Option<String>,
+    pub version: Option<String>,
+    pub is_custom: bool,
 }
 
 #[uniffi::remote(Record)]
@@ -168,10 +193,7 @@ impl BunodeCore {
     #[uniffi::constructor]
     pub fn new(options: CoreOptions, listener: Box<dyn CoreListener>) -> Arc<Self> {
         let supervisor = bunode_core::Supervisor::new(
-            bunode_core::SupervisorOptions {
-                data_dir: PathBuf::from(options.data_dir),
-                runner_path: PathBuf::from(options.runner_path),
-            },
+            bunode_core::SupervisorOptions::new(options.data_dir, options.runner_path),
             Arc::new(ListenerAdapter(listener)),
         );
         Arc::new(BunodeCore { supervisor })
@@ -217,6 +239,18 @@ impl BunodeCore {
     /// General › Show running count.
     pub fn set_show_running_count(&self, show: bool) -> Result<(), CoreError> {
         Ok(self.supervisor.set_show_running_count(show)?)
+    }
+
+    /// Reads the login shell's environment again, in the background.
+    pub fn reload_environment(&self) {
+        self.supervisor.reload_environment();
+    }
+
+    /// Advanced › Node.js / Bun › Change…; `None` goes back to PATH.
+    pub fn set_tool_path(&self, tool: Tool, path: Option<String>) -> Result<(), CoreError> {
+        Ok(self
+            .supervisor
+            .set_tool_path(tool, path.as_deref().map(std::path::Path::new))?)
     }
 
     /// Advanced › Force stop after: 3, 5, 10 or 30 seconds.

@@ -49,13 +49,10 @@ static NAMES: AtomicU64 = AtomicU64::new(0);
 impl Harness {
     pub fn new() -> Harness {
         let data = tempfile::tempdir().unwrap();
-        let supervisor = Supervisor::new(
-            SupervisorOptions {
-                data_dir: data.path().to_path_buf(),
-                runner_path: runner_path(),
-            },
-            Arc::new(Quiet),
-        );
+        let mut options = SupervisorOptions::new(data.path(), runner_path());
+        // Tests run with the environment they were started with.
+        options.login_shell = None;
+        let supervisor = Supervisor::new(options, Arc::new(Quiet));
         Harness {
             supervisor,
             scratch: tempfile::tempdir().unwrap(),

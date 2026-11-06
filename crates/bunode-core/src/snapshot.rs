@@ -8,8 +8,51 @@ pub struct Snapshot {
     /// In registration order.
     pub projects: Vec<ProjectState>,
     pub settings: SettingsState,
+    pub environment: EnvironmentState,
     /// Set when the saved configuration could not be read at launch.
     pub config_issue: Option<String>,
+}
+
+/// The environment new Runs get (Advanced › Shell environment).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnvironmentState {
+    /// The login shell it is read from.
+    pub shell: String,
+    pub variable_count: u32,
+    /// When it was last read, in seconds since 1970; `None` until then.
+    pub loaded_at: Option<i64>,
+    pub is_loading: bool,
+    /// Why the shell's environment could not be read; Runs then get
+    /// Bunode's own environment.
+    pub problem: Option<String>,
+    /// Node.js, then Bun.
+    pub tools: Vec<ToolState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tool {
+    Node,
+    Bun,
+}
+
+impl Tool {
+    pub fn executable(self) -> &'static str {
+        match self {
+            Tool::Node => "node",
+            Tool::Bun => "bun",
+        }
+    }
+}
+
+/// Where Runs find `node` or `bun`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolState {
+    pub tool: Tool,
+    /// `None` when it was not found.
+    pub path: Option<String>,
+    pub version: Option<String>,
+    /// The user picked this path in Settings instead of the one in PATH.
+    pub is_custom: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

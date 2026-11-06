@@ -10,17 +10,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::mpsc as async_mpsc;
 
+use crate::env;
 use crate::error::{Error, Result};
 use crate::launch;
 use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
-    AddProjectOutcome, NewService, ProjectScripts, ProjectState, RunStatus, ScriptGroup,
-    ScriptOption, ServiceState, SettingsState, Snapshot,
+    AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunStatus,
+    ScriptGroup, ScriptOption, ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 use crate::store::ConfigStore;
 
@@ -46,6 +47,22 @@ pub struct SupervisorOptions {
     pub data_dir: PathBuf,
     /// The `bunode-runner` executable, normally inside the app bundle.
     pub runner_path: PathBuf,
+    /// The login shell whose environment Runs get; `$SHELL` by default.
+    /// `None` keeps Bunode's own environment (tests).
+    pub login_shell: Option<PathBuf>,
+    /// How long the login shell gets to print its environment.
+    pub environment_timeout: Duration,
+}
+
+impl SupervisorOptions {
+    pub fn new(data_dir: impl Into<PathBuf>, runner_path: impl Into<PathBuf>) -> SupervisorOptions {
+        SupervisorOptions {
+            data_dir: data_dir.into(),
+            runner_path: runner_path.into(),
+            login_shell: Some(env::default_shell()),
+            environment_timeout: Duration::from_secs(10),
+        }
+    }
 }
 
 pub struct Supervisor {
@@ -59,6 +76,8 @@ pub(crate) struct Shared {
     state: Mutex<State>,
     notifier: Notifier,
     runner_path: PathBuf,
+    login_shell: Option<PathBuf>,
+    environment_timeout: Duration,
     /// Held while creating a lifeline and spawning a runner, so that no
     /// other spawn can inherit the lifeline before it is close-on-exec.
     spawn_lock: Mutex<()>,
@@ -72,6 +91,14 @@ struct State {
     runs: HashMap<ServiceId, RunEntry>,
     /// The environment new Runs start from.
     base_env: Vec<(OsString, OsString)>,
+    environment: EnvironmentInfo,
+}
+
+struct EnvironmentInfo {
+    loaded_at: Option<SystemTime>,
+    loading: bool,
+    problem: Option<String>,
+    tools: Vec<ToolState>,
 }
 
 struct RunEntry {
@@ -99,7 +126,7 @@ impl Supervisor {
             .enable_all()
             .build()
             .expect("start the Supervisor's runtime");
-        Supervisor {
+        let supervisor = Supervisor {
             shared: Arc::new(Shared {
                 store,
                 state: Mutex::new(State {
@@ -107,14 +134,91 @@ impl Supervisor {
                     detections,
                     config_issue: issue.map(|i| i.message),
                     runs: HashMap::new(),
+                    // Until the login shell answers, Runs get Bunode's own.
                     base_env: std::env::vars_os().collect(),
+                    environment: EnvironmentInfo {
+                        loaded_at: None,
+                        loading: false,
+                        problem: None,
+                        tools: Vec::new(),
+                    },
                 }),
                 notifier: Notifier::new(listener),
                 runner_path: options.runner_path,
+                login_shell: options.login_shell,
+                environment_timeout: options.environment_timeout,
                 spawn_lock: Mutex::new(()),
             }),
             runtime,
+        };
+        supervisor.reload_environment();
+        supervisor
+    }
+
+    // MARK: - Environment
+
+    /// Reads the login shell's environment again, in the background. New
+    /// Runs get it; running ones keep theirs.
+    pub fn reload_environment(&self) {
+        {
+            let mut state = self.shared.lock();
+            if state.environment.loading {
+                return;
+            }
+            state.environment.loading = true;
         }
+        self.shared.notifier.notify();
+        let shared = self.shared.clone();
+        self.runtime.spawn(async move {
+            let captured = match &shared.login_shell {
+                Some(shell) => {
+                    env::capture(shell, shared.environment_timeout, &shared.spawn_lock).await
+                }
+                None => Ok(std::env::vars_os().collect()),
+            };
+            {
+                let mut state = shared.lock();
+                match captured {
+                    Ok(vars) => {
+                        state.base_env = vars;
+                        state.environment.problem = None;
+                    }
+                    Err(reason) => {
+                        state.environment.problem = Some(format!(
+                            "Couldn't read the environment ({reason}). Runs get Bunode's own."
+                        ));
+                    }
+                }
+                state.environment.loaded_at = Some(SystemTime::now());
+            }
+            resolve_tools(&shared).await;
+            shared.lock().environment.loading = false;
+            shared.notifier.notify();
+        });
+    }
+
+    /// Advanced › Node.js / Bun › Change…: use this executable instead of
+    /// the one in PATH. `None` goes back to PATH.
+    pub fn set_tool_path(&self, tool: Tool, path: Option<&Path>) -> Result<()> {
+        if let Some(path) = path
+            && !env::is_executable(path)
+        {
+            return Err(Error::Invalid(format!(
+                "{} is not an executable file.",
+                path.display()
+            )));
+        }
+        let path = path.map(Path::to_path_buf);
+        self.update_settings(|settings| match tool {
+            Tool::Node => settings.node_path = path,
+            Tool::Bun => settings.bun_path = path,
+        })?;
+        let shared = self.shared.clone();
+        self.runtime.spawn(async move {
+            resolve_tools(&shared).await;
+            shared.notifier.notify();
+        });
+        Ok(())
     }
 
     pub fn snapshot(&self) -> Snapshot {
@@ -130,6 +234,23 @@ impl Supervisor {
                 show_running_count: state.config.settings.show_running_count,
                 force_stop_after_secs: state.config.settings.force_stop_after_secs,
                 log_lines_kept: state.config.settings.log_lines_kept,
+            },
+            environment: EnvironmentState {
+                shell: self
+                    .shared
+                    .login_shell
+                    .as_ref()
+                    .map(|s| s.display().to_string())
+                    .unwrap_or_default(),
+                variable_count: state.base_env.len() as u32,
+                loaded_at: state.environment.loaded_at.map(|t| {
+                    t.duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0)
+                }),
+                is_loading: state.environment.loading,
+                problem: state.environment.problem.clone(),
+                tools: state.environment.tools.clone(),
             },
             config_issue: state.config_issue.clone(),
         }
@@ -451,6 +572,37 @@ impl Shared {
     }
 }
 
+/// Finds `node` and `bun`, the user's picks first, and asks their versions.
+async fn resolve_tools(shared: &Shared) {
+    let (base_env, settings) = {
+        let state = shared.lock();
+        (state.base_env.clone(), state.config.settings.clone())
+    };
+    let mut tools = Vec::new();
+    for tool in [Tool::Node, Tool::Bun] {
+        let custom = match tool {
+            Tool::Node => settings.node_path.clone(),
+            Tool::Bun => settings.bun_path.clone(),
+        };
+        let is_custom = custom.is_some();
+        let path = match custom {
+            Some(path) => env::is_executable(&path).then_some(path),
+            None => env::which(&base_env, tool.executable()),
+        };
+        let version = match &path {
+            Some(path) => env::version(path, &shared.spawn_lock).await,
+            None => None,
+        };
+        tools.push(ToolState {
+            tool,
+            path: path.map(|p| p.display().to_string()),
+            version,
+            is_custom,
+        });
+    }
+    shared.lock().environment.tools = tools;
+}
+
 fn find_service(config: &Config, service_id: ServiceId) -> Result<(&Project, &Service)> {
     config
         .projects
@@ -585,13 +737,9 @@ mod tests {
 
     fn open(data: &Path) -> (Supervisor, Arc<Counter>) {
         let counter = Arc::new(Counter::default());
-        let supervisor = Supervisor::new(
-            SupervisorOptions {
-                data_dir: data.to_path_buf(),
-                runner_path: "/nonexistent/bunode-runner".into(),
-            },
-            counter.clone(),
-        );
+        let mut options = SupervisorOptions::new(data, "/nonexistent/bunode-runner");
+        options.login_shell = Some("/bin/sh".into());
+        let supervisor = Supervisor::new(options, counter.clone());
         (supervisor, counter)
     }
 
@@ -811,6 +959,67 @@ mod tests {
         let settings = reloaded.snapshot().settings;
         assert!(!settings.show_running_count);
         assert_eq!(settings.force_stop_after_secs, 10);
+    }
+
+    fn wait_until(what: &str, done: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while !done() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for {what}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn reads_the_login_shell_environment_and_finds_tools() {
+        let data = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        wait_until("the environment", || {
+            supervisor.snapshot().environment.loaded_at.is_some()
+                && !supervisor.snapshot().environment.is_loading
+        });
+        let environment = supervisor.snapshot().environment;
+        assert_eq!(environment.shell, "/bin/sh");
+        assert!(environment.variable_count > 0);
+        assert_eq!(environment.problem, None);
+        assert_eq!(
+            environment.tools.iter().map(|t| t.tool).collect::<Vec<_>>(),
+            [Tool::Node, Tool::Bun]
+        );
+    }
+
+    #[test]
+    fn custom_tool_paths_are_checked_and_kept() {
+        let data = tempfile::tempdir().unwrap();
+        let tools = tempfile::tempdir().unwrap();
+        let fake = tools.path().join("node");
+        fs::write(&fake, "not executable").unwrap();
+        let (supervisor, _) = open(data.path());
+        assert!(supervisor.set_tool_path(Tool::Node, Some(&fake)).is_err());
+        crate::env::write_test_executable(&fake, "#!/bin/sh\necho v99.1.0\n");
+        supervisor.set_tool_path(Tool::Node, Some(&fake)).unwrap();
+        wait_until("the custom node", || {
+            supervisor
+                .snapshot()
+                .environment
+                .tools
+                .first()
+                .is_some_and(|t| t.is_custom && t.version.as_deref() == Some("99.1.0"))
+        });
+        let node = supervisor.snapshot().environment.tools[0].clone();
+        assert_eq!(node.path, Some(fake.display().to_string()));
+
+        supervisor.set_tool_path(Tool::Node, None).unwrap();
+        wait_until("node from PATH", || {
+            supervisor
+                .snapshot()
+                .environment
+                .tools
+                .first()
+                .is_some_and(|t| !t.is_custom)
+        });
     }
 
     #[test]

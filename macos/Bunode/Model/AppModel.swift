@@ -164,6 +164,23 @@ final class AppModel {
         refresh()
     }
 
+    /// Reads the login shell's environment again; new Runs get it.
+    func reloadEnvironment() {
+        core.reloadEnvironment()
+        refresh()
+    }
+
+    /// Advanced › Node.js / Bun › Change…; `nil` goes back to PATH.
+    func setToolPath(_ tool: Tool, to url: URL?) -> String? {
+        do {
+            try core.setToolPath(tool: tool, path: url?.path(percentEncoded: false))
+            refresh()
+            return nil
+        } catch {
+            return error.userMessage
+        }
+    }
+
     /// Advanced › Force stop after, in seconds.
     func setForceStopAfter(_ seconds: UInt32) {
         try? core.setForceStopAfter(seconds: seconds)

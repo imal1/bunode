@@ -1,7 +1,7 @@
 //! Turns a Service's configuration into what `bunode-runner` executes.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::model::{Project, Service, Settings};
@@ -34,6 +34,21 @@ pub fn launch_spec(
     // Most dev tools turn colors off when output is not a terminal.
     if !env.iter().any(|(k, _)| k == "FORCE_COLOR") {
         env.push(("FORCE_COLOR".into(), "1".into()));
+    }
+    // Node.js and Bun picked in Settings come first in PATH.
+    let custom_dirs: Vec<PathBuf> = [&settings.node_path, &settings.bun_path]
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| tool.parent().map(Path::to_path_buf))
+        .collect();
+    if !custom_dirs.is_empty() {
+        let current = crate::env::get(&env, "PATH").map(|p| p.to_owned());
+        let dirs = custom_dirs
+            .into_iter()
+            .chain(current.iter().flat_map(std::env::split_paths));
+        if let Ok(path) = std::env::join_paths(dirs) {
+            set_env(&mut env, "PATH".into(), path);
+        }
     }
     for (key, value) in &service.env {
         set_env(&mut env, key.into(), value.into());
@@ -151,6 +166,33 @@ mod tests {
         let settings = Settings::default();
         assert!(launch_spec(&project(), &service("node 'oops"), &settings, &[]).is_err());
         assert!(launch_spec(&project(), &service("   "), &settings, &[]).is_err());
+    }
+
+    #[test]
+    fn custom_node_and_bun_come_first_in_path() {
+        let settings = Settings {
+            node_path: Some("/opt/node/bin/node".into()),
+            bun_path: Some("/opt/bun/bin/bun".into()),
+            ..Settings::default()
+        };
+        let spec = launch_spec(
+            &project(),
+            &service("node x.js"),
+            &settings,
+            &env(&[("PATH", "/usr/bin:/bin")]),
+        )
+        .unwrap();
+        let path = spec
+            .env
+            .iter()
+            .find(|(k, _)| k == "PATH")
+            .unwrap()
+            .1
+            .clone();
+        assert_eq!(
+            path,
+            OsString::from("/opt/node/bin:/opt/bun/bin:/usr/bin:/bin")
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@
 //! on any Apple framework, so that it can later be hosted by a standalone
 //! Supervisor daemon unchanged (ADR-0001, ADR-0002).
 
+pub mod env;
 pub mod error;
 pub mod launch;
 pub mod model;
@@ -17,8 +18,8 @@ pub mod supervisor;
 pub use error::{Error, Result};
 pub use model::PackageManager;
 pub use snapshot::{
-    AddProjectOutcome, NewService, ProjectScripts, ProjectState, RunStatus, ScriptGroup,
-    ScriptOption, ServiceState, SettingsState, Snapshot,
+    AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunStatus,
+    ScriptGroup, ScriptOption, ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 pub use supervisor::{FORCE_STOP_CHOICES, Listener, Supervisor, SupervisorOptions};
 
