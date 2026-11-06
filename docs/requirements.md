@@ -1,6 +1,6 @@
 # Bunode — macOS 原生 Node.js / Bun 开发服务管理器需求说明
 
-> 术语以 [`GLOSSARY.md`](../GLOSSARY.md) 为准：**Project**（项目目录）→ **Service**（可启停的运行配置）→ **Run**（一次实际运行）。关键架构决策见 [`docs/adr/`](adr/)。
+> 术语以 [`GLOSSARY.md`](../GLOSSARY.md) 为准：**Project**（项目目录）→ **Service**（可启停的运行配置）→ **Run**（一次实际运行）。关键架构决策见 [`docs/adr/`](adr/)；界面细节见 [`design-handoff.md`](design-handoff.md)。
 
 ## 1. 项目概述
 
@@ -31,7 +31,7 @@ Bunode 是一款专为 macOS 设计的轻量级 Node.js / Bun 原生图形化进
 |CPU 架构|Apple Silicon 优先，兼容 Intel|
 |运行时|Node.js、Bun|
 |包管理器|npm、pnpm、yarn、Bun|
-|产品形态|macOS 原生桌面 App + 菜单栏|
+|产品形态|macOS 原生菜单栏 App（Popover 为主界面，另有 Settings 窗口，无 Dock 图标）|
 |网络依赖|核心功能完全离线|
 |浏览器|不依赖浏览器，不使用 WebView|
 |数据存储|本地 JSON 配置文件|
@@ -47,7 +47,7 @@ Bunode 是一款专为 macOS 设计的轻量级 Node.js / Bun 原生图形化进
 
 |层级|技术|
 |---|---|
-|UI 框架|SwiftUI（主界面）+ AppKit（日志视图、菜单栏等性能敏感部分）|
+|UI 框架|SwiftUI（Popover、Settings）+ AppKit（日志视图、菜单栏状态项等性能敏感部分）|
 |UI 状态|Observation（`@Observable`）|
 |图标|SF Symbols|
 |本地化|String Catalog（首版英文，预留简体中文）|
@@ -69,12 +69,13 @@ Bunode 是一款专为 macOS 设计的轻量级 Node.js / Bun 原生图形化进
 Bunode.app
 │
 ├── SwiftUI / AppKit UI
-│   ├── Dashboard
-│   ├── Projects
-│   ├── Processes
-│   ├── Logs
-│   ├── Settings
-│   └── Menu Bar
+│   ├── Menu Bar Popover（主界面）
+│   │   ├── Home（Project / Service 列表）
+│   │   ├── Service（设置）
+│   │   ├── New Service
+│   │   ├── Logs
+│   │   └── Other processes
+│   └── Settings 窗口（General / Projects / Advanced）
 │
 ├── bunode-ffi（UniFFI 绑定层）
 │
@@ -172,12 +173,12 @@ Bunode 不解析、不注入 `.env`，交由 Vite、Next、Bun 等工具自行�
 |Source|package script / 自定义命令|
 |Runtime|Auto / Node / Bun|
 |Command / Arguments|启动命令与参数（默认可执行文件 + 参数数组）|
-|Shell Mode|需要 Shell 特性时显式开启|
+|Shell Mode|需要 Shell 特性（管道、`&&`、通配符）时显式开启。与 3.9 的登录 shell 环境无关|
 |Runtime Path|可覆盖 node / bun 可执行文件路径|
 |Environment|环境变量（敏感值默认隐藏）|
 |Expected Ports|预期端口|
 |Auto Start|自动启动|
-|Auto Restart|异常自动重启|
+|Auto Restart|异常自动重启。新建 Service 时取 Settings › General 的全局默认值；之后以 Service 自身为准，修改全局默认不改写已有 Service|
 
 支持编辑、复制、删除 Project 与 Service，以及搜索、排序和分组。
 
@@ -230,7 +231,7 @@ Starting
 
 **Run 的存活范围**（见 [ADR-0003](adr/0003-runs-never-outlive-bunode.md)）
 
-- 关闭主窗口不结束 Run，菜单栏继续管理。
+- 关闭 Popover 或 Settings 窗口不结束 Run，菜单栏继续管理。
 - 退出 Bunode 时确认后停止所有 Run。
 - Bunode 崩溃或被强制结束时，所有 Run 也必须结束：每个 Run 由 `bunode-runner` 启动，生命线管道断开后它结束整个进程组。
 - 兜底：Supervisor 持续记录每个 Run 的 PID、进程组与启动时间；下次启动时，身份仍匹配的遗留进程被自动结束。
@@ -284,12 +285,12 @@ Discovered Process 位于某个已登记 Project 的目录中时，在该 Projec
 - stdout/stderr 区分。
 - 时间戳。
 - 关键词搜索。
-- 日志级别过滤。
-- 自动滚动开关。
+- 自动滚动：停在底部时跟随新日志；用户向上滚动即暂停，回到底部恢复（不单独设开关）。
 - 清空当前显示。
 - 复制日志。
 - 导出日志文件。
 - 支持 ANSI 颜色。
+- 日志级别过滤（第二阶段）。
 
 **性能要求**
 
@@ -310,6 +311,7 @@ Discovered Process 位于某个已登记 Project 的目录中时，在该 Projec
 - 启动前检查预期端口冲突。
 - 端口冲突时显示占用进程信息。
 - 支持用户手动配置预期端口。
+- 端口冲突时可选“改用下一个空闲端口”：仅为本次 Run 设置 `PORT` 环境变量，并在提示中写明；不改写命令参数。命令不读 `PORT` 的工具需用户自行改端口。
 
 不得自动结束不属于 Bunode 的端口占用进程。
 
@@ -326,13 +328,15 @@ Discovered Process 位于某个已登记 Project 的目录中时，在该 Projec
 
 允许查看单个 Service 的资源使用变化。
 
-默认采用低频采样，在窗口隐藏时主动降低采样频率。
+默认采用低频采样，在 Popover 关闭时主动降低采样频率。
 
 避免为了监控性能而引入明显的系统资源开销。
 
 ### 3.7 菜单栏（P0）
 
 提供 macOS Menu Bar 常驻入口。
+
+菜单栏 Popover 是唯一主界面，MVP 不做主窗口（见 [ADR-0004](adr/0004-menu-bar-first-no-main-window.md)）。
 
 菜单栏应支持：
 
@@ -341,18 +345,14 @@ Discovered Process 位于某个已登记 Project 的目录中时，在该 Projec
 - 快速启动/停止 Service。
 - 重启 Service。
 - 查看异常状态。
-- 打开主窗口。
+- 编辑 Service、添加 Service、查看日志。
+- 查看 Discovered Process 并安全终止。
+- 打开 Settings 窗口。
 - 退出应用。
 
-菜单栏与主窗口必须共用同一状态来源（Supervisor），避免状态不同步。
+Popover 与 Settings 窗口共用同一状态来源（Supervisor），避免状态不同步。
 
-**Dock 图标**：主窗口打开时显示 Dock 图标，关闭主窗口后隐藏，仅保留菜单栏；Settings 中可设置为“始终仅菜单栏”。
-
-支持：
-
-- 仅菜单栏模式。
-- 菜单栏 + 主窗口模式。
-- 启动时最小化到菜单栏。
+**Dock 图标**：始终不显示（`LSUIElement`）。
 
 ### 3.8 自动启动与恢复（P1）
 
@@ -368,7 +368,6 @@ Discovered Process 位于某个已登记 Project 的目录中时，在该 Projec
 - 用户主动停止。
 - 程序异常退出。
 - 操作系统重启。
-- 主窗口关闭。
 - Bunode 退出。
 
 用户主动停止的 Service 不得被自动重启策略立即重新拉起。
@@ -397,80 +396,45 @@ Bunode 不负责 Node/Bun 版本切换。
 - 使用系统字体与 SF Symbols。
 - 合理使用颜色表示状态。
 - 少弹窗、少层级、少复杂配置。
-- 支持键盘快捷键。
+- 支持键盘快捷键（Popover 内快捷键见 `design-handoff.md` §9）。
 - 所有常用操作尽量在两次点击内完成。
 - 动画轻量，不影响操作响应。
 - 首版英文界面；界面用词与 `GLOSSARY.md` 一致（Project / Service / Run）。
 
-### 4.2 主窗口结构
+### 4.2 菜单栏 Popover
 
-```
-┌────────────────────────────────────────────────────┐
-│ Bunode                                   ◉  ●  ⚙  │
-├───────────────┬────────────────────────────────────┤
-│               │                                    │
-│ Dashboard     │  Projects                  + Add  │
-│ Projects      │                                    │
-│ Processes     │  ● api › dev         Bun    :3000  │
-│ Logs          │    Running         CPU 2%   86 MB  │
-│               │    [Stop] [Restart] [Logs]         │
-│ ────────────  │                                    │
-│ Groups        │  ● web › dev         Node   :5173  │
-│               │    Running         CPU 1%   74 MB  │
-│ Work          │    [Stop] [Restart] [Logs]         │
-│ Personal      │                                    │
-│               │  ○ api › worker      Bun           │
-│               │    Stopped                         │
-│               │    [Start] [Edit]                  │
-│               │                                    │
-├───────────────┴────────────────────────────────────┤
-│  2 Running     1 Stopped        CPU 3%   MEM 160MB │
-└────────────────────────────────────────────────────┘
-```
+宽 340 pt 固定，高度随内容，最大不超过屏幕。视图栈：
 
-示意内容只用于说明信息层级，不限制最终视觉布局。
+- **Home**：按 Project 分组的 Service 列表，每行显示状态、端口和启停按钮；外部进程入口；Settings… 与 Quit。
+- **Service**：点 Service 行进入。命令、目录、端口、自动重启、Shell Mode、环境变量；自动保存，运行中修改提示“下次 Run 生效”；删除 Service。
+- **New Service**：点 Project 的 `+` 进入，从 `package.json` scripts 选择或手填命令。
+- **Logs**：单个 Service 的实时日志、搜索、清空、复制、导出。
+- **Other processes**：Discovered Process 列表，仅查看与 SIGTERM。
 
-### 4.3 页面
+位于已登记 Project 目录中的 Discovered Process 在该 Project 下显示为只读的“External”行（3.3）。
 
-**Dashboard**
+### 4.3 Settings 窗口
 
-- 全部 Service 状态概览。
-- 正在运行的 Service。
-- 异常 Run。
-- 常用启动操作。
-- 总资源占用。
+**General**
+
+- 开机启动。
+- 是否在菜单栏图标旁显示运行数量。
+- 自动重启的全局默认值（3.1）。
+- 崩溃通知。
 
 **Projects**
 
-- Project 与 Service 列表。
-- 搜索、分组、排序。
-- 添加与编辑 Project / Service。
-- 脚本发现。
+- 登记的 Project 列表：路径、包管理器（可改；多锁文件时警告）、Service 数量。
+- 添加、移除 Project。Service 只在 Popover 中添加和设置。
 
-**Processes**
+**Advanced**
 
-- Run。
-- 自动发现的 Discovered Process。
-- PID、端口、CPU、内存。
-- 进程树。
-- 安全终止操作。
-
-**Logs**
-
-- 按 Service 切换日志。
-- 实时日志。
-- 搜索与过滤。
-- 导出。
-
-**Settings**
-
-- 外观。
-- 开机启动。
-- 菜单栏与 Dock 图标行为。
 - 运行环境（重新加载登录 shell 环境、默认 node/bun 路径）。
-- 日志保留策略。
 - 进程停止超时。
-- 自动重启策略。
+- 日志保留行数。
+- 诊断日志。
+
+外观跟随系统，不单独设置。完整布局、状态与文案见 [`design-handoff.md`](design-handoff.md)。
 
 ---
 
@@ -482,7 +446,7 @@ Bunode 不负责 Node/Bun 版本切换。
 
 必须重点防范以下问题：
 
-1. 进程持续输出日志导致主窗口冻结。
+1. 进程持续输出日志导致界面冻结。
 2. 快速连续点击启停导致状态竞争。
 3. 进程启动失败后 UI 一直显示 Starting。
 4. 进程已退出，但 UI 仍显示 Running。
@@ -555,6 +519,7 @@ Bunode 不负责 Node/Bun 版本切换。
 - 本地配置持久化。
 - 深色/浅色主题。
 - 日志落盘与滚动归档。
+- 日志搜索、导出与丢弃行数提示。
 - 进程管理并发与异常处理测试。
 
 ### 第二阶段（增强体验）
@@ -567,7 +532,7 @@ Bunode 不负责 Node/Bun 版本切换。
 - 自动重启。
 - 登录时启动。
 - 进程树。
-- 日志搜索与导出。
+- 日志级别过滤。
 - 配置导入导出。
 - 简体中文界面。
 
@@ -602,7 +567,7 @@ Bunode 不负责 Node/Bun 版本切换。
 10. 服务占用多个端口。
 11. 两个服务争用同一端口。
 12. 删除正在运行的 Service 的配置。
-13. 主窗口关闭、重新打开；Bunode 退出及意外崩溃（验证无遗留进程）。
+13. Popover / Settings 窗口关闭、重新打开；Bunode 退出及意外崩溃（验证无遗留进程）。
 14. macOS 睡眠、唤醒及用户注销。
 15. Node/Bun 可执行文件不存在或版本切换。
 16. 项目工作目录被移动或删除。
@@ -621,7 +586,7 @@ Bunode 不负责 Node/Bun 版本切换。
 - 持续高频日志输出 30 分钟。
 - 反复启停同一 Service 至少 100 次。
 - 同时运行 30 个低负载测试服务。
-- 多次关闭和恢复主窗口。
+- 多次打开和关闭 Popover 与 Settings 窗口。
 - 模拟 Bunode 异常退出，验证所有 Run 被结束。
 - 检查内存泄漏、僵尸进程和遗留进程。
 - 检查所有 Run 的最终状态与 UI 是否一致。
@@ -636,8 +601,8 @@ MVP 必须满足：
 - 能自动发现外部 Node/Bun 进程。
 - 进程异常退出能够正确反映到 UI。
 - 不出现不可恢复的 Starting / Stopping 状态。
-- 大量日志不能卡死主界面。
-- 主窗口关闭后菜单栏仍可管理 Service。
+- 大量日志不能卡死界面。
+- 关闭 Popover 与 Settings 窗口后 Run 继续运行，菜单栏仍可管理 Service。
 - Bunode 退出或崩溃后不留下任何 Run。
 - 不误杀其他应用或无关进程。
 
