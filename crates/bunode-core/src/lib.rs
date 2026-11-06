@@ -8,6 +8,7 @@
 
 pub mod ansi;
 pub mod diagnostics;
+pub mod discovery;
 pub mod env;
 pub mod error;
 pub mod launch;
@@ -23,6 +24,7 @@ pub mod sys;
 pub mod workspace;
 
 pub use ansi::{LogColor, LogSpan, LogStyle};
+pub use discovery::DiscoveredProcess;
 pub use error::{Error, Result};
 pub use logs::{LogLine, LogStream};
 pub use model::PackageManager;

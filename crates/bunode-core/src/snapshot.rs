@@ -11,6 +11,8 @@ pub struct Snapshot {
     pub environment: EnvironmentState,
     /// Set when the saved configuration could not be read at launch.
     pub config_issue: Option<String>,
+    /// Node and Bun processes Bunode did not start, oldest first.
+    pub discovered: Vec<crate::discovery::DiscoveredProcess>,
 }
 
 /// The environment new Runs get (Advanced › Shell environment).

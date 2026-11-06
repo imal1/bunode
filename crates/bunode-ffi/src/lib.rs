@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bunode_core::{
-    AddProjectOutcome, EnvironmentState, LogColor, LogLine, LogSpan, LogStream, LogStyle,
-    NewService, PackageManager, ProjectScripts, ProjectState, RunEnd, RunStatus, ScriptGroup,
-    ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    AddProjectOutcome, DiscoveredProcess, EnvironmentState, LogColor, LogLine, LogSpan, LogStream,
+    LogStyle, NewService, PackageManager, ProjectScripts, ProjectState, RunEnd, RunStatus,
+    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -38,6 +38,20 @@ pub struct Snapshot {
     pub settings: SettingsState,
     pub environment: EnvironmentState,
     pub config_issue: Option<String>,
+    pub discovered: Vec<DiscoveredProcess>,
+}
+
+#[uniffi::remote(Record)]
+pub struct DiscoveredProcess {
+    pub pid: u32,
+    pub start: u64,
+    pub command: String,
+    pub cwd: Option<String>,
+    pub source: String,
+    pub members: Vec<u32>,
+    pub member_starts: Vec<u64>,
+    pub ports: Vec<u16>,
+    pub exiting: bool,
 }
 
 #[uniffi::remote(Record)]
@@ -325,6 +339,23 @@ impl BunodeCore {
     /// Starts a Run unless one is live. Returns at once.
     pub fn start(&self, service_id: u64) -> Result<(), CoreError> {
         Ok(self.supervisor.start(service_id)?)
+    }
+
+    /// Looks for other Node and Bun processes now.
+    pub fn rescan(&self) {
+        self.supervisor.rescan();
+    }
+
+    /// Other processes › Stop… › Send SIGTERM, if `pid` is still the
+    /// process that started at `start`.
+    pub fn stop_discovered(&self, pid: u32, start: u64) -> Result<(), CoreError> {
+        Ok(self.supervisor.stop_discovered(pid, start)?)
+    }
+
+    /// The Force Kill alert: SIGKILL to the process tree, each process
+    /// checked first.
+    pub fn force_kill_discovered(&self, pid: u32, start: u64) -> Result<(), CoreError> {
+        Ok(self.supervisor.force_kill_discovered(pid, start)?)
     }
 
     /// Quit: stops every live Run. Returns how many there were.

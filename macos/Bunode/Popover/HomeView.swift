@@ -48,6 +48,23 @@ struct HomeView: View {
             Text("\(model.statusSummary.running) running")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            Button {
+                router.push(.processes(focus: nil))
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "memorychip")
+                        .font(.system(size: 14))
+                    Text(verbatim: "\(model.snapshot.discovered.count)")
+                        .font(.callout)
+                }
+                .padding(.horizontal, 6)
+                .frame(height: 28)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help("Other Node and Bun processes, \(model.snapshot.discovered.count)")
+            .accessibilityLabel("Other Node and Bun processes, \(model.snapshot.discovered.count)")
         }
         .frame(minHeight: 28)
         .padding(EdgeInsets(top: 4, leading: 10, bottom: 6, trailing: 2))

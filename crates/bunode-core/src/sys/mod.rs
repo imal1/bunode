@@ -29,6 +29,35 @@ pub struct ProcessInfo {
     pub name: String,
 }
 
+/// Every PID on the machine.
+pub fn all_pids() -> Vec<i32> {
+    platform::all_pids()
+}
+
+/// The process's arguments, `argv[0]` first. Only readable for the
+/// user's own processes.
+pub fn arguments(pid: i32) -> Option<Vec<String>> {
+    platform::arguments(pid)
+}
+
+/// The process's working directory.
+pub fn cwd(pid: i32) -> Option<std::path::PathBuf> {
+    platform::cwd(pid)
+}
+
+/// The TCP ports the process listens on, IPv4 and IPv6, sorted.
+pub fn listening_ports(pid: i32) -> Vec<u16> {
+    let mut ports = platform::listening_ports(pid);
+    ports.sort_unstable();
+    ports.dedup();
+    ports
+}
+
+/// The user Bunode runs as.
+pub fn current_uid() -> u32 {
+    nix::unistd::getuid().as_raw()
+}
+
 /// The process with this PID, if there is one.
 pub fn process(pid: i32) -> Option<ProcessInfo> {
     if pid <= 0 {
@@ -54,6 +83,33 @@ mod tests {
         assert!(is_same_process(me.pid, me.start));
         assert!(!is_same_process(me.pid, me.start + 1));
         assert!(process(-1).is_none());
+    }
+
+    #[test]
+    fn reads_arguments_folder_and_ports_of_a_child() {
+        use std::net::TcpListener;
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = std::process::Command::new("sleep")
+            .args(["7", "extra"])
+            .current_dir(dir.path())
+            .spawn()
+            .unwrap();
+        let pid = child.id() as i32;
+        assert!(all_pids().contains(&pid));
+        // Right after fork the child may not have exec'd yet.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while arguments(pid).is_none_or(|a| a[0] != "sleep") && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(arguments(pid).unwrap(), ["sleep", "7", "extra"]);
+        assert_eq!(cwd(pid).unwrap(), dir.path().canonicalize().unwrap());
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(listening_ports(std::process::id() as i32).contains(&port));
     }
 
     #[test]

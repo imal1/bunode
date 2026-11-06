@@ -316,6 +316,34 @@ final class AppModel {
         }
     }
 
+    // MARK: - Discovered Processes
+
+    /// Looks for other Node and Bun processes now.
+    func rescan() {
+        core.rescan()
+    }
+
+    /// Other processes › Send SIGTERM. Returns a problem, if any.
+    func stopDiscovered(_ process: DiscoveredProcess) -> String? {
+        do {
+            try core.stopDiscovered(pid: process.pid, start: process.start)
+            refresh()
+            return nil
+        } catch {
+            return error.userMessage
+        }
+    }
+
+    func forceKillDiscovered(_ process: DiscoveredProcess) {
+        try? core.forceKillDiscovered(pid: process.pid, start: process.start)
+        refresh()
+    }
+
+    /// Whether this exact process is still listed.
+    func isStillRunning(_ process: DiscoveredProcess) -> Bool {
+        snapshot.discovered.contains { $0.pid == process.pid && $0.start == process.start }
+    }
+
     func dismissNotice() {
         rowNotice = nil
     }

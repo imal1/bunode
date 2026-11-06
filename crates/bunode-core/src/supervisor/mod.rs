@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc as async_mpsc;
 
 use crate::diagnostics::Diagnostics;
+use crate::discovery::{DiscoveredProcess, Ours, Scanner};
 use crate::env;
 use crate::error::{Error, Result};
 use crate::launch;
@@ -35,6 +36,9 @@ use run::{Control, Outcome};
 
 /// Changes are reported at most this often (requirements §2.2).
 const COALESCE: Duration = Duration::from_millis(100);
+
+/// How often other Node and Bun processes are looked for.
+const DISCOVERY_INTERVAL: Duration = Duration::from_secs(3);
 
 /// The choices of Advanced › Log lines kept.
 pub const LOG_LINES_CHOICES: [u32; 3] = [5_000, 10_000, 50_000];
@@ -105,6 +109,8 @@ pub(crate) struct Shared {
     runner_diagnostics: Option<PathBuf>,
     /// Where Runs' tasks run.
     runtime: tokio::runtime::Handle,
+    /// Wakes the discovery scan before its interval is up.
+    rescan: tokio::sync::Notify,
     /// Held while creating a lifeline and spawning a runner, so that no
     /// other spawn can inherit the lifeline before it is close-on-exec.
     spawn_lock: Mutex<()>,
@@ -123,6 +129,10 @@ struct State {
     log_filters: HashMap<ServiceId, String>,
     /// Projects to remove once their last live Run has ended.
     removing_projects: std::collections::HashSet<ProjectId>,
+    /// Node and Bun processes Bunode did not start, from the last scan.
+    discovered: Vec<DiscoveredProcess>,
+    /// Discovered Processes sent SIGTERM, by PID and start time.
+    exiting: std::collections::HashSet<(u32, u64)>,
 }
 
 struct EnvironmentInfo {
@@ -228,6 +238,8 @@ impl Supervisor {
                     },
                     log_filters: HashMap::new(),
                     removing_projects: Default::default(),
+                    discovered: Vec::new(),
+                    exiting: Default::default(),
                 }),
                 notifier: Notifier::new(listener),
                 runner_path: options.runner_path,
@@ -238,11 +250,14 @@ impl Supervisor {
                 diagnostics,
                 runner_diagnostics: options.diagnostics_dir.map(|d| d.join("runner.log")),
                 runtime: runtime.handle().clone(),
+                rescan: tokio::sync::Notify::new(),
                 spawn_lock: Mutex::new(()),
             }),
             runtime,
         };
         supervisor.reload_environment();
+        let shared = supervisor.shared.clone();
+        supervisor.runtime.spawn(discover(shared));
         if !leftover.is_empty() {
             let shared = supervisor.shared.clone();
             supervisor.runtime.spawn_blocking(move || {
@@ -256,6 +271,62 @@ impl Supervisor {
             });
         }
         supervisor
+    }
+
+    // MARK: - Discovered Processes
+
+    /// Looks for other Node and Bun processes now, not in a few seconds.
+    pub fn rescan(&self) {
+        self.shared.rescan.notify_one();
+    }
+
+    /// Other processes › Stop…: sends SIGTERM to the top process of a
+    /// Discovered Process, if it is still the same process.
+    pub fn stop_discovered(&self, pid: u32, start: u64) -> Result<()> {
+        if !crate::sys::is_same_process(pid as i32, start) {
+            return Err(Error::Invalid(format!("PID {pid} has already exited.")));
+        }
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(pid as i32),
+            nix::sys::signal::Signal::SIGTERM,
+        )
+        .map_err(|e| Error::Invalid(format!("Couldn't send SIGTERM to PID {pid}: {e}")))?;
+        self.shared
+            .diagnostics
+            .log(&format!("Sent SIGTERM to Discovered Process {pid}"));
+        self.shared.lock().exiting.insert((pid, start));
+        self.shared.notifier.notify();
+        self.rescan();
+        Ok(())
+    }
+
+    /// The Force Kill alert: SIGKILL to every process of a Discovered
+    /// Process that is still the same process.
+    pub fn force_kill_discovered(&self, pid: u32, start: u64) -> Result<()> {
+        let process = self
+            .shared
+            .lock()
+            .discovered
+            .iter()
+            .find(|p| p.pid == pid && p.start == start)
+            .cloned();
+        let (members, starts) = match process {
+            Some(p) => (p.members, p.member_starts),
+            None => (vec![pid], vec![start]),
+        };
+        for (member, member_start) in members.into_iter().zip(starts) {
+            if crate::sys::is_same_process(member as i32, member_start) {
+                let _ = nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(member as i32),
+                    nix::sys::signal::Signal::SIGKILL,
+                );
+            }
+        }
+        self.shared
+            .diagnostics
+            .log(&format!("Force killed Discovered Process {pid}"));
+        self.rescan();
+        Ok(())
     }
 
     /// Quit: stops every live Run. Returns how many there were; the app
@@ -379,6 +450,14 @@ impl Supervisor {
                 tools: state.environment.tools.clone(),
             },
             config_issue: state.config_issue.clone(),
+            discovered: state
+                .discovered
+                .iter()
+                .map(|p| DiscoveredProcess {
+                    exiting: state.exiting.contains(&(p.pid, p.start)),
+                    ..p.clone()
+                })
+                .collect(),
         }
     }
 
@@ -1154,6 +1233,49 @@ impl Shared {
             let _ = self.start(service_id);
         }
         self.notifier.notify();
+    }
+}
+
+/// Scans for Discovered Processes every few seconds, or when asked.
+async fn discover(shared: Arc<Shared>) {
+    let scanner = Arc::new(Mutex::new(Scanner::default()));
+    loop {
+        let ours = {
+            let state = shared.lock();
+            Ours {
+                groups: state
+                    .runs
+                    .values()
+                    .filter_map(|r| r.pid)
+                    .map(|p| p as i32)
+                    .collect(),
+                runners: Default::default(),
+            }
+        };
+        let scanning = scanner.clone();
+        let Ok(found) = tokio::task::spawn_blocking(move || {
+            scanning
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .scan(&ours)
+        })
+        .await
+        else {
+            return;
+        };
+        let changed = {
+            let mut state = shared.lock();
+            let alive: std::collections::HashSet<(u32, u64)> =
+                found.iter().map(|p| (p.pid, p.start)).collect();
+            state.exiting.retain(|key| alive.contains(key));
+            let changed = state.discovered != found;
+            state.discovered = found;
+            changed
+        };
+        if changed {
+            shared.notifier.notify();
+        }
+        let _ = tokio::time::timeout(DISCOVERY_INTERVAL, shared.rescan.notified()).await;
     }
 }
 

@@ -148,3 +148,47 @@ struct QuitTests {
         #expect(String(localized: "\(2) Services are running. Quitting stops every Run.") == "2 Services are running. Quitting stops every Run.")
     }
 }
+
+@MainActor
+struct DiscoveryTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    /// node from PATH or a usual place; the Rust tests cover discovery in
+    /// depth, this one only checks it reaches the app.
+    private var node: String? {
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        let dirs = path.split(separator: ":").map(String.init) + ["/opt/homebrew/bin", "/usr/local/bin"]
+        return dirs.map { "\($0)/node" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    @Test func findsAProcessStartedElsewhere() async throws {
+        guard let node else { return }
+        let model = AppModel(dataDirectory: data.url)
+        let folder = code.folder("outside")
+        // Detached, as if started from a terminal.
+        let shell = Process()
+        shell.executableURL = URL(filePath: "/bin/sh")
+        shell.arguments = ["-c", "'\(node)' -e 'setInterval(() => {}, 1000)' >/dev/null 2>&1 & echo $!"]
+        shell.currentDirectoryURL = folder
+        let pipe = Pipe()
+        shell.standardOutput = pipe
+        try shell.run()
+        shell.waitUntilExit()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let pid = try #require(UInt32(output.trimmingCharacters(in: .whitespacesAndNewlines)))
+
+        var found: DiscoveredProcess?
+        let deadline = Date.now.addingTimeInterval(15)
+        while found == nil, Date.now < deadline {
+            model.rescan()
+            try await Task.sleep(for: .milliseconds(200))
+            model.refresh()
+            found = model.snapshot.discovered.first { $0.pid == pid }
+        }
+        let process = try #require(found)
+        #expect(process.command.hasPrefix("node -e"))
+        #expect(model.stopDiscovered(process) == nil)
+        kill(pid_t(pid), SIGKILL)
+    }
+}
