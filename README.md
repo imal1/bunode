@@ -19,7 +19,7 @@ From a clean checkout:
 make
 ```
 
-This builds the Rust core into `build/BunodeFFI.xcframework`, generates its Swift bindings, generates `macos/Bunode.xcodeproj` and builds a universal `Bunode.app` into `build/DerivedData/Build/Products/Release/`. Development builds are signed ad hoc, so no Apple developer account is needed.
+This builds the Rust core into `build/BunodeFFI.xcframework`, generates its Swift bindings, builds the `bunode-runner` helper, generates `macos/Bunode.xcodeproj` and builds a universal `Bunode.app` into `build/DerivedData/Build/Products/Release/`. Development builds are signed ad hoc, so no Apple developer account is needed.
 
 To build and launch it:
 
@@ -35,8 +35,8 @@ Other targets:
 |---|---|
 | `make test` | Runs the Rust tests and the Swift tests |
 | `make lint` | `cargo fmt --check`, `cargo clippy` and the `bunode-core` dependency rule |
-| `make xcframework` | Rebuilds only the Rust core and the Swift bindings |
-| `make project` | Builds the XCFramework, then generates the Xcode project |
+| `make rust` | Rebuilds only the Rust side: the XCFramework, the Swift bindings and `bunode-runner` |
+| `make project` | Runs `make rust`, then generates the Xcode project |
 | `make clean` | Removes `build/`, the Xcode project and Cargo's `target/` |
 
 `make app CONFIGURATION=Debug` builds a debug app instead.
@@ -45,7 +45,7 @@ Other targets:
 
 Run `make project`, then open `macos/Bunode.xcodeproj`. The project is generated from `macos/project.yml` and is not committed, so edit the YAML and run `make project` again when you add targets or change build settings. New Swift files in `macos/Bunode/` are picked up the next time the project is generated.
 
-Xcode does not build the Rust code. After changing anything under `crates/`, run `make xcframework` before building in Xcode.
+Xcode does not build the Rust code. After changing anything under `crates/`, run `make rust` before building in Xcode.
 
 ## Layout
 

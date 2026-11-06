@@ -23,9 +23,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The integration tests start real node, bun, npm and pnpm processes.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+
       - name: Install tools
         run: |
           brew install xcodegen
+          npm install --global pnpm@10
           rustup component add clippy rustfmt
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
@@ -35,6 +42,9 @@ jobs:
           xcodebuild -version
           rustc --version
           xcodegen --version
+          node --version
+          bun --version
+          pnpm --version
 
       - uses: Swatinem/rust-cache@v2
 

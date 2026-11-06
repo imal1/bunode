@@ -9,9 +9,12 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+nix = { version = "0.31", features = ["signal", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+shell-words = "1"
 thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "process", "io-util", "net", "sync", "time", "macros"] }
 
 [dev-dependencies]
 tempfile = "3"

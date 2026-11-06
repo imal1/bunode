@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Builds bunode-ffi for Apple Silicon and Intel, generates its Swift bindings
-# and packs both into build/BunodeFFI.xcframework.
+# Builds the Rust side of Bunode.app for Apple Silicon and Intel:
+# bunode-ffi with its Swift bindings, packed into an XCFramework, and the
+# bunode-runner helper that the app bundles.
 #
 # Outputs (all under build/, which is git-ignored):
-#   build/BunodeFFI.xcframework   universal static library + C header/module map
+#   build/BunodeFFI.xcframework        universal static library + C header/module map
 #   build/ffi/swift/bunode_ffi.swift   Swift bindings, compiled into Bunode.app
+#   build/runner/bunode-runner         universal helper, copied into Contents/MacOS
 #
-# Run it again after changing any Rust code that the app links.
+# Run it again after changing any Rust code.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -15,6 +17,7 @@ TARGETS=(aarch64-apple-darwin x86_64-apple-darwin)
 LIB=libbunode_ffi.a
 OUT=build/ffi
 XCFRAMEWORK=build/BunodeFFI.xcframework
+RUNNER=build/runner/bunode-runner
 
 if [[ "$(uname -s)" != Darwin ]]; then
   echo "error: the XCFramework can only be built on macOS" >&2
@@ -30,7 +33,8 @@ if command -v rustup >/dev/null; then
 fi
 
 for target in "${TARGETS[@]}"; do
-  cargo build --package bunode-ffi --lib --release --target "$target"
+  cargo build --package bunode-ffi --lib --package bunode-runner --bin bunode-runner \
+    --release --target "$target"
 done
 
 rm -rf "$OUT" "$XCFRAMEWORK"
@@ -60,4 +64,12 @@ xcodebuild -create-xcframework \
   -headers "$OUT/include" \
   -output "$XCFRAMEWORK"
 
-echo "Built $XCFRAMEWORK and $OUT/swift/bunode_ffi.swift"
+mkdir -p "$(dirname "$RUNNER")"
+lipo -create \
+  target/aarch64-apple-darwin/release/bunode-runner \
+  target/x86_64-apple-darwin/release/bunode-runner \
+  -output "$RUNNER"
+# Only the arm64 slice comes out of the linker signed.
+codesign --force --sign - "$RUNNER"
+
+echo "Built $XCFRAMEWORK, $OUT/swift/bunode_ffi.swift and $RUNNER"

@@ -16,7 +16,7 @@ struct HomeView: View {
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(model.snapshot.projects, id: \.id) { project in
-                            ProjectSection(project: project, router: router)
+                            ProjectSection(model: model, project: project, router: router)
                         }
                     }
                 }
@@ -30,6 +30,9 @@ struct HomeView: View {
                 .font(.body.weight(.semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
+            Text("\(model.statusSummary.running) running")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
         .frame(minHeight: 28)
         .padding(EdgeInsets(top: 4, leading: 10, bottom: 6, trailing: 2))
@@ -51,6 +54,7 @@ struct HomeView: View {
 }
 
 private struct ProjectSection: View {
+    let model: AppModel
     let project: ProjectState
     let router: PopoverRouter
 
@@ -84,47 +88,111 @@ private struct ProjectSection: View {
                     .padding(EdgeInsets(top: 2, leading: 10, bottom: 6, trailing: 10))
             }
             ForEach(project.services, id: \.id) { service in
-                ServiceRow(project: project, service: service)
+                ServiceRow(model: model, project: project, service: service)
             }
         }
     }
 }
 
 struct ServiceRow: View {
+    let model: AppModel
     let project: ProjectState
     let service: ServiceState
+
+    private var status: RunStatus { model.status(of: service) }
 
     private var displayName: String {
         "\(project.name) › \(service.name)"
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            StatusDot(style: .stopped)
-            Text(service.name)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 4)
-            if let port = service.port {
-                Text(verbatim: ":\(port)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                StatusDot(style: status.dotStyle)
+                Text(service.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let note = status.rowNote {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                if let port = service.port {
+                    Text(verbatim: ":\(port)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                }
             }
+            .padding(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 4))
+            .frame(maxWidth: .infinity, minHeight: 32)
+            .contentShape(Rectangle())
+
+            RowAction(status: status, displayName: displayName) {
+                if status == .running {
+                    model.stop(service.id)
+                } else {
+                    model.start(service.id)
+                }
+            }
+            .padding(.trailing, 2)
         }
-        .padding(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 4))
-        .frame(height: 32)
-        .contentShape(Rectangle())
         .hoverHighlight()
         .help(displayName)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityAction(named: status == .running ? Text("Stop") : Text("Start")) {
+            if status == .running {
+                model.stop(service.id)
+            } else if !status.isBusy {
+                model.start(service.id)
+            }
+        }
     }
 
     private var accessibilityLabel: String {
-        var label = String(localized: "\(displayName), Stopped")
+        var label = "\(displayName), \(status.label)"
         if let port = service.port {
             label += String(localized: ", port \(String(port))")
         }
         return label
+    }
+}
+
+/// The button at the end of a Service row: Start, Stop, or a spinner while
+/// the Supervisor works (design-handoff §2.2, §5.1).
+private struct RowAction: View {
+    let status: RunStatus
+    let displayName: String
+    let action: () -> Void
+
+    var body: some View {
+        Group {
+            if status.isBusy {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+                    .frame(width: 28, height: 26)
+            } else {
+                Button(action: action) {
+                    Group {
+                        if status == .running {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.primary)
+                                .frame(width: 10, height: 10)
+                        } else {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .frame(width: 28, height: 26)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help(status == .running ? "Stop \(displayName)" : "Start \(displayName)")
+                .accessibilityLabel(status == .running ? "Stop \(displayName)" : "Start \(displayName)")
+            }
+        }
     }
 }

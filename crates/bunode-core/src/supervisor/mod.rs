@@ -1,27 +1,36 @@
-//! The Supervisor owns Bunode's true state: the configuration and, later,
-//! every Run. The UI sends it commands and renders its snapshots.
+//! The Supervisor owns Bunode's true state: the configuration and every
+//! Run. The UI sends it commands, which return at once, and renders its
+//! snapshots; it is told about changes through a single coalesced listener.
+
+mod run;
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread;
 use std::time::Duration;
 
+use tokio::sync::mpsc as async_mpsc;
+
 use crate::error::{Error, Result};
+use crate::launch;
 use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
-    AddProjectOutcome, NewService, ProjectScripts, ProjectState, ScriptGroup, ScriptOption,
-    ServiceState, SettingsState, Snapshot,
+    AddProjectOutcome, NewService, ProjectScripts, ProjectState, RunStatus, ScriptGroup,
+    ScriptOption, ServiceState, SettingsState, Snapshot,
 };
-
-/// Service names are 1–40 characters (design-handoff §6.2).
-pub const MAX_SERVICE_NAME_LENGTH: usize = 40;
 use crate::store::ConfigStore;
+
+use run::{Control, Outcome};
 
 /// Changes are reported at most this often (requirements §2.2).
 const COALESCE: Duration = Duration::from_millis(100);
+
+/// Service names are 1–40 characters (design-handoff §6.2).
+pub const MAX_SERVICE_NAME_LENGTH: usize = 40;
 
 /// Told when the state changed. It then asks for a `snapshot()`. Calls come
 /// from a background thread, at most once per 100 ms.
@@ -32,18 +41,44 @@ pub trait Listener: Send + Sync {
 pub struct SupervisorOptions {
     /// Where `config.json` lives, normally `~/Library/Application Support/Bunode`.
     pub data_dir: PathBuf,
+    /// The `bunode-runner` executable, normally inside the app bundle.
+    pub runner_path: PathBuf,
 }
 
 pub struct Supervisor {
+    shared: Arc<Shared>,
+    runtime: tokio::runtime::Runtime,
+}
+
+/// What the Supervisor's background tasks share with it.
+pub(crate) struct Shared {
     store: ConfigStore,
     state: Mutex<State>,
     notifier: Notifier,
+    runner_path: PathBuf,
+    /// Held while creating a lifeline and spawning a runner, so that no
+    /// other spawn can inherit the lifeline before it is close-on-exec.
+    spawn_lock: Mutex<()>,
 }
 
 struct State {
     config: Config,
     detections: HashMap<ProjectId, Detection>,
     config_issue: Option<String>,
+    /// The current or last Run of each Service that has had one.
+    runs: HashMap<ServiceId, RunEntry>,
+    /// The environment new Runs start from.
+    base_env: Vec<(OsString, OsString)>,
+}
+
+struct RunEntry {
+    run_number: u64,
+    status: RunStatus,
+    pid: Option<u32>,
+    stop_requested: bool,
+    /// How to reach the Run's task while it is live.
+    control: Option<async_mpsc::UnboundedSender<Control>>,
+    last_exit: Option<String>,
 }
 
 impl Supervisor {
@@ -55,25 +90,38 @@ impl Supervisor {
             .iter()
             .map(|p| (p.id, package::detect(&p.path)))
             .collect();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("bunode-supervisor")
+            .enable_all()
+            .build()
+            .expect("start the Supervisor's runtime");
         Supervisor {
-            store,
-            state: Mutex::new(State {
-                config,
-                detections,
-                config_issue: issue.map(|i| i.message),
+            shared: Arc::new(Shared {
+                store,
+                state: Mutex::new(State {
+                    config,
+                    detections,
+                    config_issue: issue.map(|i| i.message),
+                    runs: HashMap::new(),
+                    base_env: std::env::vars_os().collect(),
+                }),
+                notifier: Notifier::new(listener),
+                runner_path: options.runner_path,
+                spawn_lock: Mutex::new(()),
             }),
-            notifier: Notifier::new(listener),
+            runtime,
         }
     }
 
     pub fn snapshot(&self) -> Snapshot {
-        let state = self.lock();
+        let state = self.shared.lock();
         Snapshot {
             projects: state
                 .config
                 .projects
                 .iter()
-                .map(|p| project_state(p, &state.detections))
+                .map(|p| project_state(p, &state))
                 .collect(),
             settings: SettingsState {
                 show_running_count: state.config.settings.show_running_count,
@@ -95,10 +143,10 @@ impl Supervisor {
         }
         let detection = package::detect(&path);
 
-        let mut state = self.lock();
+        let mut state = self.shared.lock();
         if let Some(existing) = state.config.projects.iter().find(|p| p.path == path) {
             return Ok(AddProjectOutcome::AlreadyAdded {
-                project: project_state(existing, &state.detections),
+                project: project_state(existing, &state),
             });
         }
 
@@ -115,20 +163,20 @@ impl Supervisor {
             services: Vec::new(),
         };
         config.projects.push(project.clone());
-        self.save(&config)?;
+        self.shared.save(&config)?;
 
         state.config = config;
         state.detections.insert(project.id, detection);
-        let added = project_state(&project, &state.detections);
+        let added = project_state(&project, &state);
         drop(state);
-        self.notifier.notify();
+        self.shared.notifier.notify();
         Ok(AddProjectOutcome::Added { project: added })
     }
 
     /// The scripts the New Service view offers, read fresh from disk.
     pub fn project_scripts(&self, project_id: ProjectId) -> Result<ProjectScripts> {
         let (path, manager, services) = {
-            let state = self.lock();
+            let state = self.shared.lock();
             let project = state
                 .config
                 .project(project_id)
@@ -169,7 +217,7 @@ impl Supervisor {
 
     /// Adds a Service to a Project. Nothing is started.
     pub fn add_service(&self, project_id: ProjectId, new: NewService) -> Result<ServiceState> {
-        let mut state = self.lock();
+        let mut state = self.shared.lock();
         let project = state
             .config
             .project(project_id)
@@ -200,12 +248,150 @@ impl Supervisor {
             .project_mut(project_id)
             .ok_or(Error::UnknownProject)?;
         project.services.push(service.clone());
-        let added = service_state(project, &service);
-        self.save(&config)?;
+        let added = service_state(project, &service, None);
+        self.shared.save(&config)?;
         state.config = config;
         drop(state);
-        self.notifier.notify();
+        self.shared.notifier.notify();
         Ok(added)
+    }
+
+    /// General › Show running count.
+    pub fn set_show_running_count(&self, show: bool) -> Result<()> {
+        self.update_settings(|settings| settings.show_running_count = show)
+    }
+
+    fn update_settings(&self, change: impl FnOnce(&mut crate::model::Settings)) -> Result<()> {
+        let mut state = self.shared.lock();
+        let mut config = state.config.clone();
+        change(&mut config.settings);
+        if config.settings == state.config.settings {
+            return Ok(());
+        }
+        self.shared.save(&config)?;
+        state.config = config;
+        drop(state);
+        self.shared.notifier.notify();
+        Ok(())
+    }
+
+    // MARK: - Runs
+
+    /// Starts a Run of the Service, unless one is already live. Returns at
+    /// once; the Run's progress arrives through snapshots.
+    pub fn start(&self, service_id: ServiceId) -> Result<()> {
+        let mut state = self.shared.lock();
+        if state
+            .runs
+            .get(&service_id)
+            .is_some_and(|run| run.status.is_live())
+        {
+            return Ok(());
+        }
+        let (project, service) = find_service(&state.config, service_id)?;
+        let spec = launch::launch_spec(project, service, &state.config.settings, &state.base_env);
+        let project_id = project.id;
+
+        // Run numbers count every Run, including ones that fail to start.
+        let mut config = state.config.clone();
+        let run_number = {
+            let service = config
+                .project_mut(project_id)
+                .and_then(|p| p.services.iter_mut().find(|s| s.id == service_id))
+                .ok_or(Error::UnknownService)?;
+            service.runs += 1;
+            service.runs
+        };
+        // A failed save must not keep the Service from starting.
+        let _ = self.shared.store.save(&config);
+        state.config = config;
+
+        let spec = match spec {
+            Ok(spec) => spec,
+            Err(message) => {
+                state.runs.insert(
+                    service_id,
+                    RunEntry {
+                        run_number,
+                        status: RunStatus::Failed,
+                        pid: None,
+                        stop_requested: false,
+                        control: None,
+                        last_exit: Some(message),
+                    },
+                );
+                drop(state);
+                self.shared.notifier.notify();
+                return Ok(());
+            }
+        };
+
+        let (control, control_rx) = async_mpsc::unbounded_channel();
+        state.runs.insert(
+            service_id,
+            RunEntry {
+                run_number,
+                status: RunStatus::Starting,
+                pid: None,
+                stop_requested: false,
+                control: Some(control),
+                last_exit: None,
+            },
+        );
+        drop(state);
+        self.shared.notifier.notify();
+
+        let shared = self.shared.clone();
+        self.runtime.spawn(async move {
+            let outcome = run::drive(&shared, service_id, run_number, spec, control_rx).await;
+            shared.finish(service_id, run_number, outcome);
+        });
+        Ok(())
+    }
+
+    /// Stops the Service's Run: SIGTERM to its process group, SIGKILL after
+    /// the Force stop timeout. Returns at once.
+    pub fn stop(&self, service_id: ServiceId) {
+        self.control(service_id, Control::Stop);
+    }
+
+    /// Force-kills the Service's Run (SIGKILL to the whole group).
+    pub fn force_kill(&self, service_id: ServiceId) {
+        self.control(service_id, Control::Kill);
+    }
+
+    fn control(&self, service_id: ServiceId, control: Control) {
+        let mut state = self.shared.lock();
+        let Some(run) = state.runs.get_mut(&service_id) else {
+            return;
+        };
+        let Some(sender) = run.control.as_ref() else {
+            return;
+        };
+        let _ = sender.send(control);
+        run.stop_requested = true;
+        if matches!(run.status, RunStatus::Starting | RunStatus::Running) {
+            run.status = RunStatus::Stopping;
+        }
+        drop(state);
+        self.shared.notifier.notify();
+    }
+}
+
+impl Drop for Supervisor {
+    fn drop(&mut self) {
+        // Closing every lifeline makes each runner end its group.
+        let mut state = self.shared.lock();
+        for run in state.runs.values_mut() {
+            run.control = None;
+        }
+    }
+}
+
+impl Shared {
+    fn lock(&self) -> MutexGuard<'_, State> {
+        // A panic while holding the lock must not take the whole app down.
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn save(&self, config: &Config) -> Result<()> {
@@ -215,10 +401,53 @@ impl Supervisor {
         })
     }
 
-    fn lock(&self) -> MutexGuard<'_, State> {
-        // A panic while holding the lock must not take the whole app down.
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    /// The runner reported that the command started.
+    fn started(&self, service_id: ServiceId, run_number: u64, pid: u32) {
+        let mut state = self.lock();
+        let Some(run) = state.runs.get_mut(&service_id) else {
+            return;
+        };
+        if run.run_number != run_number {
+            return;
+        }
+        run.pid = Some(pid);
+        if run.status == RunStatus::Starting {
+            run.status = RunStatus::Running;
+        }
+        drop(state);
+        self.notifier.notify();
     }
+
+    /// The Run is over; record how it ended.
+    fn finish(&self, service_id: ServiceId, run_number: u64, outcome: Outcome) {
+        let mut state = self.lock();
+        let Some(run) = state.runs.get_mut(&service_id) else {
+            return;
+        };
+        if run.run_number != run_number {
+            return;
+        }
+        let (status, note) = outcome.classify(run.stop_requested);
+        run.status = status;
+        run.last_exit = note;
+        run.pid = None;
+        run.control = None;
+        drop(state);
+        self.notifier.notify();
+    }
+}
+
+fn find_service(config: &Config, service_id: ServiceId) -> Result<(&Project, &Service)> {
+    config
+        .projects
+        .iter()
+        .find_map(|p| {
+            p.services
+                .iter()
+                .find(|s| s.id == service_id)
+                .map(|s| (p, s))
+        })
+        .ok_or(Error::UnknownService)
 }
 
 /// Checks a Service name: 1–40 characters and unique in the Project,
@@ -266,7 +495,7 @@ fn effective_manager(
         .unwrap_or_else(|| detection_of(project, detections).manager)
 }
 
-fn service_state(project: &Project, service: &Service) -> ServiceState {
+fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -> ServiceState {
     ServiceState {
         id: service.id,
         project_id: project.id,
@@ -275,11 +504,15 @@ fn service_state(project: &Project, service: &Service) -> ServiceState {
         folder: service.folder.as_ref().map(|f| f.display().to_string()),
         port: service.port,
         run_through_shell: service.run_through_shell,
+        status: run.map_or(RunStatus::Stopped, |r| r.status),
+        run_number: run.map(|r| r.run_number),
+        pid: run.and_then(|r| r.pid),
+        last_exit: run.and_then(|r| r.last_exit.clone()),
     }
 }
 
-fn project_state(project: &Project, detections: &HashMap<ProjectId, Detection>) -> ProjectState {
-    let detection = detection_of(project, detections);
+fn project_state(project: &Project, state: &State) -> ProjectState {
+    let detection = detection_of(project, &state.detections);
     ProjectState {
         id: project.id,
         name: project.name.clone(),
@@ -291,7 +524,7 @@ fn project_state(project: &Project, detections: &HashMap<ProjectId, Detection>) 
         services: project
             .services
             .iter()
-            .map(|s| service_state(project, s))
+            .map(|s| service_state(project, s, state.runs.get(&s.id)))
             .collect(),
     }
 }
@@ -341,6 +574,7 @@ mod tests {
         let supervisor = Supervisor::new(
             SupervisorOptions {
                 data_dir: data.to_path_buf(),
+                runner_path: "/nonexistent/bunode-runner".into(),
             },
             counter.clone(),
         );
@@ -546,6 +780,17 @@ mod tests {
             supervisor.add_service(9999, new_service("a", "b")),
             Err(Error::UnknownProject)
         ));
+    }
+
+    #[test]
+    fn settings_persist() {
+        let data = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        assert!(supervisor.snapshot().settings.show_running_count);
+        supervisor.set_show_running_count(false).unwrap();
+        drop(supervisor);
+        let (reloaded, _) = open(data.path());
+        assert!(!reloaded.snapshot().settings.show_running_count);
     }
 
     #[test]

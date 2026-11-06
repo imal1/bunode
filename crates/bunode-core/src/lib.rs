@@ -7,6 +7,7 @@
 //! Supervisor daemon unchanged (ADR-0001, ADR-0002).
 
 pub mod error;
+pub mod launch;
 pub mod model;
 pub mod package;
 pub mod snapshot;
@@ -16,8 +17,8 @@ pub mod supervisor;
 pub use error::{Error, Result};
 pub use model::PackageManager;
 pub use snapshot::{
-    AddProjectOutcome, NewService, ProjectScripts, ProjectState, ScriptGroup, ScriptOption,
-    ServiceState, SettingsState, Snapshot,
+    AddProjectOutcome, NewService, ProjectScripts, ProjectState, RunStatus, ScriptGroup,
+    ScriptOption, ServiceState, SettingsState, Snapshot,
 };
 pub use supervisor::{Listener, Supervisor, SupervisorOptions};
 

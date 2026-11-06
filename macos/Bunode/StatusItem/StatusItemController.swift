@@ -49,7 +49,20 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 object: button
             )
         }
-        update(StatusSummary())
+        update(model.statusSummary)
+        observe(model)
+    }
+
+    /// Keeps the icon in step with the model.
+    private func observe(_ model: AppModel) {
+        withObservationTracking {
+            update(model.statusSummary)
+        } onChange: { [weak self, weak model] in
+            Task { @MainActor in
+                guard let self, let model else { return }
+                self.observe(model)
+            }
+        }
     }
 
     func update(_ summary: StatusSummary) {

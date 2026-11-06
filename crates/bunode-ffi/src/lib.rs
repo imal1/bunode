@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bunode_core::{
-    AddProjectOutcome, NewService, PackageManager, ProjectScripts, ProjectState, ScriptGroup,
-    ScriptOption, ServiceState, SettingsState, Snapshot,
+    AddProjectOutcome, NewService, PackageManager, ProjectScripts, ProjectState, RunStatus,
+    ScriptGroup, ScriptOption, ServiceState, SettingsState, Snapshot,
 };
 
 uniffi::setup_scaffolding!();
@@ -59,6 +59,21 @@ pub struct ServiceState {
     pub folder: Option<String>,
     pub port: Option<u16>,
     pub run_through_shell: bool,
+    pub status: RunStatus,
+    pub run_number: Option<u64>,
+    pub pid: Option<u32>,
+    pub last_exit: Option<String>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum RunStatus {
+    Stopped,
+    Starting,
+    Running,
+    Stopping,
+    Restarting,
+    Crashed,
+    Failed,
 }
 
 #[uniffi::remote(Record)]
@@ -139,6 +154,8 @@ impl bunode_core::Listener for ListenerAdapter {
 pub struct CoreOptions {
     /// Where `config.json` lives, normally `~/Library/Application Support/Bunode`.
     pub data_dir: String,
+    /// The `bunode-runner` executable inside the app bundle.
+    pub runner_path: String,
 }
 
 #[derive(uniffi::Object)]
@@ -153,6 +170,7 @@ impl BunodeCore {
         let supervisor = bunode_core::Supervisor::new(
             bunode_core::SupervisorOptions {
                 data_dir: PathBuf::from(options.data_dir),
+                runner_path: PathBuf::from(options.runner_path),
             },
             Arc::new(ListenerAdapter(listener)),
         );
@@ -180,6 +198,26 @@ impl BunodeCore {
     ) -> Result<ServiceState, CoreError> {
         Ok(self.supervisor.add_service(project_id, service)?)
     }
+
+    /// Starts a Run unless one is live. Returns at once.
+    pub fn start(&self, service_id: u64) -> Result<(), CoreError> {
+        Ok(self.supervisor.start(service_id)?)
+    }
+
+    /// Stops the Service's Run. Returns at once.
+    pub fn stop(&self, service_id: u64) {
+        self.supervisor.stop(service_id);
+    }
+
+    /// Force-kills the Service's Run.
+    pub fn force_kill(&self, service_id: u64) {
+        self.supervisor.force_kill(service_id);
+    }
+
+    /// General › Show running count.
+    pub fn set_show_running_count(&self, show: bool) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_show_running_count(show)?)
+    }
 }
 
 #[cfg(test)]
@@ -203,6 +241,7 @@ mod tests {
         let core = BunodeCore::new(
             CoreOptions {
                 data_dir: data.path().display().to_string(),
+                runner_path: "/nonexistent/bunode-runner".into(),
             },
             Box::new(Quiet),
         );

@@ -1,0 +1,7 @@
+{
+  "name": "node-http",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  }
+}

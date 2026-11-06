@@ -7,16 +7,16 @@ PROJECT       := macos/Bunode.xcodeproj
 APP           := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/Bunode.app
 XCODEBUILD    := xcodebuild -project $(PROJECT) -scheme Bunode -derivedDataPath $(DERIVED_DATA)
 
-.PHONY: all app xcframework project run test test-rust test-app lint clean
+.PHONY: all app rust project run test test-rust test-app lint clean
 
 all: app
 
-## xcframework: build the Rust core into build/BunodeFFI.xcframework and generate its Swift bindings
-xcframework:
-	scripts/build-xcframework.sh
+## rust: build build/BunodeFFI.xcframework, its Swift bindings and build/runner/bunode-runner
+rust:
+	scripts/build-rust.sh
 
-## project: generate macos/Bunode.xcodeproj (needs the XCFramework and bindings)
-project: xcframework
+## project: generate macos/Bunode.xcodeproj (needs the Rust build)
+project: rust
 	xcodegen generate --spec macos/project.yml
 
 ## app: build Bunode.app

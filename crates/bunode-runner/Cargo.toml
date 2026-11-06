@@ -9,6 +9,13 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+nix = { version = "0.31", features = ["signal", "process"] }
+signal-hook = "0.4"
+
+[dev-dependencies]
+bunode-core.workspace = true
+nix = { version = "0.31", features = ["signal", "process"] }
+tempfile = "3"
 
 [lints]
 workspace = true

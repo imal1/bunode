@@ -110,8 +110,20 @@ struct GeneralPane: View {
     let model: AppModel
 
     var body: some View {
-        Form {}
-            .formStyle(.grouped)
+        Form {
+            Section("App") {
+                Toggle(isOn: Binding(
+                    get: { model.snapshot.settings.showRunningCount },
+                    set: { model.setShowRunningCount($0) }
+                )) {
+                    Text("Show running count")
+                    Text("Next to the menu bar icon.")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .toggleStyle(.switch)
+        .controlSize(.small)
     }
 }
 

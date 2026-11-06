@@ -1,0 +1,7 @@
+{
+  "name": "bun-http",
+  "private": true,
+  "scripts": {
+    "start": "bun server.ts"
+  }
+}

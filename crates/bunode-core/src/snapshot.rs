@@ -39,6 +39,40 @@ pub struct ServiceState {
     pub folder: Option<String>,
     pub port: Option<u16>,
     pub run_through_shell: bool,
+    pub status: RunStatus,
+    /// The current Run's number, else the last one's; `None` before the
+    /// first Run.
+    pub run_number: Option<u64>,
+    /// The Run's command process, which leads its process group.
+    pub pid: Option<u32>,
+    /// How the last Run ended, for Crashed and Failed:
+    /// "Exited with code 1", "Couldn't start …".
+    pub last_exit: Option<String>,
+}
+
+/// Where a Service's Run is in its life (design-handoff §5.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    /// No Run, or the last one ended normally or was stopped.
+    Stopped,
+    Starting,
+    Running,
+    Stopping,
+    Restarting,
+    /// The last Run exited on its own with an error.
+    Crashed,
+    /// The last Run could not start.
+    Failed,
+}
+
+impl RunStatus {
+    /// A Run exists and may still own processes.
+    pub fn is_live(self) -> bool {
+        matches!(
+            self,
+            RunStatus::Starting | RunStatus::Running | RunStatus::Stopping | RunStatus::Restarting
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

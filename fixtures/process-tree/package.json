@@ -1,0 +1,7 @@
+{
+  "name": "process-tree",
+  "private": true,
+  "scripts": {
+    "tree": "node tree.js 2"
+  }
+}
