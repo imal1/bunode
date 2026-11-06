@@ -138,8 +138,9 @@ pub struct Scanner {
 
 impl Scanner {
     /// One scan. `ours` are the process groups and runners of Bunode's own
-    /// Runs, which are never listed.
-    pub fn scan(&mut self, ours: &Ours) -> Vec<DiscoveredProcess> {
+    /// Runs, which are never listed; the ports each of those groups listens
+    /// on are returned alongside.
+    pub fn scan(&mut self, ours: &Ours) -> Scan {
         let uid = sys::current_uid();
         let me = std::process::id() as i32;
         let infos: HashMap<i32, ProcessInfo> = sys::all_pids()
@@ -234,7 +235,23 @@ impl Scanner {
             })
             .collect();
         found.sort_by_key(|p| (p.start, p.pid));
-        found
+
+        // The ports of Bunode's own Runs: every process of each group.
+        let mut group_ports: HashMap<i32, Vec<u16>> = HashMap::new();
+        for info in infos.values().filter(|p| ours.groups.contains(&p.pgid)) {
+            group_ports
+                .entry(info.pgid)
+                .or_default()
+                .extend(sys::listening_ports(info.pid));
+        }
+        for ports in group_ports.values_mut() {
+            ports.sort_unstable();
+            ports.dedup();
+        }
+        Scan {
+            discovered: found,
+            group_ports,
+        }
     }
 
     fn details_of(&mut self, info: &ProcessInfo) -> Details {
@@ -246,6 +263,13 @@ impl Scanner {
             })
             .clone()
     }
+}
+
+/// What one scan found.
+pub struct Scan {
+    pub discovered: Vec<DiscoveredProcess>,
+    /// The TCP ports each of Bunode's own Run groups listens on.
+    pub group_ports: HashMap<i32, Vec<u16>>,
 }
 
 /// Bunode's own processes, never listed.

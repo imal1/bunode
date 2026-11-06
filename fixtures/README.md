@@ -11,3 +11,4 @@ real (requirements §8.2). Each folder can be registered as a Project.
 | `crash/` | `immediately.js` exits with code 1 at once; `later.js` runs for half a second, then throws |
 | `flood/` | `flood.js [N]` prints N lines (default: forever) as fast as it can, every 10th to stderr, every 7th colored |
 | `monorepo-npm/`, `monorepo-yarn/`, `monorepo-pnpm/`, `monorepo-bun/` | The same monorepo declared each package manager's way: `apps/web` (script `where` prints its folder) and `packages/ui` |
+| `multi-port/` | `server.js` listens on `$PORT` and on a second free port, and prints both |

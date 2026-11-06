@@ -257,6 +257,23 @@ struct StatusLine: View {
         HStack(spacing: 4) {
             StatusDot(style: status.dotStyle, size: 6)
             Text(text)
+            if status.isLive, let port = service.livePorts.first {
+                Text(verbatim: "·")
+                // Opens the server in the browser (requirements §3.5).
+                Button {
+                    if let url = URL(string: "http://localhost:\(port)") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Text(verbatim: ":\(port)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Color.accentColor)
+                        .underline()
+                }
+                .buttonStyle(.plain)
+                .help("Open :\(String(port)) in browser")
+                .accessibilityLabel("Open :\(String(port)) in browser")
+            }
         }
     }
 

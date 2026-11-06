@@ -113,6 +113,7 @@ pub struct ServiceState {
     pub log_filter_generation: u64,
     pub has_pending_config: bool,
     pub ended_by: Option<RunEnd>,
+    pub live_ports: Vec<u16>,
 }
 
 #[uniffi::remote(Enum)]

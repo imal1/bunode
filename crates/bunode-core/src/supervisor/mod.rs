@@ -164,6 +164,8 @@ struct RunEntry {
     /// Stopped because Bunode is quitting.
     quitting: bool,
     ended_by: Option<RunEnd>,
+    /// The TCP ports the Run's process group listens on, from the last scan.
+    ports: Vec<u16>,
 }
 
 /// Where a Run's output goes: memory for the Logs view, and its file.
@@ -1037,6 +1039,7 @@ impl Shared {
                         config_changed: false,
                         quitting: false,
                         ended_by: Some(RunEnd::FailedToStart),
+                        ports: Vec::new(),
                     },
                 );
                 drop(state);
@@ -1062,6 +1065,7 @@ impl Shared {
                 config_changed: false,
                 quitting: false,
                 ended_by: None,
+                ports: Vec::new(),
             },
         );
         drop(state);
@@ -1163,7 +1167,7 @@ impl Shared {
     }
 
     /// The runner reported that the command started.
-    fn started(&self, service_id: ServiceId, run_number: u64, pid: u32) {
+    fn started(self: &Arc<Self>, service_id: ServiceId, run_number: u64, pid: u32) {
         let mut state = self.lock();
         let Some(run) = state.runs.get_mut(&service_id) else {
             return;
@@ -1181,6 +1185,14 @@ impl Shared {
             .unwrap_or_else(|e| e.into_inner())
             .set_group(service_id, run_number, pid as i32);
         self.notifier.notify();
+        // Servers take a moment to listen; look for their ports soon.
+        let shared = self.clone();
+        self.runtime.spawn(async move {
+            for delay in [500, 1000, 1500] {
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+                shared.rescan.notify_one();
+            }
+        });
     }
 
     /// The Run is over; record how it ended, and start the next one if this
@@ -1215,6 +1227,7 @@ impl Shared {
         run.last_exit = note;
         run.pid = None;
         run.control = None;
+        run.ports.clear();
         run.config_changed = false;
         let restart = std::mem::take(&mut run.restart_after);
         let delete = std::mem::take(&mut run.delete_after);
@@ -1253,7 +1266,7 @@ async fn discover(shared: Arc<Shared>) {
             }
         };
         let scanning = scanner.clone();
-        let Ok(found) = tokio::task::spawn_blocking(move || {
+        let Ok(scan) = tokio::task::spawn_blocking(move || {
             scanning
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -1265,11 +1278,26 @@ async fn discover(shared: Arc<Shared>) {
         };
         let changed = {
             let mut state = shared.lock();
+            let found = scan.discovered;
             let alive: std::collections::HashSet<(u32, u64)> =
                 found.iter().map(|p| (p.pid, p.start)).collect();
             state.exiting.retain(|key| alive.contains(key));
-            let changed = state.discovered != found;
+            let mut changed = state.discovered != found;
             state.discovered = found;
+            for run in state.runs.values_mut() {
+                let ports = match run.pid {
+                    Some(pid) if run.status.is_live() => scan
+                        .group_ports
+                        .get(&(pid as i32))
+                        .cloned()
+                        .unwrap_or_default(),
+                    _ => Vec::new(),
+                };
+                if run.ports != ports {
+                    run.ports = ports;
+                    changed = true;
+                }
+            }
             changed
         };
         if changed {
@@ -1427,6 +1455,7 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         log_filter_generation: logs.filter_generation,
         has_pending_config: run.is_some_and(|r| r.config_changed && r.status.is_live()),
         ended_by: run.and_then(|r| r.ended_by),
+        live_ports: run.map(|r| r.ports.clone()).unwrap_or_default(),
     }
 }
 

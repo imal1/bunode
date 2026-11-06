@@ -174,11 +174,7 @@ struct ServiceRow: View {
                         .help(service.lastExit ?? note)
                 }
                 Spacer(minLength: 4)
-                if let port = service.port {
-                    Text(verbatim: ":\(port)")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                }
+                PortLabel(service: service, status: status)
             }
             .padding(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 4))
             .frame(maxWidth: .infinity, minHeight: 32)
@@ -221,7 +217,7 @@ struct ServiceRow: View {
 
     private var accessibilityLabel: String {
         var label = "\(displayName), \(note ?? status.label)"
-        if let port = service.port {
+        if let port = service.shownPort(status: status)?.port {
             label += String(localized: ", port \(String(port))")
         }
         return label
@@ -294,6 +290,38 @@ struct RowNoticeView: View {
             if model.relocateProject(project.id, to: url) != nil {
                 NSSound.beep()
             }
+        }
+    }
+}
+
+extension ServiceState {
+    /// The port a row shows (design-handoff §2.2): the one the live Run
+    /// listens on, else the configured one, else none.
+    func shownPort(status: RunStatus) -> (port: UInt16, isLive: Bool)? {
+        if status.isLive, let live = livePorts.first {
+            return (live, true)
+        }
+        return port.map { ($0, false) }
+    }
+}
+
+/// `:3000` in the accent color while the Run listens on it, gray for the
+/// configured port, `+1` when the Run listens on more.
+struct PortLabel: View {
+    let service: ServiceState
+    let status: RunStatus
+
+    var body: some View {
+        if let shown = service.shownPort(status: status) {
+            HStack(spacing: 2) {
+                Text(verbatim: ":\(shown.port)")
+                if shown.isLive, service.livePorts.count > 1 {
+                    Text(verbatim: "+\(service.livePorts.count - 1)")
+                }
+            }
+            .font(.caption.monospaced())
+            .foregroundStyle(shown.isLive ? Color.accentColor : Color.secondary)
+            .help(service.livePorts.map { ":\($0)" }.joined(separator: " "))
         }
     }
 }

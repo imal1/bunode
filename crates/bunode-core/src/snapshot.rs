@@ -112,6 +112,8 @@ pub struct ServiceState {
     pub has_pending_config: bool,
     /// How the last Run ended; `None` while it is live or before any.
     pub ended_by: Option<RunEnd>,
+    /// The TCP ports the live Run listens on, any process of its group.
+    pub live_ports: Vec<u16>,
 }
 
 /// Why a Run ended (requirements §3.8): Bunode tells a Stop by the user
