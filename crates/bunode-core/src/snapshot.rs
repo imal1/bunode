@@ -72,6 +72,10 @@ pub struct ProjectState {
     pub several_lockfiles: bool,
     /// The Project's folder is gone (moved or deleted).
     pub is_missing: bool,
+    /// Discovered Processes running in the Project's folder or below it
+    /// (their PIDs, in `Snapshot::discovered` order): Home shows them as
+    /// read-only External rows. Never a Service's Run.
+    pub external: Vec<u32>,
     /// In creation order.
     pub services: Vec<ServiceState>,
 }

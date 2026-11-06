@@ -91,6 +91,11 @@ private struct ProjectSection: View {
     let router: PopoverRouter
     var focus: FocusState<UInt64?>.Binding
 
+    /// Discovered Processes running in this Project's folder.
+    private var externalProcesses: [DiscoveredProcess] {
+        project.external.compactMap { pid in model.snapshot.discovered.first { $0.pid == pid } }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
@@ -135,6 +140,11 @@ private struct ProjectSection: View {
                 .focused(focus, equals: service.id)
                 if model.rowNotice?.serviceID == service.id {
                     RowNoticeView(model: model, router: router)
+                }
+            }
+            ForEach(externalProcesses, id: \.pid) { process in
+                ExternalRow(process: process) {
+                    router.push(.processes(focus: process.pid))
                 }
             }
         }
@@ -341,5 +351,47 @@ struct RowNoticeView: View {
                 NSSound.beep()
             }
         }
+    }
+}
+
+/// A read-only row for a Discovered Process running in the Project's folder
+/// (design-handoff §2.2, C5). No Start or Stop: Bunode didn't start it.
+struct ExternalRow: View {
+    let process: DiscoveredProcess
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 6) {
+                Image(systemName: "memorychip")
+                    .font(.system(size: 12))
+                Text("External · \(process.command)")
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                if let port = process.ports.first {
+                    Text(verbatim: ":\(port)")
+                        .font(.caption.monospaced())
+                }
+            }
+            .foregroundStyle(.secondary)
+            .padding(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 8))
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverHighlight()
+        .help(process.command)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint("Shows it in Other processes")
+    }
+
+    private var accessibilityLabel: String {
+        var label = String(localized: "External, \(process.command), from \(process.source)")
+        if let port = process.ports.first {
+            label += String(localized: ", port \(String(port))")
+        }
+        return label
     }
 }

@@ -89,6 +89,7 @@ pub struct ProjectState {
     pub package_manager_choice: Option<PackageManager>,
     pub several_lockfiles: bool,
     pub is_missing: bool,
+    pub external: Vec<u32>,
     pub services: Vec<ServiceState>,
 }
 

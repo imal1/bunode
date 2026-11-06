@@ -1554,12 +1554,39 @@ fn project_state(project: &Project, state: &State) -> ProjectState {
         package_manager_choice: project.package_manager,
         several_lockfiles: detection.several_lockfiles && project.package_manager.is_none(),
         is_missing: !project.path.is_dir(),
+        external: external_processes(project, state),
         services: project
             .services
             .iter()
             .map(|s| service_state(project, s, state.runs.get(&s.id)))
             .collect(),
     }
+}
+
+/// The Discovered Processes whose folder is inside `project`'s, unless a
+/// Project nested deeper inside it claims them.
+fn external_processes(project: &Project, state: &State) -> Vec<u32> {
+    let inside = |dir: &Path, root: &Path| dir.starts_with(root);
+    state
+        .discovered
+        .iter()
+        .filter(|process| {
+            let Some(cwd) = process.cwd.as_deref().map(Path::new) else {
+                return false;
+            };
+            if !inside(cwd, &project.path) {
+                return false;
+            }
+            // The deepest Project containing it is the one that shows it.
+            !state.config.projects.iter().any(|other| {
+                other.id != project.id
+                    && other.path.starts_with(&project.path)
+                    && other.path != project.path
+                    && inside(cwd, &other.path)
+            })
+        })
+        .map(|process| process.pid)
+        .collect()
 }
 
 /// Calls the listener on its own thread, coalescing bursts of changes.

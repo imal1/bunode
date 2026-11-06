@@ -143,3 +143,60 @@ fn a_package_manager_and_what_it_started_are_one_item() {
     wait_until_dead(&tree);
     let _ = launcher;
 }
+
+#[test]
+fn processes_in_a_project_folder_show_under_it() {
+    require_tool("node");
+    let h = Harness::new();
+    // The process-tree fixture is a Project; node-http is not.
+    let project = match h.supervisor.add_project(&fixture("process-tree")).unwrap() {
+        bunode_core::AddProjectOutcome::Added { project }
+        | bunode_core::AddProjectOutcome::AlreadyAdded { project } => project,
+    };
+    let inside = start_outside("process-tree", "node tree.js 0 /dev/null");
+    let elsewhere = start_outside("node-http", "node server.js --elsewhere");
+    wait_for_discovered(&h, "the process in the Project", |p| p.pid == inside as u32);
+    wait_for_discovered(&h, "the process elsewhere", |p| p.pid == elsewhere as u32);
+
+    let snapshot = h.supervisor.snapshot();
+    let external = &snapshot
+        .projects
+        .iter()
+        .find(|p| p.id == project.id)
+        .unwrap()
+        .external;
+    assert!(external.contains(&(inside as u32)));
+    assert!(!external.contains(&(elsewhere as u32)));
+    // It is shown, never claimed: the Project has no Service, let alone a Run.
+    assert!(
+        snapshot
+            .projects
+            .iter()
+            .all(|p| p.services.iter().all(|s| s.pid != Some(inside as u32)))
+    );
+
+    for pid in [inside, elsewhere] {
+        let _ = nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(pid),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+    }
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        h.supervisor.rescan();
+        let snapshot = h.supervisor.snapshot();
+        let project = snapshot
+            .projects
+            .iter()
+            .find(|p| p.id == project.id)
+            .unwrap();
+        if !project.external.contains(&(inside as u32)) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the External row never went away"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
