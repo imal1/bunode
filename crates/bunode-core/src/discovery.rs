@@ -314,11 +314,27 @@ pub fn port_owner(port: u16) -> Option<PortOwner> {
 /// (Trying to bind the port instead gives false alarms on macOS for a
 /// moment after a listener closes.)
 pub fn port_in_use(port: u16) -> bool {
+    !probe_port(port).is_empty()
+}
+
+/// The loopback connections to `port` that were accepted, as
+/// "local -> peer". A connection to itself (the kernel picked `port` as
+/// the source port too) means nobody listens, and doesn't count.
+pub fn probe_port(port: u16) -> Vec<String> {
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
     use std::time::Duration;
-    let accepts =
-        |addr: SocketAddr| TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok();
-    accepts((Ipv4Addr::LOCALHOST, port).into()) || accepts((Ipv6Addr::LOCALHOST, port).into())
+    let targets: [SocketAddr; 2] = [
+        (Ipv4Addr::LOCALHOST, port).into(),
+        (Ipv6Addr::LOCALHOST, port).into(),
+    ];
+    targets
+        .iter()
+        .filter_map(|addr| {
+            let stream = TcpStream::connect_timeout(addr, Duration::from_millis(300)).ok()?;
+            let (local, peer) = (stream.local_addr().ok()?, stream.peer_addr().ok()?);
+            (local != peer).then(|| format!("{local} -> {peer}"))
+        })
+        .collect()
 }
 
 /// The first free port after `port`, for `Use :N`.
@@ -404,7 +420,11 @@ mod tests {
         let next = next_free_port(port).unwrap();
         assert!(next > port);
         drop(listener);
-        assert!(!port_in_use(port));
+        let accepted = probe_port(port);
+        assert!(
+            accepted.is_empty(),
+            "port {port} still accepts: {accepted:?}"
+        );
     }
 
     #[test]
