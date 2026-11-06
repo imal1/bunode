@@ -1,0 +1,48 @@
+# Build entry points. `make` builds everything from a clean checkout.
+# Needs macOS 26+, Xcode 26+, Rust (rustup) and XcodeGen; see README.md.
+
+CONFIGURATION ?= Release
+DERIVED_DATA  := build/DerivedData
+PROJECT       := macos/Bunode.xcodeproj
+APP           := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/Bunode.app
+XCODEBUILD    := xcodebuild -project $(PROJECT) -scheme Bunode -derivedDataPath $(DERIVED_DATA) -quiet
+
+.PHONY: all app xcframework project run test test-rust test-app lint clean
+
+all: app
+
+## xcframework: build the Rust core into build/BunodeFFI.xcframework and generate its Swift bindings
+xcframework:
+	scripts/build-xcframework.sh
+
+## project: generate macos/Bunode.xcodeproj (needs the XCFramework and bindings)
+project: xcframework
+	xcodegen generate --spec macos/project.yml
+
+## app: build Bunode.app
+app: project
+	$(XCODEBUILD) -configuration $(CONFIGURATION) -destination 'generic/platform=macOS' build
+	@echo "Built $(APP)"
+
+## run: build and launch Bunode.app
+run: app
+	open "$(APP)"
+
+## test: run the Rust and the Swift tests
+test: test-rust test-app
+
+test-rust:
+	cargo test --workspace
+
+test-app: project
+	$(XCODEBUILD) -configuration Debug -destination 'platform=macOS' test
+
+## lint: formatting, clippy and the bunode-core dependency rule
+lint:
+	cargo fmt --all --check
+	cargo clippy --workspace --all-targets -- -D warnings
+	scripts/check-core-deps.sh
+
+clean:
+	rm -rf build $(PROJECT)
+	cargo clean

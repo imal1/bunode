@@ -1,0 +1,19 @@
+[package]
+name = "bunode-ffi"
+description = "UniFFI bindings that expose bunode-core to the Swift app."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+# staticlib: linked into Bunode.app through the XCFramework; uniffi-bindgen
+# also reads the Swift bindings' metadata from it.
+# lib: lets `cargo test` exercise the exported functions.
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+bunode-core.workspace = true
+uniffi.workspace = true

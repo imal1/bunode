@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/bunode-core",
+    "crates/bunode-ffi",
+    "crates/bunode-runner",
+    "crates/uniffi-bindgen",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/imal1/bunode"
+publish = false
+
+[workspace.dependencies]
+bunode-core = { path = "crates/bunode-core" }
+uniffi = "0.32"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

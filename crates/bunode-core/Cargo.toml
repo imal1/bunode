@@ -1,0 +1,14 @@
+[package]
+name = "bunode-core"
+description = "Bunode's process-management core: the Supervisor and everything it needs. Knows nothing about the UI or the FFI layer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

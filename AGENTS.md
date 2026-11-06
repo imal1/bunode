@@ -15,3 +15,13 @@ Default five roles; each label string equals its role name. See `docs/agents/tri
 ### Domain docs
 
 Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+## Build and test
+
+Run from the repo root (macOS 26+, Xcode 26+, rustup, XcodeGen; see `README.md`):
+
+- `make`: Rust core → `build/BunodeFFI.xcframework` + Swift bindings → `macos/Bunode.xcodeproj` (XcodeGen, not committed) → `Bunode.app`
+- `make test`: `cargo test --workspace` plus the Swift tests in `macos/BunodeTests`
+- `make lint`: `cargo fmt --check`, `cargo clippy -D warnings`, and `scripts/check-core-deps.sh` (`bunode-core` must not depend on UniFFI or Apple frameworks)
+
+On Linux only the Rust side builds and tests; CI (`.github/workflows/ci.yml`, macOS runner) runs all of it.
