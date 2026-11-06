@@ -2,6 +2,7 @@ import AppKit
 
 /// Log colors (design-handoff §3.1). The log area is dark in both
 /// appearances, so these are fixed colors, not semantic ones.
+@MainActor
 enum LogPalette {
     static let background = NSColor(srgbRed: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
     static let text = NSColor(srgbRed: 0xE5 / 255, green: 0xE5 / 255, blue: 0xEA / 255, alpha: 1)
