@@ -53,6 +53,11 @@ pub fn listening_ports(pid: i32) -> Vec<u16> {
     ports
 }
 
+/// How much memory the process has resident, in bytes.
+pub fn resident_memory(pid: i32) -> Option<u64> {
+    platform::resident_memory(pid)
+}
+
 /// The user Bunode runs as.
 pub fn current_uid() -> u32 {
     nix::unistd::getuid().as_raw()
@@ -110,6 +115,12 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         assert!(listening_ports(std::process::id() as i32).contains(&port));
+    }
+
+    #[test]
+    fn knows_its_own_memory() {
+        let bytes = resident_memory(std::process::id() as i32).unwrap();
+        assert!(bytes > 1024 * 1024, "{bytes}");
     }
 
     #[test]

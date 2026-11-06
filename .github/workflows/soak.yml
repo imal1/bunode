@@ -1,0 +1,36 @@
+name: Soak
+
+# The long stability tests (docs/stability.md): weekly, and on demand from
+# the Actions tab.
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      log_soak_secs:
+        description: Length of the log flood soak, in seconds
+        default: "1800"
+      run_soak_secs:
+        description: Length of the start/stop/restart soak, in seconds
+        default: "3600"
+
+jobs:
+  soak:
+    runs-on: macos-26
+    timeout-minutes: 180
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: Swatinem/rust-cache@v2
+      - name: Log flood soak
+        env:
+          BUNODE_SOAK_SECS: ${{ inputs.log_soak_secs || '1800' }}
+        run: cargo test --release -p bunode-runner --test stability -- --ignored --nocapture soak_a_flood_of_logs
+      - name: Start, stop and restart soak
+        env:
+          BUNODE_SOAK_SECS: ${{ inputs.run_soak_secs || '3600' }}
+        run: cargo test --release -p bunode-runner --test stability -- --ignored --nocapture soak_runs_for_a_day

@@ -28,6 +28,18 @@ pub(super) fn arguments(pid: i32) -> Option<Vec<String>> {
     )
 }
 
+pub(super) fn resident_memory(pid: i32) -> Option<u64> {
+    let status = fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    let kb: u64 = status
+        .lines()
+        .find_map(|l| l.strip_prefix("VmRSS:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    Some(kb * 1024)
+}
+
 pub(super) fn cwd(pid: i32) -> Option<PathBuf> {
     fs::read_link(format!("/proc/{pid}/cwd")).ok()
 }

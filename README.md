@@ -2,7 +2,15 @@
 
 A native macOS menu bar app for the Node.js and Bun dev servers you run every day: start and stop them in one click, see which port each one is on, and catch the ones that crashed. It also finds Node and Bun processes that something else started.
 
-Bunode is at an early stage. Today it is a skeleton: the menu bar item, its popover and an empty Settings window, wired to the Rust core. See [`docs/requirements.md`](docs/requirements.md) for where it is going.
+What it does today:
+
+- **Projects and Services**: register a folder in Settings, then add its `package.json` scripts (monorepo packages included) or any command as Services from the menu bar.
+- **Runs that never outlive Bunode**: every Run gets its own process group behind a small `bunode-runner`, so Stop, Quit, a crash or a force quit all end every process the Service started.
+- **Live logs**: stdout and stderr with colors, search, export of the full log, and a log file on disk per Run.
+- **Ports**: the ports each Run actually listens on, a link to open them, and a check before Start that the configured port is free.
+- **Other processes**: Node and Bun processes started from a terminal or an editor, with where they came from, and a careful SIGTERM.
+
+See [`docs/requirements.md`](docs/requirements.md) for the full scope and [`docs/stability.md`](docs/stability.md) for how stability is tested.
 
 ## Requirements
 
@@ -34,6 +42,7 @@ Other targets:
 | Command | What it does |
 |---|---|
 | `make test` | Runs the Rust tests and the Swift tests |
+| `make soak` | Runs the long stability soaks; see [`docs/stability.md`](docs/stability.md) |
 | `make lint` | `cargo fmt --check`, `cargo clippy` and the `bunode-core` dependency rule |
 | `make rust` | Rebuilds only the Rust side: the XCFramework, the Swift bindings and `bunode-runner` |
 | `make project` | Runs `make rust`, then generates the Xcode project |

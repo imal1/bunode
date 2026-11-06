@@ -159,3 +159,48 @@ struct ExportTests {
         #expect(text.contains(" bunode Run #1: printf"))
     }
 }
+
+/// Requirements §5.1-1: a Run that floods its output must not freeze the
+/// UI. What the main thread does per change report (take a snapshot, sync
+/// the Logs mirror) has to stay short however fast lines arrive.
+@MainActor
+struct LogFloodTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func mainThreadWorkStaysShortUnderAFlood() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        _ = await model.addProject(at: code.folder("app"))
+        let project = try #require(model.snapshot.projects.first)
+        // `yes` writes as fast as the pipe takes it.
+        let service = try await model.addService(to: project.id, name: "flood", command: "yes flood", folder: nil).get()
+        model.start(service.id)
+
+        let mirror = LogMirror()
+        var slowest: Duration = .zero
+        var ticks = 0
+        let clock = ContinuousClock()
+        let end = clock.now.advanced(by: .seconds(5))
+        while clock.now < end {
+            try await Task.sleep(for: .milliseconds(100))
+            let took = clock.measure {
+                model.refresh()
+                if let state = model.service(service.id) {
+                    _ = mirror.sync(first: state.logFirst, count: state.logCount) { from, max in
+                        model.logLines(service.id, from: from, max: max)
+                    }
+                }
+            }
+            slowest = max(slowest, took)
+            ticks += 1
+        }
+        let state = try #require(model.service(service.id))
+        #expect(state.status == .running)
+        #expect(state.logDropped > 0, "it really flooded")
+        #expect(mirror.count <= 10_000)
+        // A frame is 16 ms; a full reload of 10,000 lines may take a few.
+        #expect(slowest < .milliseconds(250), "slowest main-thread tick: \(slowest)")
+        print("log flood: \(ticks) ticks, slowest \(slowest), \(state.logDropped) lines dropped")
+        model.stop(service.id)
+    }
+}

@@ -11,9 +11,9 @@ use std::path::PathBuf;
 use std::ptr;
 
 use libc::{
-    CTL_KERN, KERN_ARGMAX, KERN_PROCARGS2, PROC_PIDLISTFDS, PROC_PIDTBSDINFO,
+    CTL_KERN, KERN_ARGMAX, KERN_PROCARGS2, PROC_PIDLISTFDS, PROC_PIDTASKINFO, PROC_PIDTBSDINFO,
     PROC_PIDVNODEPATHINFO, PROX_FDTYPE_SOCKET, proc_bsdinfo, proc_fdinfo, proc_listallpids,
-    proc_pidfdinfo, proc_pidinfo, proc_vnodepathinfo, sysctl,
+    proc_pidfdinfo, proc_pidinfo, proc_taskinfo, proc_vnodepathinfo, sysctl,
 };
 
 use super::ProcessInfo;
@@ -79,6 +79,22 @@ pub(super) fn arguments(pid: i32) -> Option<Vec<String>> {
         .map(|a| String::from_utf8_lossy(a).into_owned())
         .collect();
     (!args.is_empty()).then_some(args)
+}
+
+pub(super) fn resident_memory(pid: i32) -> Option<u64> {
+    // SAFETY: plain data, zero is valid; the length is checked below.
+    let mut info: proc_taskinfo = unsafe { zeroed() };
+    let size = size_of::<proc_taskinfo>() as c_int;
+    let written = unsafe {
+        proc_pidinfo(
+            pid,
+            PROC_PIDTASKINFO,
+            0,
+            (&mut info as *mut proc_taskinfo).cast::<c_void>(),
+            size,
+        )
+    };
+    (written == size).then_some(info.pti_resident_size)
 }
 
 pub(super) fn cwd(pid: i32) -> Option<PathBuf> {

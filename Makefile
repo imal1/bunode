@@ -7,7 +7,7 @@ PROJECT       := macos/Bunode.xcodeproj
 APP           := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/Bunode.app
 XCODEBUILD    := xcodebuild -project $(PROJECT) -scheme Bunode -derivedDataPath $(DERIVED_DATA)
 
-.PHONY: all app rust project run test test-rust test-app lint clean
+.PHONY: all app rust project run test test-rust test-app soak lint clean
 
 all: app
 
@@ -37,6 +37,10 @@ test-rust:
 # Not -quiet, so the log shows which tests ran.
 test-app: project
 	$(XCODEBUILD) -configuration Debug -destination 'platform=macOS,arch=$(shell uname -m)' test
+
+## soak: the long stability tests (docs/stability.md); BUNODE_SOAK_SECS sets their length
+soak:
+	cargo test --release -p bunode-runner --test stability -- --ignored --nocapture
 
 ## lint: formatting, clippy and the bunode-core dependency rule
 lint:
