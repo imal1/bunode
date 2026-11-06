@@ -1,0 +1,7 @@
+{
+  "name": "flood",
+  "private": true,
+  "scripts": {
+    "flood": "node flood.js"
+  }
+}

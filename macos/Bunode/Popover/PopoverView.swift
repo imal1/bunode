@@ -36,6 +36,10 @@ struct PopoverView: View {
             HomeView(model: model, router: router, openSettings: openSettings)
         case .addService(let projectID):
             AddServiceView(model: model, projectID: projectID, router: router, toaster: toaster)
+        case .service(let serviceID):
+            ServiceView(model: model, serviceID: serviceID, router: router, toaster: toaster)
+        case .logs(let serviceID):
+            LogsView(model: model, serviceID: serviceID, router: router, toaster: toaster)
         }
     }
 }

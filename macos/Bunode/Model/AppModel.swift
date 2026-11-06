@@ -181,6 +181,23 @@ final class AppModel {
         }
     }
 
+    // MARK: - Logs
+
+    func logLines(_ serviceID: UInt64, from: UInt64, max: UInt32) -> [LogLine] {
+        core.logLines(serviceId: serviceID, from: from, max: max)
+    }
+
+    func clearLogs(_ serviceID: UInt64) {
+        core.clearLogs(serviceId: serviceID)
+        refresh()
+    }
+
+    /// Advanced › Log lines kept.
+    func setLogLinesKept(_ lines: UInt32) {
+        try? core.setLogLinesKept(lines: lines)
+        refresh()
+    }
+
     /// Advanced › Force stop after, in seconds.
     func setForceStopAfter(_ seconds: UInt32) {
         try? core.setForceStopAfter(seconds: seconds)

@@ -9,6 +9,8 @@ final class PopoverRouter {
     enum Screen: Hashable {
         case home
         case addService(projectID: UInt64)
+        case service(UInt64)
+        case logs(UInt64)
     }
 
     private(set) var stack: [Screen] = [.home]

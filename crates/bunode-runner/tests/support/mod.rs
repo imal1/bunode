@@ -19,10 +19,14 @@ use tempfile::TempDir;
 
 pub const TIMEOUT: Duration = Duration::from_secs(20);
 
-struct Quiet;
+/// Counts how often the Supervisor reports a change.
+#[derive(Default)]
+pub struct Counter(pub AtomicU64);
 
-impl Listener for Quiet {
-    fn state_changed(&self) {}
+impl Listener for Counter {
+    fn state_changed(&self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 pub fn runner_path() -> PathBuf {
@@ -40,6 +44,7 @@ pub fn fixture(name: &str) -> PathBuf {
 /// A Supervisor with its own data directory.
 pub struct Harness {
     pub supervisor: Supervisor,
+    pub changes: Arc<Counter>,
     pub scratch: TempDir,
     _data: TempDir,
 }
@@ -52,9 +57,11 @@ impl Harness {
         let mut options = SupervisorOptions::new(data.path(), runner_path());
         // Tests run with the environment they were started with.
         options.login_shell = None;
-        let supervisor = Supervisor::new(options, Arc::new(Quiet));
+        let changes = Arc::new(Counter::default());
+        let supervisor = Supervisor::new(options, changes.clone());
         Harness {
             supervisor,
+            changes,
             scratch: tempfile::tempdir().unwrap(),
             _data: data,
         }

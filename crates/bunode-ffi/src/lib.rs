@@ -9,8 +9,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bunode_core::{
-    AddProjectOutcome, EnvironmentState, NewService, PackageManager, ProjectScripts, ProjectState,
-    RunStatus, ScriptGroup, ScriptOption, ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    AddProjectOutcome, EnvironmentState, LogColor, LogLine, LogSpan, LogStream, LogStyle,
+    NewService, PackageManager, ProjectScripts, ProjectState, RunStatus, ScriptGroup, ScriptOption,
+    ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -88,6 +89,9 @@ pub struct ServiceState {
     pub run_number: Option<u64>,
     pub pid: Option<u32>,
     pub last_exit: Option<String>,
+    pub log_first: u64,
+    pub log_count: u64,
+    pub log_dropped: u64,
 }
 
 #[uniffi::remote(Enum)]
@@ -139,6 +143,45 @@ pub struct NewService {
     pub name: String,
     pub command: String,
     pub folder: Option<String>,
+}
+
+#[uniffi::remote(Record)]
+pub struct LogLine {
+    pub seq: u64,
+    pub time_ms: i64,
+    pub stream: LogStream,
+    pub text: String,
+    pub spans: Vec<LogSpan>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum LogStream {
+    Stdout,
+    Stderr,
+    System,
+}
+
+#[uniffi::remote(Record)]
+pub struct LogSpan {
+    pub start: u32,
+    pub length: u32,
+    pub style: LogStyle,
+}
+
+#[uniffi::remote(Record)]
+pub struct LogStyle {
+    pub foreground: Option<LogColor>,
+    pub background: Option<LogColor>,
+    pub bold: bool,
+    pub dim: bool,
+    pub italic: bool,
+    pub underline: bool,
+}
+
+#[uniffi::remote(Enum)]
+pub enum LogColor {
+    Palette { index: u8 },
+    Rgb { red: u8, green: u8, blue: u8 },
 }
 
 // MARK: - Errors
@@ -251,6 +294,21 @@ impl BunodeCore {
         Ok(self
             .supervisor
             .set_tool_path(tool, path.as_deref().map(std::path::Path::new))?)
+    }
+
+    /// Up to `max` lines of the Service's current or last Run, from `from` on.
+    pub fn log_lines(&self, service_id: u64, from: u64, max: u32) -> Vec<LogLine> {
+        self.supervisor.log_lines(service_id, from, max)
+    }
+
+    /// Logs › Clear: hides the lines shown so far.
+    pub fn clear_logs(&self, service_id: u64) {
+        self.supervisor.clear_logs(service_id);
+    }
+
+    /// Advanced › Log lines kept: 5,000, 10,000 or 50,000.
+    pub fn set_log_lines_kept(&self, lines: u32) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_log_lines_kept(lines)?)
     }
 
     /// Advanced › Force stop after: 3, 5, 10 or 30 seconds.

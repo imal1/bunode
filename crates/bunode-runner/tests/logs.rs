@@ -1,0 +1,69 @@
+//! Run output reaches the Run's bounded log (requirements §2.2, §3.4).
+
+mod support;
+
+use std::sync::atomic::Ordering;
+use std::time::Instant;
+
+use bunode_core::{LogStream, RunStatus};
+use support::*;
+
+#[test]
+fn collects_stdout_stderr_and_system_lines() {
+    require_tool("node");
+    let h = Harness::new();
+    let id = h.service(
+        "node-http",
+        r#"node -e "console.log('to stdout'); console.error('\x1b[31mto stderr\x1b[0m')""#,
+    );
+    h.supervisor.start(id).unwrap();
+    let done = h.wait(id, "Stopped", |s| s.status == RunStatus::Stopped);
+    assert_eq!(done.log_count, 4, "{done:?}");
+
+    let lines = h.supervisor.log_lines(id, 0, 100);
+    let summary: Vec<(LogStream, &str)> =
+        lines.iter().map(|l| (l.stream, l.text.as_str())).collect();
+    assert_eq!(summary[0].0, LogStream::System);
+    assert!(summary[0].1.starts_with("Run #1: node -e"));
+    assert!(summary.contains(&(LogStream::Stdout, "to stdout")));
+    assert!(summary.contains(&(LogStream::Stderr, "to stderr")));
+    assert_eq!(summary[3], (LogStream::System, "Exited"));
+    let stderr = lines
+        .iter()
+        .find(|l| l.stream == LogStream::Stderr)
+        .unwrap();
+    assert_eq!(stderr.spans.len(), 1, "the color survives as a span");
+
+    h.supervisor.clear_logs(id);
+    assert_eq!(h.state(id).log_count, 0);
+    assert!(h.supervisor.log_lines(id, 0, 100).is_empty());
+}
+
+#[test]
+fn a_flood_of_output_stays_bounded_and_coalesced() {
+    require_tool("node");
+    let h = Harness::new();
+    let id = h.service("flood", "node flood.js 200000");
+    let before = h.changes.0.load(Ordering::SeqCst);
+    let started = Instant::now();
+
+    h.supervisor.start(id).unwrap();
+    let done = h.wait(id, "the flood to end", |s| !s.status.is_live());
+    let elapsed = started.elapsed();
+    let changes = h.changes.0.load(Ordering::SeqCst) - before;
+
+    assert_eq!(done.status, RunStatus::Stopped, "{done:?}");
+    // 200,000 lines plus the two system lines; the default keeps 10,000.
+    assert_eq!(done.log_count, 10_000);
+    assert_eq!(done.log_count + done.log_dropped, 200_002);
+    // stdout and stderr are separate pipes and interleave freely, but the
+    // newest line of each is kept, and Bunode's own line comes last.
+    let kept = h.supervisor.log_lines(id, 0, 10_000);
+    assert!(kept.iter().any(|l| l.text == "line 199999"));
+    assert!(kept.iter().any(|l| l.text == "line 200000"));
+    assert_eq!(kept.last().unwrap().stream, LogStream::System);
+
+    // At most one report per 100 ms, not one per line.
+    let allowed = elapsed.as_millis() as u64 / 100 + 5;
+    assert!(changes <= allowed, "{changes} reports in {elapsed:?}");
+}

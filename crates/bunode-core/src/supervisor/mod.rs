@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -17,6 +18,7 @@ use tokio::sync::mpsc as async_mpsc;
 use crate::env;
 use crate::error::{Error, Result};
 use crate::launch;
+use crate::logs::{LogBuffer, LogLine};
 use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
@@ -29,6 +31,9 @@ use run::{Control, Outcome};
 
 /// Changes are reported at most this often (requirements §2.2).
 const COALESCE: Duration = Duration::from_millis(100);
+
+/// The choices of Advanced › Log lines kept.
+pub const LOG_LINES_CHOICES: [u32; 3] = [5_000, 10_000, 50_000];
 
 /// The choices of Advanced › Force stop after, in seconds.
 pub const FORCE_STOP_CHOICES: [u32; 4] = [3, 5, 10, 30];
@@ -109,6 +114,19 @@ struct RunEntry {
     /// How to reach the Run's task while it is live.
     control: Option<async_mpsc::UnboundedSender<Control>>,
     last_exit: Option<String>,
+    /// The Run's output; kept after it ends, until the next Run.
+    logs: Arc<Mutex<LogBuffer>>,
+}
+
+pub(crate) fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+pub(crate) fn lock_logs(logs: &Mutex<LogBuffer>) -> MutexGuard<'_, LogBuffer> {
+    logs.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 impl Supervisor {
@@ -426,6 +444,10 @@ impl Supervisor {
         let (project, service) = find_service(&state.config, service_id)?;
         let spec = launch::launch_spec(project, service, &state.config.settings, &state.base_env);
         let project_id = project.id;
+        let command = service.command.clone();
+        let logs = Arc::new(Mutex::new(LogBuffer::new(
+            state.config.settings.log_lines_kept as usize,
+        )));
 
         // Run numbers count every Run, including ones that fail to start.
         let mut config = state.config.clone();
@@ -440,10 +462,12 @@ impl Supervisor {
         // A failed save must not keep the Service from starting.
         let _ = self.shared.store.save(&config);
         state.config = config;
+        lock_logs(&logs).push_system(now_ms(), format!("Run #{run_number}: {command}"));
 
         let spec = match spec {
             Ok(spec) => spec,
             Err(message) => {
+                lock_logs(&logs).push_system(now_ms(), message.clone());
                 state.runs.insert(
                     service_id,
                     RunEntry {
@@ -453,6 +477,7 @@ impl Supervisor {
                         stop_requested: false,
                         control: None,
                         last_exit: Some(message),
+                        logs,
                     },
                 );
                 drop(state);
@@ -471,6 +496,7 @@ impl Supervisor {
                 stop_requested: false,
                 control: Some(control),
                 last_exit: None,
+                logs: logs.clone(),
             },
         );
         drop(state);
@@ -478,10 +504,59 @@ impl Supervisor {
 
         let shared = self.shared.clone();
         self.runtime.spawn(async move {
-            let outcome = run::drive(&shared, service_id, run_number, spec, control_rx).await;
+            let outcome = run::drive(
+                shared.clone(),
+                service_id,
+                run_number,
+                spec,
+                logs,
+                control_rx,
+            )
+            .await;
             shared.finish(service_id, run_number, outcome);
         });
         Ok(())
+    }
+
+    // MARK: - Logs
+
+    /// Up to `max` lines of the Service's current or last Run, from `from` on.
+    pub fn log_lines(&self, service_id: ServiceId, from: u64, max: u32) -> Vec<LogLine> {
+        let logs = self
+            .shared
+            .lock()
+            .runs
+            .get(&service_id)
+            .map(|run| run.logs.clone());
+        match logs {
+            Some(logs) => lock_logs(&logs).lines(from, max as usize),
+            None => Vec::new(),
+        }
+    }
+
+    /// Logs › Clear: hides the lines shown so far. Files are not touched.
+    pub fn clear_logs(&self, service_id: ServiceId) {
+        let logs = self
+            .shared
+            .lock()
+            .runs
+            .get(&service_id)
+            .map(|run| run.logs.clone());
+        if let Some(logs) = logs {
+            lock_logs(&logs).clear();
+            self.shared.notifier.notify();
+        }
+    }
+
+    /// Advanced › Log lines kept: 5,000, 10,000 or 50,000 per Service, for
+    /// Runs started from now on.
+    pub fn set_log_lines_kept(&self, lines: u32) -> Result<()> {
+        if !LOG_LINES_CHOICES.contains(&lines) {
+            return Err(Error::Invalid(format!(
+                "Log lines kept must be one of {LOG_LINES_CHOICES:?}."
+            )));
+        }
+        self.update_settings(|settings| settings.log_lines_kept = lines)
     }
 
     /// Stops the Service's Run: SIGTERM to its process group, SIGKILL after
@@ -563,6 +638,8 @@ impl Shared {
             return;
         }
         let (status, note) = outcome.classify(run.stop_requested);
+        let line = note.clone().unwrap_or_else(|| "Stopped".into());
+        lock_logs(&run.logs).push_system(now_ms(), line);
         run.status = status;
         run.last_exit = note;
         run.pid = None;
@@ -662,6 +739,7 @@ fn effective_manager(
 }
 
 fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -> ServiceState {
+    let logs = run.map(|r| lock_logs(&r.logs).info()).unwrap_or_default();
     ServiceState {
         id: service.id,
         project_id: project.id,
@@ -674,6 +752,9 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         run_number: run.map(|r| r.run_number),
         pid: run.and_then(|r| r.pid),
         last_exit: run.and_then(|r| r.last_exit.clone()),
+        log_first: logs.first,
+        log_count: logs.count,
+        log_dropped: logs.dropped,
     }
 }
 
@@ -696,28 +777,34 @@ fn project_state(project: &Project, state: &State) -> ProjectState {
 }
 
 /// Calls the listener on its own thread, coalescing bursts of changes.
-struct Notifier {
+/// `notify` is cheap enough to call for every log line.
+pub(crate) struct Notifier {
     tx: mpsc::Sender<()>,
+    pending: Arc<AtomicBool>,
 }
 
 impl Notifier {
     fn new(listener: Arc<dyn Listener>) -> Notifier {
         let (tx, rx) = mpsc::channel::<()>();
+        let pending = Arc::new(AtomicBool::new(false));
+        let flag = pending.clone();
         thread::Builder::new()
             .name("bunode-notify".into())
             .spawn(move || {
                 while rx.recv().is_ok() {
-                    while rx.try_recv().is_ok() {}
+                    flag.store(false, Ordering::SeqCst);
                     listener.state_changed();
                     thread::sleep(COALESCE);
                 }
             })
             .expect("spawn notifier thread");
-        Notifier { tx }
+        Notifier { tx, pending }
     }
 
-    fn notify(&self) {
-        let _ = self.tx.send(());
+    pub(crate) fn notify(&self) {
+        if !self.pending.swap(true, Ordering::SeqCst) {
+            let _ = self.tx.send(());
+        }
     }
 }
 

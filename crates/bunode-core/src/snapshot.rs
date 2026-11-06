@@ -91,6 +91,11 @@ pub struct ServiceState {
     /// How the last Run ended, for Crashed and Failed:
     /// "Exited with code 1", "Couldn't start …".
     pub last_exit: Option<String>,
+    /// The log of the current or last Run: `seq` of the first line shown,
+    /// how many are shown, and how many were dropped (`LogInfo`).
+    pub log_first: u64,
+    pub log_count: u64,
+    pub log_dropped: u64,
 }
 
 /// Where a Service's Run is in its life (design-handoff §5.1).

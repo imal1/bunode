@@ -88,7 +88,9 @@ private struct ProjectSection: View {
                     .padding(EdgeInsets(top: 2, leading: 10, bottom: 6, trailing: 10))
             }
             ForEach(project.services, id: \.id) { service in
-                ServiceRow(model: model, project: project, service: service)
+                ServiceRow(model: model, project: project, service: service) {
+                    router.push(.service(service.id))
+                }
             }
         }
     }
@@ -98,6 +100,8 @@ struct ServiceRow: View {
     let model: AppModel
     let project: ProjectState
     let service: ServiceState
+    /// Opens the Service view.
+    let open: () -> Void
 
     private var status: RunStatus { model.status(of: service) }
     private var isNotResponding: Bool { model.notResponding.contains(service.id) }
@@ -134,6 +138,7 @@ struct ServiceRow: View {
             .padding(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 4))
             .frame(maxWidth: .infinity, minHeight: 32)
             .contentShape(Rectangle())
+            .onTapGesture(perform: open)
 
             RowAction(status: status, isNotResponding: isNotResponding, displayName: displayName) {
                 if status == .running || isNotResponding {
@@ -148,6 +153,8 @@ struct ServiceRow: View {
         .help(displayName)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, open)
         .accessibilityAction(named: status == .running ? Text("Stop") : Text("Start")) {
             if status == .running {
                 model.stop(service.id)

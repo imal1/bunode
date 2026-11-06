@@ -4,20 +4,29 @@
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::{Instant, sleep_until};
 
-use super::Shared;
+use super::{Shared, lock_logs, now_ms};
+use crate::ansi::LineParser;
 use crate::launch::LaunchSpec;
+use crate::logs::{LogBuffer, LogStream};
 use crate::model::ServiceId;
 use crate::snapshot::RunStatus;
+
+/// Longer lines are split; nobody reads a 64 KB line in a log view.
+const MAX_LINE_BYTES: usize = 16 * 1024;
+/// After the runner exits, how long its output gets to drain. A process
+/// that escaped the group may hold the pipes open forever.
+const DRAIN_GRACE: Duration = Duration::from_secs(1);
 
 /// After a force kill, how long the runner gets to report before it is
 /// killed too.
@@ -95,10 +104,11 @@ fn parse_report(line: &str) -> Option<Report> {
 }
 
 pub(crate) async fn drive(
-    shared: &Shared,
+    shared: Arc<Shared>,
     service_id: ServiceId,
     run_number: u64,
     spec: LaunchSpec,
+    logs: Arc<Mutex<LogBuffer>>,
     mut control: UnboundedReceiver<Control>,
 ) -> Outcome {
     if !spec.cwd.is_dir() {
@@ -117,11 +127,22 @@ pub(crate) async fn drive(
     };
 
     // Output must always be drained, or a chatty Run blocks on a full pipe.
+    let mut collectors = Vec::new();
     if let Some(stdout) = runner.stdout.take() {
-        tokio::spawn(drain(stdout));
+        collectors.push(tokio::spawn(collect(
+            stdout,
+            LogStream::Stdout,
+            logs.clone(),
+            shared.clone(),
+        )));
     }
     if let Some(stderr) = runner.stderr.take() {
-        tokio::spawn(drain(stderr));
+        collectors.push(tokio::spawn(collect(
+            stderr,
+            LogStream::Stderr,
+            logs.clone(),
+            shared.clone(),
+        )));
     }
 
     let (read, mut write) = lifeline.into_split();
@@ -178,6 +199,9 @@ pub(crate) async fn drive(
     }
 
     let status = runner.wait().await;
+    for collector in collectors {
+        let _ = tokio::time::timeout(DRAIN_GRACE, collector).await;
+    }
     outcome.unwrap_or_else(|| match status {
         Ok(status) => Outcome::Lost(format!("bunode-runner exited unexpectedly ({status}).")),
         Err(e) => Outcome::Lost(format!("Lost track of bunode-runner: {e}")),
@@ -212,9 +236,59 @@ fn spawn_runner(
     Ok((child, UnixStream::from_std(ours)?))
 }
 
-async fn drain(stream: impl AsyncRead + Unpin) {
-    let mut lines = BufReader::new(stream).lines();
-    while let Ok(Some(_line)) = lines.next_line().await {}
+/// Reads one output stream into the Run's log, line by line.
+async fn collect(
+    stream: impl AsyncRead + Unpin,
+    kind: LogStream,
+    logs: Arc<Mutex<LogBuffer>>,
+    shared: Arc<Shared>,
+) {
+    let mut reader = BufReader::with_capacity(64 * 1024, stream);
+    let mut parser = LineParser::new();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match read_line(&mut reader, &mut line, MAX_LINE_BYTES).await {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        while matches!(line.last(), Some(b'\n' | b'\r')) {
+            line.pop();
+        }
+        let styled = parser.line(&line);
+        lock_logs(&logs).push(kind, now_ms(), styled);
+        shared.notifier.notify();
+    }
+}
+
+/// Reads up to and including the next newline, or `max` bytes, whichever
+/// comes first. Returns how many bytes were read; 0 at the end.
+async fn read_line(
+    reader: &mut (impl AsyncBufRead + Unpin),
+    out: &mut Vec<u8>,
+    max: usize,
+) -> std::io::Result<usize> {
+    let mut read = 0;
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            return Ok(read);
+        }
+        let room = max - out.len();
+        let window = &available[..available.len().min(room)];
+        if let Some(end) = window.iter().position(|&b| b == b'\n') {
+            out.extend_from_slice(&window[..=end]);
+            reader.consume(end + 1);
+            return Ok(read + end + 1);
+        }
+        let taken = window.len();
+        out.extend_from_slice(window);
+        reader.consume(taken);
+        read += taken;
+        if out.len() >= max {
+            return Ok(read);
+        }
+    }
 }
 
 #[cfg(test)]
