@@ -15,7 +15,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
     /// `openSettings(pane, addProject)` opens the Settings window, optionally
     /// on a pane and with the Add Project folder picker.
-    init(model: AppModel, openSettings: @escaping (SettingsPane?, Bool) -> Void) {
+    /// `quit` is called once every Run has stopped.
+    init(model: AppModel, openSettings: @escaping (SettingsPane?, Bool) -> Void, quit: @escaping () -> Void) {
         super.init()
 
         let content = NSHostingController(
@@ -24,7 +25,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 router: router,
                 toaster: toaster,
                 openSettings: openSettings,
-                quit: { NSApp.terminate(nil) }
+                quit: quit
             )
         )
         // The popover takes its size from the SwiftUI content: 340 pt wide,

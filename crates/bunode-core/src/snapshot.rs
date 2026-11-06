@@ -108,6 +108,20 @@ pub struct ServiceState {
     /// The settings changed while the Run was live; they apply to the next
     /// Run ("Saved. Applies on the next Run.").
     pub has_pending_config: bool,
+    /// How the last Run ended; `None` while it is live or before any.
+    pub ended_by: Option<RunEnd>,
+}
+
+/// Why a Run ended (requirements §3.8): Bunode tells a Stop by the user
+/// apart from a crash and from Bunode quitting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunEnd {
+    StoppedByUser,
+    BunodeQuit,
+    /// Exited on its own without an error.
+    Exited,
+    Crashed,
+    FailedToStart,
 }
 
 /// Where a Service's Run is in its life (design-handoff §5.1).

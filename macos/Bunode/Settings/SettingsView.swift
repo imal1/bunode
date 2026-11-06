@@ -165,6 +165,16 @@ struct AdvancedPane: View {
                     Text("Per Service. Export saves the full log.")
                 }
                 .pickerStyle(.menu)
+                LabeledContent {
+                    Button("Open") {
+                        let folder = AppModel.defaultDiagnosticsDirectory
+                        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(folder)
+                    }
+                } label: {
+                    Text("Diagnostics")
+                    Text("Supervisor and runner logs.")
+                }
             }
         }
         .formStyle(.grouped)

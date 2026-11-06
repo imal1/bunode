@@ -117,7 +117,11 @@ pub(crate) async fn drive(
 
     let spawned = {
         let _guard = shared.spawn_lock.lock().unwrap_or_else(|e| e.into_inner());
-        spawn_runner(&shared.runner_path, &spec)
+        spawn_runner(
+            &shared.runner_path,
+            &spec,
+            shared.runner_diagnostics.as_deref(),
+        )
     };
     let (mut runner, lifeline) = match spawned {
         Ok(spawned) => spawned,
@@ -125,6 +129,9 @@ pub(crate) async fn drive(
             return Outcome::SpawnFailed(format!("Couldn't start bunode-runner: {e}"));
         }
     };
+    if let Some(pid) = runner.id() {
+        shared.runner_spawned(service_id, run_number, pid);
+    }
 
     // Output must always be drained, or a chatty Run blocks on a full pipe.
     let mut collectors = Vec::new();
@@ -212,12 +219,17 @@ pub(crate) async fn drive(
 fn spawn_runner(
     runner_path: &std::path::Path,
     spec: &LaunchSpec,
+    diagnostics: Option<&std::path::Path>,
 ) -> std::io::Result<(tokio::process::Child, UnixStream)> {
     let (ours, theirs) = StdUnixStream::pair()?;
     let mut command = Command::new(runner_path);
     command
         .arg("--stop-timeout-ms")
-        .arg(spec.stop_timeout.as_millis().to_string())
+        .arg(spec.stop_timeout.as_millis().to_string());
+    if let Some(diagnostics) = diagnostics {
+        command.arg("--diagnostics").arg(diagnostics);
+    }
+    command
         .arg("--")
         .arg(&spec.program)
         .args(&spec.args)

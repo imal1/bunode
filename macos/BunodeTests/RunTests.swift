@@ -116,3 +116,35 @@ struct RestartTests {
         model.stop(service.id)
     }
 }
+
+@MainActor
+struct QuitTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func stopsEveryRunBeforeQuitting() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        _ = await model.addProject(at: code.folder("app"))
+        let project = try #require(model.snapshot.projects.first)
+        var ids: [UInt64] = []
+        for name in ["one", "two"] {
+            ids.append(try await model.addService(to: project.id, name: name, command: "sleep 30", folder: nil).get().id)
+        }
+        ids.forEach(model.start)
+        let deadline = Date.now.addingTimeInterval(15)
+        while model.statusSummary.running < 2, Date.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            model.refresh()
+        }
+        #expect(model.liveCount == 2)
+
+        await model.stopAllAndWait()
+        #expect(model.liveCount == 0)
+        #expect(ids.allSatisfy { model.service($0)?.endedBy == .bunodeQuit })
+    }
+
+    @Test func quitTextIsPluralized() {
+        #expect(String(localized: "Stop \(1) Services and Quit") == "Stop 1 Service and Quit")
+        #expect(String(localized: "\(2) Services are running. Quitting stops every Run.") == "2 Services are running. Quitting stops every Run.")
+    }
+}

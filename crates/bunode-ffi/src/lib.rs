@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use bunode_core::{
     AddProjectOutcome, EnvironmentState, LogColor, LogLine, LogSpan, LogStream, LogStyle,
-    NewService, PackageManager, ProjectScripts, ProjectState, RunStatus, ScriptGroup, ScriptOption,
-    ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    NewService, PackageManager, ProjectScripts, ProjectState, RunEnd, RunStatus, ScriptGroup,
+    ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -98,6 +98,16 @@ pub struct ServiceState {
     pub log_match_count: u64,
     pub log_filter_generation: u64,
     pub has_pending_config: bool,
+    pub ended_by: Option<RunEnd>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum RunEnd {
+    StoppedByUser,
+    BunodeQuit,
+    Exited,
+    Crashed,
+    FailedToStart,
 }
 
 #[uniffi::remote(Record)]
@@ -238,6 +248,8 @@ pub struct CoreOptions {
     pub data_dir: String,
     /// The `bunode-runner` executable inside the app bundle.
     pub runner_path: String,
+    /// Where diagnostics go, normally `~/Library/Logs/Bunode`; `None` for none.
+    pub diagnostics_dir: Option<String>,
 }
 
 #[derive(uniffi::Object)]
@@ -249,10 +261,11 @@ pub struct BunodeCore {
 impl BunodeCore {
     #[uniffi::constructor]
     pub fn new(options: CoreOptions, listener: Box<dyn CoreListener>) -> Arc<Self> {
-        let supervisor = bunode_core::Supervisor::new(
-            bunode_core::SupervisorOptions::new(options.data_dir, options.runner_path),
-            Arc::new(ListenerAdapter(listener)),
-        );
+        let mut supervisor_options =
+            bunode_core::SupervisorOptions::new(options.data_dir, options.runner_path);
+        supervisor_options.diagnostics_dir = options.diagnostics_dir.map(PathBuf::from);
+        let supervisor =
+            bunode_core::Supervisor::new(supervisor_options, Arc::new(ListenerAdapter(listener)));
         Arc::new(BunodeCore { supervisor })
     }
 
@@ -312,6 +325,11 @@ impl BunodeCore {
     /// Starts a Run unless one is live. Returns at once.
     pub fn start(&self, service_id: u64) -> Result<(), CoreError> {
         Ok(self.supervisor.start(service_id)?)
+    }
+
+    /// Quit: stops every live Run. Returns how many there were.
+    pub fn stop_all(&self) -> u32 {
+        self.supervisor.stop_all() as u32
     }
 
     /// Stops the Run completely, then starts a new one. Returns at once.
@@ -406,6 +424,7 @@ mod tests {
             CoreOptions {
                 data_dir: data.path().display().to_string(),
                 runner_path: "/nonexistent/bunode-runner".into(),
+                diagnostics_dir: None,
             },
             Box::new(Quiet),
         );

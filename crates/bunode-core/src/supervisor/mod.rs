@@ -15,16 +15,19 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::mpsc as async_mpsc;
 
+use crate::diagnostics::Diagnostics;
 use crate::env;
 use crate::error::{Error, Result};
 use crate::launch;
+use crate::leftovers::{self, RunRecord, RunRecords};
 use crate::logfile::{Limits, LogFiles, RunLogWriter};
 use crate::logs::{LogBuffer, LogLine, LogStream};
 use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
-    AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunStatus,
-    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunEnd,
+    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool,
+    ToolState,
 };
 use crate::store::ConfigStore;
 
@@ -61,6 +64,9 @@ pub struct SupervisorOptions {
     /// Where Run logs are written; `<data_dir>/Logs` by default.
     pub logs_dir: PathBuf,
     pub log_limits: Limits,
+    /// Where the Supervisor and the runners write their diagnostics,
+    /// normally `~/Library/Logs/Bunode`; `None` writes none.
+    pub diagnostics_dir: Option<PathBuf>,
 }
 
 impl SupervisorOptions {
@@ -73,6 +79,7 @@ impl SupervisorOptions {
             login_shell: Some(env::default_shell()),
             environment_timeout: Duration::from_secs(10),
             log_limits: Limits::default(),
+            diagnostics_dir: None,
         }
     }
 }
@@ -91,6 +98,11 @@ pub(crate) struct Shared {
     login_shell: Option<PathBuf>,
     environment_timeout: Duration,
     log_files: LogFiles,
+    /// The processes of every live Run, on disk for the next launch.
+    records: Mutex<RunRecords>,
+    diagnostics: Diagnostics,
+    /// The runners' diagnostics file.
+    runner_diagnostics: Option<PathBuf>,
     /// Where Runs' tasks run.
     runtime: tokio::runtime::Handle,
     /// Held while creating a lifeline and spawning a runner, so that no
@@ -139,6 +151,9 @@ struct RunEntry {
     delete_after: bool,
     /// The Service's settings changed while this Run was live.
     config_changed: bool,
+    /// Stopped because Bunode is quitting.
+    quitting: bool,
+    ended_by: Option<RunEnd>,
 }
 
 /// Where a Run's output goes: memory for the Logs view, and its file.
@@ -188,6 +203,13 @@ impl Supervisor {
             .enable_all()
             .build()
             .expect("start the Supervisor's runtime");
+        let diagnostics = Diagnostics::open(options.diagnostics_dir.as_deref(), "supervisor.log");
+        diagnostics.log("Supervisor started");
+        // Whatever the previous Bunode left running is ended in the
+        // background; Runs started from now on get a fresh record file.
+        let records = RunRecords::new(&options.data_dir);
+        let leftover = records.load();
+        records.save();
         let supervisor = Supervisor {
             shared: Arc::new(Shared {
                 store,
@@ -212,13 +234,51 @@ impl Supervisor {
                 login_shell: options.login_shell,
                 environment_timeout: options.environment_timeout,
                 log_files: LogFiles::new(options.logs_dir, options.log_limits),
+                records: Mutex::new(records),
+                diagnostics,
+                runner_diagnostics: options.diagnostics_dir.map(|d| d.join("runner.log")),
                 runtime: runtime.handle().clone(),
                 spawn_lock: Mutex::new(()),
             }),
             runtime,
         };
         supervisor.reload_environment();
+        if !leftover.is_empty() {
+            let shared = supervisor.shared.clone();
+            supervisor.runtime.spawn_blocking(move || {
+                shared.diagnostics.log(&format!(
+                    "Found {} Runs left over from the last launch",
+                    leftover.len()
+                ));
+                for line in leftovers::clean_up(&leftover, Duration::from_secs(3)) {
+                    shared.diagnostics.log(&line);
+                }
+            });
+        }
         supervisor
+    }
+
+    /// Quit: stops every live Run. Returns how many there were; the app
+    /// waits for the snapshot to show none before it quits.
+    pub fn stop_all(&self) -> usize {
+        let mut state = self.shared.lock();
+        let mut count = 0;
+        for run in state.runs.values_mut().filter(|r| r.status.is_live()) {
+            count += 1;
+            run.quitting = true;
+            run.stop_requested = true;
+            run.restart_after = false;
+            if let Some(control) = &run.control {
+                let _ = control.send(Control::Stop);
+            }
+            run.status = RunStatus::Stopping;
+        }
+        drop(state);
+        self.shared
+            .diagnostics
+            .log(&format!("Quitting: stopping {count} Runs"));
+        self.shared.notifier.notify();
+        count
     }
 
     // MARK: - Environment
@@ -896,6 +956,8 @@ impl Shared {
                         restart_after: false,
                         delete_after: false,
                         config_changed: false,
+                        quitting: false,
+                        ended_by: Some(RunEnd::FailedToStart),
                     },
                 );
                 drop(state);
@@ -919,6 +981,8 @@ impl Shared {
                 restart_after: false,
                 delete_after: false,
                 config_changed: false,
+                quitting: false,
+                ended_by: None,
             },
         );
         drop(state);
@@ -1001,6 +1065,24 @@ impl Shared {
         Ok(())
     }
 
+    /// The runner of a Run was spawned: remember it on disk.
+    pub(crate) fn runner_spawned(&self, service_id: ServiceId, run_number: u64, pid: u32) {
+        let Some(info) = crate::sys::process(pid as i32) else {
+            return;
+        };
+        self.records
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .add(RunRecord {
+                service: service_id,
+                run: run_number,
+                runner_pid: pid as i32,
+                runner_start: info.start,
+                group: None,
+                group_start: None,
+            });
+    }
+
     /// The runner reported that the command started.
     fn started(&self, service_id: ServiceId, run_number: u64, pid: u32) {
         let mut state = self.lock();
@@ -1015,6 +1097,10 @@ impl Shared {
             run.status = RunStatus::Running;
         }
         drop(state);
+        self.records
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_group(service_id, run_number, pid as i32);
         self.notifier.notify();
     }
 
@@ -1029,7 +1115,18 @@ impl Shared {
             return;
         }
         let (status, note) = outcome.classify(run.stop_requested);
-        let line = note.clone().unwrap_or_else(|| "Stopped".into());
+        run.ended_by = Some(match status {
+            RunStatus::Failed => RunEnd::FailedToStart,
+            RunStatus::Crashed => RunEnd::Crashed,
+            _ if run.quitting => RunEnd::BunodeQuit,
+            _ if run.stop_requested => RunEnd::StoppedByUser,
+            _ => RunEnd::Exited,
+        });
+        let line = match (&note, run.quitting) {
+            (None, true) => "Stopped because Bunode quit".to_owned(),
+            (None, false) => "Stopped".to_owned(),
+            (Some(note), _) => note.clone(),
+        };
         let time = now_ms();
         if let Some(file) = &run.file {
             file.line(time, LogStream::System, &line);
@@ -1042,7 +1139,15 @@ impl Shared {
         run.config_changed = false;
         let restart = std::mem::take(&mut run.restart_after);
         let delete = std::mem::take(&mut run.delete_after);
+        let ended_by = run.ended_by;
         drop(state);
+        self.records
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(service_id, run_number);
+        self.diagnostics.log(&format!(
+            "Service {service_id} Run #{run_number} ended: {ended_by:?}"
+        ));
         if delete {
             let _ = self.remove_service(service_id);
         } else if restart {
@@ -1199,6 +1304,7 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         log_match_count: logs.match_count,
         log_filter_generation: logs.filter_generation,
         has_pending_config: run.is_some_and(|r| r.config_changed && r.status.is_live()),
+        ended_by: run.and_then(|r| r.ended_by),
     }
 }
 

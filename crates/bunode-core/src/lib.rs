@@ -7,9 +7,11 @@
 //! Supervisor daemon unchanged (ADR-0001, ADR-0002).
 
 pub mod ansi;
+pub mod diagnostics;
 pub mod env;
 pub mod error;
 pub mod launch;
+pub mod leftovers;
 pub mod logfile;
 pub mod logs;
 pub mod model;
@@ -17,6 +19,7 @@ pub mod package;
 pub mod snapshot;
 pub mod store;
 pub mod supervisor;
+pub mod sys;
 pub mod workspace;
 
 pub use ansi::{LogColor, LogSpan, LogStyle};
@@ -24,8 +27,9 @@ pub use error::{Error, Result};
 pub use logs::{LogLine, LogStream};
 pub use model::PackageManager;
 pub use snapshot::{
-    AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunStatus,
-    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunEnd,
+    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool,
+    ToolState,
 };
 pub use supervisor::{
     FORCE_STOP_CHOICES, LOG_LINES_CHOICES, Listener, Supervisor, SupervisorOptions,

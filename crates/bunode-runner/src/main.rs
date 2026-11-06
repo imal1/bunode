@@ -12,8 +12,11 @@
 //! Bunode reads directly; its standard input is `/dev/null`.
 //!
 //! ```text
-//! bunode-runner [--stop-timeout-ms N] -- PROGRAM [ARG...]
+//! bunode-runner [--stop-timeout-ms N] [--diagnostics FILE] -- PROGRAM [ARG...]
 //! ```
+//!
+//! With `--diagnostics`, what the runner does to the group is appended to
+//! FILE (normally `~/Library/Logs/Bunode/runner.log`).
 //!
 //! Protocol on the lifeline, one line per message:
 //!
@@ -22,14 +25,16 @@
 //! - Bunode → runner: `kill` force-kills the group at once. End of file
 //!   stops the group gracefully.
 
+use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::path::PathBuf;
 use std::process::{Command, ExitCode, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, killpg};
@@ -53,15 +58,39 @@ enum Event {
 
 struct Args {
     stop_timeout: Duration,
+    diagnostics: Option<PathBuf>,
     program: String,
     args: Vec<String>,
+}
+
+/// Appends what the runner does to the diagnostics file, if there is one.
+struct Diagnostics(Option<PathBuf>);
+
+impl Diagnostics {
+    fn log(&self, message: &str) {
+        let Some(path) = &self.0 else { return };
+        let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
+            return;
+        };
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(file, "{secs} runner {}: {message}", std::process::id());
+    }
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut argv = std::env::args().skip(1);
     let mut stop_timeout = DEFAULT_STOP_TIMEOUT;
+    let mut diagnostics = None;
     loop {
         match argv.next().as_deref() {
+            Some("--diagnostics") => {
+                diagnostics = Some(PathBuf::from(
+                    argv.next().ok_or("--diagnostics needs a file")?,
+                ));
+            }
             Some("--stop-timeout-ms") => {
                 let ms = argv
                     .next()
@@ -77,6 +106,7 @@ fn parse_args() -> Result<Args, String> {
     let program = argv.next().ok_or("missing PROGRAM after --")?;
     Ok(Args {
         stop_timeout,
+        diagnostics,
         program,
         args: argv.collect(),
     })
@@ -87,7 +117,9 @@ fn main() -> ExitCode {
         Ok(args) => args,
         Err(message) => {
             eprintln!("bunode-runner: {message}");
-            eprintln!("usage: bunode-runner [--stop-timeout-ms N] -- PROGRAM [ARG...]");
+            eprintln!(
+                "usage: bunode-runner [--stop-timeout-ms N] [--diagnostics FILE] -- PROGRAM [ARG...]"
+            );
             return ExitCode::from(2);
         }
     };
@@ -106,6 +138,7 @@ fn main() -> ExitCode {
         }
     };
     let mut report = Reporter(lifeline.try_clone().ok());
+    let diagnostics = Diagnostics(args.diagnostics.clone());
 
     let child = Command::new(&args.program)
         .args(&args.args)
@@ -123,12 +156,14 @@ fn main() -> ExitCode {
                 format!("Couldn't start {}: {e}", args.program)
             };
             report.line(&format!("spawn-failed {message}"));
+            diagnostics.log(&message);
             eprintln!("bunode-runner: {message}");
             return ExitCode::from(127);
         }
     };
     let group = Pid::from_raw(child.id() as i32);
     report.line(&format!("started {}", child.id()));
+    diagnostics.log(&format!("started {} as group {}", args.program, child.id()));
 
     let (tx, rx) = mpsc::channel();
     {
@@ -154,8 +189,8 @@ fn main() -> ExitCode {
     }
     drop(tx);
 
-    let status = supervise(group, &rx, args.stop_timeout);
-    end_group(group, args.stop_timeout);
+    let status = supervise(group, &rx, args.stop_timeout, &diagnostics);
+    end_group(group, args.stop_timeout, &diagnostics);
 
     match status {
         Some(Ok(status)) => {
@@ -177,6 +212,7 @@ fn supervise(
     group: Pid,
     rx: &mpsc::Receiver<Event>,
     stop_timeout: Duration,
+    diagnostics: &Diagnostics,
 ) -> Option<io::Result<ExitStatus>> {
     let mut deadline: Option<Instant> = None;
     loop {
@@ -185,6 +221,7 @@ fn supervise(
             Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
                 Ok(event) => event,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
+                    diagnostics.log(&format!("group {group} outlived SIGTERM; SIGKILL"));
                     signal_group(group, Signal::SIGKILL);
                     deadline = Some(Instant::now() + KILL_GRACE);
                     continue;
@@ -195,11 +232,13 @@ fn supervise(
         match event {
             Event::Exited(status) => return Some(status),
             Event::Stop if deadline.is_none() => {
+                diagnostics.log(&format!("stopping: SIGTERM to group {group}"));
                 signal_group(group, Signal::SIGTERM);
                 deadline = Some(Instant::now() + stop_timeout);
             }
             Event::Stop => {}
             Event::Kill => {
+                diagnostics.log(&format!("force kill: SIGKILL to group {group}"));
                 signal_group(group, Signal::SIGKILL);
                 deadline = Some(Instant::now() + KILL_GRACE);
             }
@@ -209,10 +248,11 @@ fn supervise(
 
 /// After the leader exited, ends whatever is left of its group: SIGTERM,
 /// then SIGKILL after the stop timeout.
-fn end_group(group: Pid, stop_timeout: Duration) {
+fn end_group(group: Pid, stop_timeout: Duration, diagnostics: &Diagnostics) {
     if group_is_gone(group) {
         return;
     }
+    diagnostics.log(&format!("command exited; ending the rest of group {group}"));
     signal_group(group, Signal::SIGTERM);
     if wait_until_gone(group, stop_timeout) {
         return;

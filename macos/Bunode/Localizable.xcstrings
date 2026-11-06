@@ -24,6 +24,52 @@
         }
       }
     },
+    "%lld Services are running. Bunode stops every Run before it quits, so it never leaves processes behind.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Service is running. Bunode stops every Run before it quits, so it never leaves processes behind."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Services are running. Bunode stops every Run before it quits, so it never leaves processes behind."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Services are running. Quitting stops every Run.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Service is running. Quitting stops every Run."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Services are running. Quitting stops every Run."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld lines": {
       "extractionState": "manual",
       "localizations": {
@@ -109,6 +155,29 @@
                 "stringUnit": {
                   "state": "translated",
                   "value": "Its %lld Services leave Bunode."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Stop %lld Services and Quit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Stop %lld Service and Quit"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Stop %lld Services and Quit"
                 }
               }
             }

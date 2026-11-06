@@ -43,12 +43,18 @@ final class AppModel {
         Bundle.main.url(forAuxiliaryExecutable: "bunode-runner")
     }
 
-    init(dataDirectory: URL, runner: URL? = AppModel.runnerURL) {
+    /// `~/Library/Logs/Bunode`: the Supervisor's and the runners' logs.
+    static var defaultDiagnosticsDirectory: URL {
+        URL.libraryDirectory.appending(path: "Logs/Bunode", directoryHint: .isDirectory)
+    }
+
+    init(dataDirectory: URL, runner: URL? = AppModel.runnerURL, diagnostics: URL? = nil) {
         let listener = CoreListenerBridge()
         core = BunodeCore(
             options: CoreOptions(
                 dataDir: dataDirectory.path(percentEncoded: false),
-                runnerPath: runner?.path(percentEncoded: false) ?? ""
+                runnerPath: runner?.path(percentEncoded: false) ?? "",
+                diagnosticsDir: diagnostics?.path(percentEncoded: false)
             ),
             listener: listener
         )
@@ -290,6 +296,24 @@ final class AppModel {
     func setForceStopAfter(_ seconds: UInt32) {
         try? core.setForceStopAfter(seconds: seconds)
         refresh()
+    }
+
+    /// Services with a live Run.
+    var liveCount: Int {
+        services.count(where: { status(of: $0).isLive })
+    }
+
+    /// Quit: stops every Run and waits until the Supervisor reports them
+    /// all ended, or the Force stop timeout and then some has passed.
+    func stopAllAndWait() async {
+        let core = self.core
+        _ = await Task.detached { core.stopAll() }.value
+        let deadline = Date.now.addingTimeInterval(responseTimeout + 5)
+        refresh()
+        while services.contains(where: { $0.status.isLive }), Date.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+            refresh()
+        }
     }
 
     func dismissNotice() {

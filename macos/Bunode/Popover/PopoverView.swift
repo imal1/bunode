@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The popover's root view (design-handoff §2.2): the current view of the
@@ -7,7 +8,12 @@ struct PopoverView: View {
     let router: PopoverRouter
     let toaster: Toaster
     let openSettings: (SettingsPane?, Bool) -> Void
+    /// Quits; every Run is stopped by then.
     let quit: () -> Void
+
+    @State private var quitPhase = QuitPhase.idle
+
+    enum QuitPhase { case idle, confirming, stopping }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -21,12 +27,78 @@ struct PopoverView: View {
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
                 .padding(.bottom, 4)
+            quitConfirmation
             MenuRow(title: "Settings…", key: ",", action: { openSettings(nil, false) })
-            MenuRow(title: "Quit Bunode", key: "q", action: quit)
+            MenuRow(title: "Quit Bunode", key: "q", action: askToQuit)
         }
         .padding(6)
         .frame(width: 340)
         .toasts(toaster, maxWidth: 380)
+    }
+
+    /// Quit Bunode (design-handoff §5.6): straight away when nothing runs,
+    /// otherwise after an inline confirmation, once every Run has stopped.
+    private func askToQuit() {
+        switch quitPhase {
+        case .idle where model.liveCount == 0:
+            quit()
+        case .idle:
+            withAnimation(.easeOut(duration: 0.15)) { quitPhase = .confirming }
+        case .confirming:
+            stopAndQuit()
+        case .stopping:
+            break
+        }
+    }
+
+    private func stopAndQuit() {
+        quitPhase = .stopping
+        Task {
+            await model.stopAllAndWait()
+            quit()
+        }
+    }
+
+    @ViewBuilder
+    private var quitConfirmation: some View {
+        switch quitPhase {
+        case .idle:
+            EmptyView()
+        case .confirming:
+            let count = model.liveCount
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(count) Services are running. Quitting stops every Run.")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    Spacer(minLength: 0)
+                    Button("Cancel") { quitPhase = .idle }
+                        .keyboardShortcut(.cancelAction)
+                    Button("Stop \(count) Services and Quit", action: stopAndQuit)
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                }
+                .controlSize(.small)
+            }
+            .padding(10)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+            .padding(EdgeInsets(top: 0, leading: 2, bottom: 6, trailing: 2))
+            .onAppear {
+                NSAccessibility.post(
+                    element: NSApp as Any,
+                    notification: .announcementRequested,
+                    userInfo: [.announcement: String(localized: "\(count) Services are running. Quitting stops every Run."), .priority: NSAccessibilityPriorityLevel.high.rawValue]
+                )
+            }
+        case .stopping:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Stopping all Runs…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(EdgeInsets(top: 4, leading: 10, bottom: 8, trailing: 10))
+        }
     }
 
     @ViewBuilder
