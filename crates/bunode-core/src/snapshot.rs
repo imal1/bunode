@@ -101,6 +101,9 @@ pub struct ServiceState {
     pub log_match_first: u64,
     pub log_match_count: u64,
     pub log_filter_generation: u64,
+    /// The settings changed while the Run was live; they apply to the next
+    /// Run ("Saved. Applies on the next Run.").
+    pub has_pending_config: bool,
 }
 
 /// Where a Service's Run is in its life (design-handoff §5.1).
@@ -173,6 +176,16 @@ pub struct ScriptOption {
     pub command: String,
     /// A Service with this command and folder already exists.
     pub used: bool,
+}
+
+/// The Service view's settings, saved as a whole.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServiceEdit {
+    pub command: String,
+    /// Relative to the Project's directory; `None` is the directory itself.
+    pub folder: Option<String>,
+    pub port: Option<u16>,
+    pub run_through_shell: bool,
 }
 
 /// What the user fills in on the New Service view.

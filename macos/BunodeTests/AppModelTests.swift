@@ -101,3 +101,41 @@ struct PopoverRouterTests {
         #expect(router.stack == [.home])
     }
 }
+
+@MainActor
+struct EditServiceTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func savesEditsAndRejectsBadOnes() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        _ = await model.addProject(at: code.folder("api"))
+        _ = code.folder("api/server")
+        let project = try #require(model.snapshot.projects.first)
+        let service = try await model.addService(to: project.id, name: "dev", command: "bun run dev", folder: nil).get()
+
+        #expect(model.updateService(service.id, ServiceEdit(command: "node 'x", folder: nil, port: nil, runThroughShell: false)) == "The command has an unmatched quote.")
+        #expect(model.updateService(service.id, ServiceEdit(command: "x", folder: "..", port: nil, runThroughShell: false)) == "Choose the Project's folder or a folder inside it.")
+        #expect(model.updateService(service.id, ServiceEdit(command: "node index.js", folder: "server", port: 4000, runThroughShell: true)) == nil)
+
+        let saved = try #require(model.service(service.id))
+        #expect(saved.command == "node index.js")
+        #expect(saved.folder == "server")
+        #expect(saved.port == 4000)
+        #expect(saved.runThroughShell)
+    }
+
+    @Test func deletesAndSaysTheFilesStay() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        let folder = code.folder("api", files: ["package.json": "{}"])
+        _ = await model.addProject(at: folder)
+        let project = try #require(model.snapshot.projects.first)
+        let service = try await model.addService(to: project.id, name: "worker", command: "sleep 30", folder: nil).get()
+        model.start(service.id)
+
+        let message = await model.deleteService(service.id)
+        #expect(message.hasPrefix("Deleted api › worker. Files in "))
+        #expect(model.service(service.id) == nil)
+        #expect(FileManager.default.fileExists(atPath: folder.appending(path: "package.json").path(percentEncoded: false)))
+    }
+}

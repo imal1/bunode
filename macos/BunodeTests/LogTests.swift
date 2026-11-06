@@ -40,9 +40,9 @@ struct LogMirrorTests {
         let mirror = LogMirror()
         log.end = 4
         _ = mirror.sync(first: 0, count: 4, fetch: log.fetch)
-        // Clear: nothing shown, from line 4 on.
+        // Clear: nothing shown, from line 4 on; every row leaves the top.
         log.first = 4
-        #expect(mirror.sync(first: 4, count: 0, fetch: log.fetch) == .reload)
+        #expect(mirror.sync(first: 4, count: 0, fetch: log.fetch) == .update(removed: 4, appended: 0))
         #expect(mirror.count == 0)
         // A new Run starts over at 0.
         log.first = 0
@@ -110,14 +110,17 @@ struct RunLogTests {
         #expect(lines.map(\.text).contains("two"))
         #expect(lines.first?.stream == .system)
 
+        // Bunode's own line ("Run #1: printf 'one\ntwo\n'") matches too.
         model.setLogFilter(service.id, "TWO")
         let searchDeadline = Date.now.addingTimeInterval(5)
-        while model.service(service.id)?.logMatchCount != 1, Date.now < searchDeadline {
+        while model.service(service.id)?.logMatchCount != 2, Date.now < searchDeadline {
             try await Task.sleep(for: .milliseconds(20))
             model.refresh()
         }
         let match = try #require(model.service(service.id))
-        #expect(model.logMatchingLines(service.id, from: match.logMatchFirst, max: 10).map(\.text) == ["two"])
+        let matches = model.logMatchingLines(service.id, from: match.logMatchFirst, max: 10).map(\.text)
+        #expect(matches.count == 2)
+        #expect(matches.last == "two")
 
         model.clearLogs(service.id)
         #expect(model.service(service.id)?.logCount == 0)

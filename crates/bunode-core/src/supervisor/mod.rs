@@ -24,7 +24,7 @@ use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceI
 use crate::package::{self, Detection};
 use crate::snapshot::{
     AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunStatus,
-    ScriptGroup, ScriptOption, ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 use crate::store::ConfigStore;
 
@@ -132,6 +132,10 @@ struct RunEntry {
     file: Option<RunLogWriter>,
     /// Restart: start a new Run as soon as this one is over.
     restart_after: bool,
+    /// Delete the Service as soon as this Run is over.
+    delete_after: bool,
+    /// The Service's settings changed while this Run was live.
+    config_changed: bool,
 }
 
 /// Where a Run's output goes: memory for the Logs view, and its file.
@@ -468,6 +472,73 @@ impl Supervisor {
         Ok(())
     }
 
+    /// Saves the Service view's settings. A live Run keeps running with the
+    /// old ones; they apply to the next Run.
+    pub fn update_service(&self, service_id: ServiceId, edit: ServiceEdit) -> Result<()> {
+        let mut state = self.shared.lock();
+        let (project, _) = find_service(&state.config, service_id)?;
+        let command = edit.command.trim().to_owned();
+        if command.is_empty() {
+            return Err(Error::Invalid("Enter a command.".into()));
+        }
+        if !edit.run_through_shell {
+            launch::parse_command(&command).map_err(Error::Invalid)?;
+        }
+        if edit.port == Some(0) {
+            return Err(Error::Invalid("Use a port from 1 to 65535.".into()));
+        }
+        let folder = validate_folder(&project.path, edit.folder.as_deref())?;
+        let project_id = project.id;
+
+        let mut config = state.config.clone();
+        let service = config
+            .project_mut(project_id)
+            .and_then(|p| p.services.iter_mut().find(|s| s.id == service_id))
+            .ok_or(Error::UnknownService)?;
+        let before = service.clone();
+        service.command = command;
+        service.folder = folder;
+        service.port = edit.port;
+        service.run_through_shell = edit.run_through_shell;
+        if *service == before {
+            return Ok(());
+        }
+        self.shared.save(&config)?;
+        state.config = config;
+        if let Some(run) = state.runs.get_mut(&service_id)
+            && run.status.is_live()
+        {
+            run.config_changed = true;
+        }
+        drop(state);
+        self.shared.notifier.notify();
+        Ok(())
+    }
+
+    /// Deletes a Service from Bunode. A live Run is stopped first; the
+    /// configuration goes once the Supervisor has seen the Run end. The
+    /// Project's files are never touched; the Service's own log files are.
+    pub fn delete_service(&self, service_id: ServiceId) -> Result<()> {
+        let mut state = self.shared.lock();
+        find_service(&state.config, service_id)?;
+        if let Some(run) = state.runs.get_mut(&service_id)
+            && run.status.is_live()
+        {
+            run.delete_after = true;
+            run.restart_after = false;
+            run.stop_requested = true;
+            if let Some(control) = &run.control {
+                let _ = control.send(Control::Stop);
+            }
+            run.status = RunStatus::Stopping;
+            drop(state);
+            self.shared.notifier.notify();
+            return Ok(());
+        }
+        drop(state);
+        self.shared.remove_service(service_id)
+    }
+
     // MARK: - Runs
 
     /// Starts a Run of the Service, unless one is already live. Returns at
@@ -487,6 +558,7 @@ impl Supervisor {
         };
         match run.status {
             RunStatus::Restarting => return Ok(()),
+            _ if run.delete_after => return Ok(()),
             RunStatus::Starting | RunStatus::Running | RunStatus::Stopping => {
                 if let Some(control) = &run.control {
                     let _ = control.send(Control::Stop);
@@ -706,6 +778,8 @@ impl Shared {
                         logs,
                         file: None,
                         restart_after: false,
+                        delete_after: false,
+                        config_changed: false,
                     },
                 );
                 drop(state);
@@ -727,6 +801,8 @@ impl Shared {
                 logs: logs.clone(),
                 file: Some(log.file.clone()),
                 restart_after: false,
+                delete_after: false,
+                config_changed: false,
             },
         );
         drop(state);
@@ -758,6 +834,23 @@ impl Shared {
             path: self.store.path().display().to_string(),
             source,
         })
+    }
+
+    /// Removes a Service that has no live Run.
+    fn remove_service(&self, service_id: ServiceId) -> Result<()> {
+        let mut state = self.lock();
+        let mut config = state.config.clone();
+        for project in &mut config.projects {
+            project.services.retain(|s| s.id != service_id);
+        }
+        self.save(&config)?;
+        state.config = config;
+        state.runs.remove(&service_id);
+        state.log_filters.remove(&service_id);
+        drop(state);
+        self.log_files.remove_service(service_id);
+        self.notifier.notify();
+        Ok(())
     }
 
     /// The runner reported that the command started.
@@ -798,9 +891,13 @@ impl Shared {
         run.last_exit = note;
         run.pid = None;
         run.control = None;
+        run.config_changed = false;
         let restart = std::mem::take(&mut run.restart_after);
+        let delete = std::mem::take(&mut run.delete_after);
         drop(state);
-        if restart {
+        if delete {
+            let _ = self.remove_service(service_id);
+        } else if restart {
             let _ = self.start(service_id);
         }
         self.notifier.notify();
@@ -849,6 +946,34 @@ fn find_service(config: &Config, service_id: ServiceId) -> Result<(&Project, &Se
                 .map(|s| (p, s))
         })
         .ok_or(Error::UnknownService)
+}
+
+/// Checks that `folder` is the Project's directory or inside it, symlinks
+/// and `..` resolved. Returns it relative to the Project; `None` for the
+/// directory itself.
+fn validate_folder(project: &Path, folder: Option<&str>) -> Result<Option<PathBuf>> {
+    let Some(folder) = folder.map(str::trim).filter(|f| !f.is_empty() && *f != ".") else {
+        return Ok(None);
+    };
+    let outside = || Error::Invalid("Choose the Project's folder or a folder inside it.".into());
+    let root = fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
+    let candidate = if Path::new(folder).is_absolute() {
+        PathBuf::from(folder)
+    } else {
+        root.join(folder)
+    };
+    let resolved = fs::canonicalize(&candidate)
+        .map_err(|_| Error::Invalid(format!("{} doesn't exist.", candidate.display())))?;
+    let relative = resolved.strip_prefix(&root).map_err(|_| outside())?;
+    if relative.as_os_str().is_empty() {
+        return Ok(None);
+    }
+    if !resolved.is_dir() {
+        return Err(Error::NotAFolder {
+            path: resolved.display().to_string(),
+        });
+    }
+    Ok(Some(relative.to_path_buf()))
 }
 
 /// Checks a Service name: 1–40 characters and unique in the Project,
@@ -916,6 +1041,7 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         log_match_first: logs.match_first,
         log_match_count: logs.match_count,
         log_filter_generation: logs.filter_generation,
+        has_pending_config: run.is_some_and(|r| r.config_changed && r.status.is_live()),
     }
 }
 
@@ -1268,6 +1394,81 @@ mod tests {
                 .first()
                 .is_some_and(|t| !t.is_custom)
         });
+    }
+
+    fn edit(command: &str) -> ServiceEdit {
+        ServiceEdit {
+            command: command.into(),
+            folder: None,
+            port: None,
+            run_through_shell: false,
+        }
+    }
+
+    #[test]
+    fn edits_are_checked_and_saved() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        fs::create_dir_all(code.path().join("apps/web")).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+        let id = supervisor
+            .add_service(project.id, new_service("dev", "bun run dev"))
+            .unwrap()
+            .id;
+
+        assert!(supervisor.update_service(id, edit("")).is_err());
+        assert!(supervisor.update_service(id, edit("node 'oops")).is_err());
+        let mut shell = edit("node 'oops");
+        shell.run_through_shell = true;
+        assert!(
+            supervisor.update_service(id, shell).is_ok(),
+            "the shell parses it"
+        );
+        let mut zero = edit("x");
+        zero.port = Some(0);
+        assert!(supervisor.update_service(id, zero).is_err());
+
+        let mut escape = edit("x");
+        escape.folder = Some("../".into());
+        assert!(supervisor.update_service(id, escape).is_err());
+        let mut absolute = edit("x");
+        absolute.folder = Some(outside.path().display().to_string());
+        assert!(supervisor.update_service(id, absolute).is_err());
+
+        let mut good = edit("vite --port 4321");
+        good.folder = Some("apps/web/".into());
+        good.port = Some(4321);
+        supervisor.update_service(id, good).unwrap();
+        drop(supervisor);
+
+        let (reloaded, _) = open(data.path());
+        let service = reloaded.snapshot().projects[0].services[0].clone();
+        assert_eq!(service.command, "vite --port 4321");
+        assert_eq!(service.folder.as_deref(), Some("apps/web"));
+        assert_eq!(service.port, Some(4321));
+        assert!(!service.has_pending_config);
+    }
+
+    #[test]
+    fn deleting_a_stopped_service_removes_it_and_keeps_files() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        fs::write(code.path().join("package.json"), "{}").unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+        let id = supervisor
+            .add_service(project.id, new_service("dev", "bun run dev"))
+            .unwrap()
+            .id;
+        supervisor.delete_service(id).unwrap();
+        assert!(supervisor.snapshot().projects[0].services.is_empty());
+        assert!(code.path().join("package.json").exists());
+        assert!(matches!(
+            supervisor.delete_service(id),
+            Err(Error::UnknownService)
+        ));
     }
 
     #[test]

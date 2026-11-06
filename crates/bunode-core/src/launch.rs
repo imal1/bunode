@@ -147,6 +147,16 @@ mod tests {
     }
 
     #[test]
+    fn splits_like_a_shell_would_without_running_one() {
+        let words = |c: &str| parse_command(c).unwrap();
+        assert_eq!(words(r"node a\ b.js"), ["node", "a b.js"]);
+        assert_eq!(words(r#"node "say \"hi\"""#), ["node", r#"say "hi""#]);
+        assert_eq!(words("node '$HOME' \"*.js\""), ["node", "$HOME", "*.js"]);
+        assert_eq!(words("a && b | c"), ["a", "&&", "b", "|", "c"]);
+        assert_eq!(words("  vite   --host  "), ["vite", "--host"]);
+    }
+
+    #[test]
     fn shell_mode_runs_through_the_users_shell() {
         let mut s = service("vite && echo done | tee x");
         s.run_through_shell = true;

@@ -24,7 +24,7 @@ pub use logs::{LogLine, LogStream};
 pub use model::PackageManager;
 pub use snapshot::{
     AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunStatus,
-    ScriptGroup, ScriptOption, ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 pub use supervisor::{
     FORCE_STOP_CHOICES, LOG_LINES_CHOICES, Listener, Supervisor, SupervisorOptions,

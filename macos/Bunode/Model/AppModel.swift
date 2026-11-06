@@ -122,6 +122,36 @@ final class AppModel {
         }
     }
 
+    /// Saves the Service view's settings. Returns why they couldn't be saved.
+    func updateService(_ serviceID: UInt64, _ edit: ServiceEdit) -> String? {
+        do {
+            try core.updateService(serviceId: serviceID, edit: edit)
+            refresh()
+            return nil
+        } catch {
+            return error.userMessage
+        }
+    }
+
+    /// Deletes a Service: its Run is stopped first, then the configuration
+    /// goes. Returns the toast once the Supervisor has removed it.
+    func deleteService(_ serviceID: UInt64) async -> String {
+        guard let service = service(serviceID), let project = project(service.projectId) else {
+            return String(localized: "This Service is no longer in Bunode.")
+        }
+        let core = self.core
+        let result = await Task.detached { Result { try core.deleteService(serviceId: serviceID) } }.value
+        if case .failure(let error) = result {
+            return error.userMessage
+        }
+        let deadline = Date.now.addingTimeInterval(responseTimeout + 10)
+        while self.service(serviceID) != nil, Date.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+            refresh()
+        }
+        return String(localized: "Deleted \(project.name) › \(service.name). Files in \(project.path.abbreviatingWithTilde) are untouched.")
+    }
+
     // MARK: - Runs
 
     func start(_ serviceID: UInt64) {

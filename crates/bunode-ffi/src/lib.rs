@@ -11,7 +11,7 @@ use std::sync::Arc;
 use bunode_core::{
     AddProjectOutcome, EnvironmentState, LogColor, LogLine, LogSpan, LogStream, LogStyle,
     NewService, PackageManager, ProjectScripts, ProjectState, RunStatus, ScriptGroup, ScriptOption,
-    ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -95,6 +95,15 @@ pub struct ServiceState {
     pub log_match_first: u64,
     pub log_match_count: u64,
     pub log_filter_generation: u64,
+    pub has_pending_config: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct ServiceEdit {
+    pub command: String,
+    pub folder: Option<String>,
+    pub port: Option<u16>,
+    pub run_through_shell: bool,
 }
 
 #[uniffi::remote(Enum)]
@@ -265,6 +274,16 @@ impl BunodeCore {
         service: NewService,
     ) -> Result<ServiceState, CoreError> {
         Ok(self.supervisor.add_service(project_id, service)?)
+    }
+
+    /// Saves the Service view's settings; a live Run gets them next time.
+    pub fn update_service(&self, service_id: u64, edit: ServiceEdit) -> Result<(), CoreError> {
+        Ok(self.supervisor.update_service(service_id, edit)?)
+    }
+
+    /// Deletes a Service, stopping its Run first. Returns at once.
+    pub fn delete_service(&self, service_id: u64) -> Result<(), CoreError> {
+        Ok(self.supervisor.delete_service(service_id)?)
     }
 
     /// Starts a Run unless one is live. Returns at once.
