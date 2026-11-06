@@ -1,18 +1,22 @@
 import SwiftUI
 
-/// The popover's root view (design-handoff §2.2): a fixed header, the
-/// content area and the fixed bottom menu. For now the content area only
-/// shows the version of the Rust core, which proves the SwiftUI → UniFFI →
-/// Rust path works; the Project and Service list replaces it.
+/// The popover's root view (design-handoff §2.2): the current view of the
+/// stack, then the fixed bottom menu.
 struct PopoverView: View {
     let model: AppModel
+    let router: PopoverRouter
+    let toaster: Toaster
     let openSettings: (SettingsPane?, Bool) -> Void
     let quit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            content
+            ZStack(alignment: .top) {
+                screen
+                    .id(router.screen)
+                    .transition(.push(from: router.isForward ? .trailing : .leading))
+            }
+            .clipped()
             Divider()
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
@@ -22,22 +26,17 @@ struct PopoverView: View {
         }
         .padding(6)
         .frame(width: 340)
+        .toasts(toaster, maxWidth: 380)
     }
 
-    private var header: some View {
-        Text("Bunode")
-            .font(.body.weight(.semibold))
-            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-            .padding(EdgeInsets(top: 4, leading: 10, bottom: 6, trailing: 2))
-            .accessibilityAddTraits(.isHeader)
-    }
-
-    private var content: some View {
-        Text("Rust core \(Core.version)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 30)
+    @ViewBuilder
+    private var screen: some View {
+        switch router.screen {
+        case .home:
+            HomeView(model: model, router: router, openSettings: openSettings)
+        case .addService(let projectID):
+            AddServiceView(model: model, projectID: projectID, router: router, toaster: toaster)
+        }
     }
 }
 
@@ -76,12 +75,4 @@ private struct MenuRow: View {
             }
         }
     }
-}
-
-#Preview {
-    PopoverView(
-        model: AppModel(dataDirectory: URL.temporaryDirectory.appending(path: "BunodePreview")),
-        openSettings: { _, _ in },
-        quit: {}
-    )
 }

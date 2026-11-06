@@ -59,3 +59,40 @@ pub enum AddProjectOutcome {
         project: ProjectState,
     },
 }
+
+/// The scripts the New Service view offers for a Project.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectScripts {
+    /// `false` when the Project has no `package.json`: the view then hides
+    /// the scripts and asks for a command.
+    pub has_package_json: bool,
+    /// The Project's own scripts first; workspace packages follow.
+    pub groups: Vec<ScriptGroup>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScriptGroup {
+    /// The workspace package's name; `None` for the Project's root.
+    pub package_name: Option<String>,
+    /// Where its scripts run, relative to the Project; `None` for the root.
+    pub folder: Option<String>,
+    pub scripts: Vec<ScriptOption>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScriptOption {
+    pub name: String,
+    /// The command that runs it with the Project's package manager.
+    pub command: String,
+    /// A Service with this command and folder already exists.
+    pub used: bool,
+}
+
+/// What the user fills in on the New Service view.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewService {
+    pub name: String,
+    pub command: String,
+    /// Relative to the Project's directory; `None` is the directory itself.
+    pub folder: Option<String>,
+}

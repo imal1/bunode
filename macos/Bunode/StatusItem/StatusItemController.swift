@@ -7,6 +7,8 @@ import SwiftUI
 final class StatusItemController: NSObject, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
+    private let router = PopoverRouter()
+    private let toaster = Toaster()
     private let dot = StatusDotView()
     /// When the popover last closed; see `togglePopover(_:)`.
     private var lastClosed = Date.distantPast
@@ -19,6 +21,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let content = NSHostingController(
             rootView: PopoverView(
                 model: model,
+                router: router,
+                toaster: toaster,
                 openSettings: openSettings,
                 quit: { NSApp.terminate(nil) }
             )
@@ -77,6 +81,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
     private func showPopover() {
         guard let button = statusItem.button else { return }
+        router.reset()
         // Make the popover key, so its keyboard shortcuts (⌘, ⌘Q) work.
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)

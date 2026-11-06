@@ -9,9 +9,15 @@ use std::thread;
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::model::{Config, Project, ProjectId};
+use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
-use crate::snapshot::{AddProjectOutcome, ProjectState, ServiceState, SettingsState, Snapshot};
+use crate::snapshot::{
+    AddProjectOutcome, NewService, ProjectScripts, ProjectState, ScriptGroup, ScriptOption,
+    ServiceState, SettingsState, Snapshot,
+};
+
+/// Service names are 1–40 characters (design-handoff §6.2).
+pub const MAX_SERVICE_NAME_LENGTH: usize = 40;
 use crate::store::ConfigStore;
 
 /// Changes are reported at most this often (requirements §2.2).
@@ -119,6 +125,89 @@ impl Supervisor {
         Ok(AddProjectOutcome::Added { project: added })
     }
 
+    /// The scripts the New Service view offers, read fresh from disk.
+    pub fn project_scripts(&self, project_id: ProjectId) -> Result<ProjectScripts> {
+        let (path, manager, services) = {
+            let state = self.lock();
+            let project = state
+                .config
+                .project(project_id)
+                .ok_or(Error::UnknownProject)?;
+            (
+                project.path.clone(),
+                effective_manager(project, &state.detections),
+                project.services.clone(),
+            )
+        };
+        let scripts = package::scripts(&path);
+        let used = |command: &str, folder: Option<&Path>| {
+            services
+                .iter()
+                .any(|s| s.command == command && s.folder.as_deref() == folder)
+        };
+        let root = ScriptGroup {
+            package_name: None,
+            folder: None,
+            scripts: scripts
+                .iter()
+                .flatten()
+                .map(|script| {
+                    let command = package::script_command(manager, &script.name);
+                    ScriptOption {
+                        used: used(&command, None),
+                        name: script.name.clone(),
+                        command,
+                    }
+                })
+                .collect(),
+        };
+        Ok(ProjectScripts {
+            has_package_json: scripts.is_some(),
+            groups: vec![root],
+        })
+    }
+
+    /// Adds a Service to a Project. Nothing is started.
+    pub fn add_service(&self, project_id: ProjectId, new: NewService) -> Result<ServiceState> {
+        let mut state = self.lock();
+        let project = state
+            .config
+            .project(project_id)
+            .ok_or(Error::UnknownProject)?;
+        let name = validate_service_name(project, &new.name, None)?;
+        let command = new.command.trim();
+        if command.is_empty() {
+            return Err(Error::Invalid("Enter a command.".into()));
+        }
+        let folder = new
+            .folder
+            .map(|f| f.trim().to_owned())
+            .filter(|f| !f.is_empty() && f != ".")
+            .map(PathBuf::from);
+
+        let mut config = state.config.clone();
+        let service = Service {
+            id: config.allocate_id(),
+            name,
+            command: command.to_owned(),
+            folder,
+            port: None,
+            run_through_shell: false,
+            env: Default::default(),
+            runs: 0,
+        };
+        let project = config
+            .project_mut(project_id)
+            .ok_or(Error::UnknownProject)?;
+        project.services.push(service.clone());
+        let added = service_state(project, &service);
+        self.save(&config)?;
+        state.config = config;
+        drop(state);
+        self.notifier.notify();
+        Ok(added)
+    }
+
     fn save(&self, config: &Config) -> Result<()> {
         self.store.save(config).map_err(|source| Error::Save {
             path: self.store.path().display().to_string(),
@@ -132,11 +221,65 @@ impl Supervisor {
     }
 }
 
-fn project_state(project: &Project, detections: &HashMap<ProjectId, Detection>) -> ProjectState {
-    let detection = detections
+/// Checks a Service name: 1–40 characters and unique in the Project,
+/// ignoring case. Returns it trimmed.
+fn validate_service_name(
+    project: &Project,
+    name: &str,
+    except: Option<ServiceId>,
+) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(Error::Invalid("Enter a name.".into()));
+    }
+    if name.chars().count() > MAX_SERVICE_NAME_LENGTH {
+        return Err(Error::Invalid(format!(
+            "Use at most {MAX_SERVICE_NAME_LENGTH} characters."
+        )));
+    }
+    let taken = project
+        .services
+        .iter()
+        .any(|s| Some(s.id) != except && s.name.to_lowercase() == name.to_lowercase());
+    if taken {
+        return Err(Error::Invalid(format!(
+            "Name already used in {}",
+            project.name
+        )));
+    }
+    Ok(name.to_owned())
+}
+
+fn detection_of(project: &Project, detections: &HashMap<ProjectId, Detection>) -> Detection {
+    detections
         .get(&project.id)
         .cloned()
-        .unwrap_or_else(|| package::detect(&project.path));
+        .unwrap_or_else(|| package::detect(&project.path))
+}
+
+fn effective_manager(
+    project: &Project,
+    detections: &HashMap<ProjectId, Detection>,
+) -> PackageManager {
+    project
+        .package_manager
+        .unwrap_or_else(|| detection_of(project, detections).manager)
+}
+
+fn service_state(project: &Project, service: &Service) -> ServiceState {
+    ServiceState {
+        id: service.id,
+        project_id: project.id,
+        name: service.name.clone(),
+        command: service.command.clone(),
+        folder: service.folder.as_ref().map(|f| f.display().to_string()),
+        port: service.port,
+        run_through_shell: service.run_through_shell,
+    }
+}
+
+fn project_state(project: &Project, detections: &HashMap<ProjectId, Detection>) -> ProjectState {
+    let detection = detection_of(project, detections);
     ProjectState {
         id: project.id,
         name: project.name.clone(),
@@ -148,15 +291,7 @@ fn project_state(project: &Project, detections: &HashMap<ProjectId, Detection>) 
         services: project
             .services
             .iter()
-            .map(|s| ServiceState {
-                id: s.id,
-                project_id: project.id,
-                name: s.name.clone(),
-                command: s.command.clone(),
-                folder: s.folder.as_ref().map(|f| f.display().to_string()),
-                port: s.port,
-                run_through_shell: s.run_through_shell,
-            })
+            .map(|s| service_state(project, s))
             .collect(),
     }
 }
@@ -290,6 +425,127 @@ mod tests {
         };
         assert!(project.several_lockfiles);
         assert_eq!(project.package_manager, PackageManager::Yarn);
+    }
+
+    fn added_project(supervisor: &Supervisor, dir: &Path) -> ProjectState {
+        match supervisor.add_project(dir).unwrap() {
+            AddProjectOutcome::Added { project } => project,
+            other => panic!("expected Added, got {other:?}"),
+        }
+    }
+
+    fn new_service(name: &str, command: &str) -> NewService {
+        NewService {
+            name: name.into(),
+            command: command.into(),
+            folder: None,
+        }
+    }
+
+    #[test]
+    fn offers_scripts_with_package_manager_commands() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        fs::write(
+            code.path().join("package.json"),
+            r#"{"scripts": {"dev": "vite", "storybook": "storybook dev"}}"#,
+        )
+        .unwrap();
+        fs::write(code.path().join("pnpm-lock.yaml"), "").unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+
+        supervisor
+            .add_service(project.id, new_service("dev", "pnpm dev"))
+            .unwrap();
+        let scripts = supervisor.project_scripts(project.id).unwrap();
+        assert!(scripts.has_package_json);
+        let options = &scripts.groups[0].scripts;
+        assert_eq!(options.len(), 2);
+        assert_eq!(
+            (options[0].command.as_str(), options[0].used),
+            ("pnpm dev", true)
+        );
+        assert_eq!(
+            (options[1].command.as_str(), options[1].used),
+            ("pnpm storybook", false)
+        );
+    }
+
+    #[test]
+    fn project_without_package_json_offers_no_scripts() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+        let scripts = supervisor.project_scripts(project.id).unwrap();
+        assert!(!scripts.has_package_json);
+        assert!(scripts.groups[0].scripts.is_empty());
+    }
+
+    #[test]
+    fn adds_services_in_order_and_keeps_them() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+        supervisor
+            .add_service(project.id, new_service(" dev ", " bun run dev "))
+            .unwrap();
+        supervisor
+            .add_service(project.id, new_service("worker", "node worker.js"))
+            .unwrap();
+        drop(supervisor);
+
+        let (reloaded, _) = open(data.path());
+        let services = &reloaded.snapshot().projects[0].services;
+        let names: Vec<&str> = services.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["dev", "worker"]);
+        assert_eq!(services[0].command, "bun run dev");
+        assert_eq!(services[0].port, None);
+    }
+
+    #[test]
+    fn service_names_are_checked() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+        supervisor
+            .add_service(project.id, new_service("dev", "bun run dev"))
+            .unwrap();
+
+        let error = supervisor
+            .add_service(project.id, new_service("DEV", "bun run dev"))
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("Name already used in {}", project.name)
+        );
+        assert!(
+            supervisor
+                .add_service(project.id, new_service("", "x"))
+                .is_err()
+        );
+        assert!(
+            supervisor
+                .add_service(project.id, new_service(&"x".repeat(41), "x"))
+                .is_err()
+        );
+        assert!(
+            supervisor
+                .add_service(project.id, new_service(&"x".repeat(40), "x"))
+                .is_ok()
+        );
+        assert!(
+            supervisor
+                .add_service(project.id, new_service("ok", "  "))
+                .is_err()
+        );
+        assert!(matches!(
+            supervisor.add_service(9999, new_service("a", "b")),
+            Err(Error::UnknownProject)
+        ));
     }
 
     #[test]

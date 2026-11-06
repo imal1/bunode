@@ -15,7 +15,10 @@ pub mod supervisor;
 
 pub use error::{Error, Result};
 pub use model::PackageManager;
-pub use snapshot::{AddProjectOutcome, ProjectState, ServiceState, SettingsState, Snapshot};
+pub use snapshot::{
+    AddProjectOutcome, NewService, ProjectScripts, ProjectState, ScriptGroup, ScriptOption,
+    ServiceState, SettingsState, Snapshot,
+};
 pub use supervisor::{Listener, Supervisor, SupervisorOptions};
 
 /// The version of `bunode-core`, as set in its `Cargo.toml`.

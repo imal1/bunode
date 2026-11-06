@@ -58,4 +58,22 @@ final class AppModel {
             return error.userMessage
         }
     }
+
+    /// The scripts the New Service view offers, read fresh from disk.
+    func projectScripts(_ projectID: UInt64) async -> ProjectScripts? {
+        let core = self.core
+        return await Task.detached {
+            try? core.projectScripts(projectId: projectID)
+        }.value
+    }
+
+    func addService(to projectID: UInt64, name: String, command: String, folder: String?) async -> Result<ServiceState, any Error> {
+        let core = self.core
+        let service = NewService(name: name, command: command, folder: folder)
+        let result = await Task.detached {
+            Result { try core.addService(projectId: projectID, service: service) }
+        }.value
+        refresh()
+        return result
+    }
 }

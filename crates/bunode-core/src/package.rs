@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use serde::Deserialize;
+use serde_json::Value;
 
 use crate::model::PackageManager;
 
@@ -37,17 +37,86 @@ const LOCKFILES: &[(&str, PackageManager)] = &[
     ("package-lock.json", PackageManager::Npm),
 ];
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// A script from the `scripts` field of `package.json`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Script {
+    pub name: String,
+    /// What the script runs, as written in `package.json`.
+    pub body: String,
+}
+
+/// The parts of `package.json` Bunode reads. Fields with an unexpected
+/// shape are ignored rather than failing the whole file.
+#[derive(Debug, Default)]
 pub(crate) struct PackageJson {
-    #[serde(default)]
     pub package_manager: Option<String>,
+    /// In the order `package.json` lists them.
+    pub scripts: Vec<Script>,
+}
+
+impl PackageJson {
+    fn from_value(value: &Value) -> PackageJson {
+        let package_manager = value
+            .get("packageManager")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let scripts = value
+            .get("scripts")
+            .and_then(Value::as_object)
+            .map(|scripts| {
+                scripts
+                    .iter()
+                    .filter_map(|(name, body)| {
+                        Some(Script {
+                            name: name.clone(),
+                            body: body.as_str()?.to_owned(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        PackageJson {
+            package_manager,
+            scripts,
+        }
+    }
 }
 
 pub(crate) fn read_package_json(dir: &Path) -> Option<PackageJson> {
     let text = fs::read_to_string(dir.join("package.json")).ok()?;
     // A package.json that does not parse still counts as present.
-    Some(serde_json::from_str(&text).unwrap_or_default())
+    let value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    Some(PackageJson::from_value(&value))
+}
+
+/// The scripts of `dir/package.json`, or `None` when there is no
+/// `package.json`.
+pub fn scripts(dir: &Path) -> Option<Vec<Script>> {
+    read_package_json(dir).map(|p| p.scripts)
+}
+
+/// The command that runs script `name` with `manager` (design-handoff §5.2).
+pub fn script_command(manager: PackageManager, name: &str) -> String {
+    let name = shell_quote(name);
+    match manager {
+        PackageManager::Bun => format!("bun run {name}"),
+        PackageManager::Pnpm => format!("pnpm {name}"),
+        PackageManager::Npm => format!("npm run {name}"),
+        PackageManager::Yarn => format!("yarn {name}"),
+    }
+}
+
+/// Quotes `word` for a POSIX shell, unless it needs no quoting.
+pub fn shell_quote(word: &str) -> String {
+    let plain = !word.is_empty()
+        && word
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_@%+=:,./-".contains(c));
+    if plain {
+        word.to_owned()
+    } else {
+        format!("'{}'", word.replace('\'', r"'\''"))
+    }
 }
 
 /// Detects the package manager of `dir`: the `packageManager` field of
@@ -119,6 +188,45 @@ mod tests {
 
     fn detected(files: &[(&str, &str)]) -> Detection {
         detect(project(files).path())
+    }
+
+    #[test]
+    fn scripts_keep_their_order_and_skip_odd_entries() {
+        let dir = project(&[(
+            "package.json",
+            r#"{"scripts": {"dev": "vite", "build": "vite build", "weird": 3, "storybook": "storybook dev"}}"#,
+        )]);
+        let names: Vec<String> = scripts(dir.path())
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, ["dev", "build", "storybook"]);
+        assert_eq!(scripts(project(&[]).path()), None);
+        assert_eq!(
+            scripts(project(&[("package.json", "{")]).path()),
+            Some(vec![])
+        );
+    }
+
+    #[test]
+    fn script_commands_follow_the_package_manager() {
+        assert_eq!(script_command(PackageManager::Bun, "dev"), "bun run dev");
+        assert_eq!(script_command(PackageManager::Pnpm, "dev"), "pnpm dev");
+        assert_eq!(script_command(PackageManager::Npm, "dev"), "npm run dev");
+        assert_eq!(script_command(PackageManager::Yarn, "dev"), "yarn dev");
+        assert_eq!(
+            script_command(PackageManager::Npm, "build:web"),
+            "npm run build:web"
+        );
+        assert_eq!(
+            script_command(PackageManager::Npm, "my script"),
+            "npm run 'my script'"
+        );
+        assert_eq!(
+            script_command(PackageManager::Npm, "it's"),
+            r"npm run 'it'\''s'"
+        );
     }
 
     #[test]

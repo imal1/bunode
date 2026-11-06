@@ -9,7 +9,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bunode_core::{
-    AddProjectOutcome, PackageManager, ProjectState, ServiceState, SettingsState, Snapshot,
+    AddProjectOutcome, NewService, PackageManager, ProjectScripts, ProjectState, ScriptGroup,
+    ScriptOption, ServiceState, SettingsState, Snapshot,
 };
 
 uniffi::setup_scaffolding!();
@@ -71,6 +72,33 @@ pub struct SettingsState {
 pub enum AddProjectOutcome {
     Added { project: ProjectState },
     AlreadyAdded { project: ProjectState },
+}
+
+#[uniffi::remote(Record)]
+pub struct ProjectScripts {
+    pub has_package_json: bool,
+    pub groups: Vec<ScriptGroup>,
+}
+
+#[uniffi::remote(Record)]
+pub struct ScriptGroup {
+    pub package_name: Option<String>,
+    pub folder: Option<String>,
+    pub scripts: Vec<ScriptOption>,
+}
+
+#[uniffi::remote(Record)]
+pub struct ScriptOption {
+    pub name: String,
+    pub command: String,
+    pub used: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct NewService {
+    pub name: String,
+    pub command: String,
+    pub folder: Option<String>,
 }
 
 // MARK: - Errors
@@ -138,6 +166,19 @@ impl BunodeCore {
     /// Registers a folder as a Project.
     pub fn add_project(&self, path: String) -> Result<AddProjectOutcome, CoreError> {
         Ok(self.supervisor.add_project(&PathBuf::from(path))?)
+    }
+
+    /// The scripts the New Service view offers, read fresh from disk.
+    pub fn project_scripts(&self, project_id: u64) -> Result<ProjectScripts, CoreError> {
+        Ok(self.supervisor.project_scripts(project_id)?)
+    }
+
+    pub fn add_service(
+        &self,
+        project_id: u64,
+        service: NewService,
+    ) -> Result<ServiceState, CoreError> {
+        Ok(self.supervisor.add_service(project_id, service)?)
     }
 }
 
