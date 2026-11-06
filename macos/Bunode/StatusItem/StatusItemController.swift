@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 final class StatusItemController: NSObject, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let popover = NSPopover()
+    private let popover: NSPopover = NSPopover()
     private let router = PopoverRouter()
     private let toaster = Toaster()
     private let dot = StatusDotView()
@@ -25,7 +25,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
                 router: router,
                 toaster: toaster,
                 openSettings: openSettings,
-                quit: quit
+                quit: quit,
+                close: { [weak popover] in popover?.performClose(nil) }
             )
         )
         // The popover takes its size from the SwiftUI content: 340 pt wide,

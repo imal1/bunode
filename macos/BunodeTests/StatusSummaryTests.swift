@@ -51,3 +51,26 @@ struct PortDisplayTests {
         #expect(service(port: nil, live: []).shownPort(status: .running) == nil)
     }
 }
+
+@MainActor
+struct KeyboardTests {
+    @Test func arrowsMoveBetweenRowsAndStopAtTheEnds() {
+        let order: [UInt64] = [4, 7, 9]
+        #expect(HomeView.focus(after: nil, in: order, step: 1) == 4)
+        #expect(HomeView.focus(after: nil, in: order, step: -1) == 9)
+        #expect(HomeView.focus(after: 4, in: order, step: 1) == 7)
+        #expect(HomeView.focus(after: 9, in: order, step: 1) == 9)
+        #expect(HomeView.focus(after: 4, in: order, step: -1) == 4)
+        #expect(HomeView.focus(after: 99, in: order, step: 1) == 4)
+        #expect(HomeView.focus(after: 4, in: [], step: 1) == nil)
+    }
+
+    @Test func openingThePopoverStartsAtHome() {
+        let router = PopoverRouter()
+        router.push(.logs(3))
+        let before = router.openCount
+        router.reset()
+        #expect(router.screen == .home)
+        #expect(router.openCount == before + 1)
+    }
+}

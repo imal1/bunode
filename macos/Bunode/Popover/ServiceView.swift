@@ -27,7 +27,7 @@ struct ServiceView: View {
             let status = model.status(of: service)
             let displayName = "\(project.name) › \(service.displayName)"
             VStack(alignment: .leading, spacing: 0) {
-                TopBar(title: displayName, onBack: router.back) {
+                TopBar(title: displayName, backLabel: String(localized: "Back to Home"), onBack: router.back) {
                     StatusLine(service: service, status: status, isNotResponding: model.notResponding.contains(serviceID))
                 } trailing: {
                     StartStopButton(model: model, service: service, status: status)

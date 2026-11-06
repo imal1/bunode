@@ -10,6 +10,8 @@ struct PopoverView: View {
     let openSettings: (SettingsPane?, Bool) -> Void
     /// Quits; every Run is stopped by then.
     let quit: () -> Void
+    /// Closes the popover.
+    let close: () -> Void
 
     @State private var quitPhase = QuitPhase.idle
 
@@ -34,6 +36,20 @@ struct PopoverView: View {
         .padding(6)
         .frame(width: 340)
         .toasts(toaster, maxWidth: 380)
+        // Esc (design-handoff §9): an open confirmation's Cancel takes it
+        // first (it is the cancel action); then the warning bar, then one
+        // level back; on Home it closes the popover.
+        .onExitCommand {
+            if quitPhase == .confirming {
+                quitPhase = .idle
+            } else if model.rowNotice != nil {
+                model.dismissNotice()
+            } else if router.stack.count > 1 {
+                router.back()
+            } else {
+                close()
+            }
+        }
     }
 
     /// Quit Bunode (design-handoff §5.6): straight away when nothing runs,

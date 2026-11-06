@@ -35,8 +35,51 @@ struct HomeView: View {
                         }
                     }
                 }
+                .onKeyPress(.upArrow) { move(by: -1) }
+                .onKeyPress(.downArrow) { move(by: 1) }
+                .onKeyPress(.return) {
+                    guard let id = focusedService else { return .ignored }
+                    router.push(.service(id))
+                    return .handled
+                }
+                .onKeyPress(.space) {
+                    guard let id = focusedService, let service = model.service(id) else { return .ignored }
+                    let status = model.status(of: service)
+                    if status == .running || model.notResponding.contains(id) {
+                        model.stop(id)
+                    } else if !status.isBusy {
+                        model.start(id)
+                    }
+                    return .handled
+                }
             }
         }
+        // Opening the popover puts the focus on the first Service row.
+        .onAppear(perform: focusFirstRow)
+        .onChange(of: router.openCount, focusFirstRow)
+    }
+
+    /// Service rows in the order Home shows them.
+    private var rowOrder: [UInt64] {
+        model.snapshot.projects.flatMap { $0.services.map(\.id) }
+    }
+
+    private func focusFirstRow() {
+        focusedService = rowOrder.first
+    }
+
+    private func move(by step: Int) -> KeyPress.Result {
+        focusedService = Self.focus(after: focusedService, in: rowOrder, step: step)
+        return .handled
+    }
+
+    /// ↑ / ↓ between Service rows, stopping at the ends.
+    static func focus(after current: UInt64?, in order: [UInt64], step: Int) -> UInt64? {
+        guard !order.isEmpty else { return nil }
+        guard let current, let index = order.firstIndex(of: current) else {
+            return step > 0 ? order.first : order.last
+        }
+        return order[min(max(index + step, 0), order.count - 1)]
     }
 
     private var header: some View {

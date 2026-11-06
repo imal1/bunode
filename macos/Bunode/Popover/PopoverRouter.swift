@@ -36,9 +36,14 @@ final class PopoverRouter {
         change(forward: false) { stack = [.home] }
     }
 
+    /// Bumped each time the popover opens, so Home can put the focus on
+    /// its first row again.
+    private(set) var openCount = 0
+
     /// Back to Home without animation, when the popover opens.
     func reset() {
         stack = [.home]
+        openCount += 1
     }
 
     private func change(forward: Bool, _ update: () -> Void) {
