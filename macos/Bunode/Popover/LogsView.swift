@@ -112,7 +112,11 @@ struct LogsView: View {
     @ViewBuilder
     private func trailingButton(_ service: ServiceState) -> some View {
         let status = model.status(of: service)
-        if !status.isLive {
+        if status == .running {
+            Button("Restart") { model.restart(service.id) }
+                .keyboardShortcut("r", modifiers: .command)
+                .controlSize(.small)
+        } else if !status.isLive {
             Button("Start") { model.start(service.id) }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)

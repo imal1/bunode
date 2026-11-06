@@ -84,3 +84,35 @@ struct FailureTests {
         #expect(AppModel(dataDirectory: data.url).snapshot.settings.forceStopAfterSecs == 30)
     }
 }
+
+@MainActor
+struct RestartTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func restartStartsANewRun() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        _ = await model.addProject(at: code.folder("app"))
+        let project = try #require(model.snapshot.projects.first)
+        let service = try await model.addService(to: project.id, name: "sleeper", command: "sleep 30", folder: nil).get()
+
+        func waitFor(run: UInt64) async throws {
+            let deadline = Date.now.addingTimeInterval(15)
+            while !(model.service(service.id)?.status == .running && model.service(service.id)?.runNumber == run) {
+                guard Date.now < deadline else {
+                    Issue.record("Run #\(run) never ran")
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(50))
+                model.refresh()
+            }
+        }
+
+        model.start(service.id)
+        try await waitFor(run: 1)
+        model.restart(service.id)
+        #expect(model.status(of: try #require(model.service(service.id))) == .restarting)
+        try await waitFor(run: 2)
+        model.stop(service.id)
+    }
+}

@@ -130,6 +130,13 @@ final class AppModel {
         }
     }
 
+    /// Stops the Run completely, then starts a new one.
+    func restart(_ serviceID: UInt64) {
+        send(serviceID, showing: .restarting) { core in
+            try? core.restart(serviceId: serviceID)
+        }
+    }
+
     /// Stops the Run; when it is not responding, force-kills it instead.
     func stop(_ serviceID: UInt64) {
         if notResponding.contains(serviceID) {
@@ -210,7 +217,7 @@ final class AppModel {
     }
 
     /// `api-dev-run14.log`
-    static func exportFileName(project: String, service: String, run: UInt64?) -> String {
+    nonisolated static func exportFileName(project: String, service: String, run: UInt64?) -> String {
         let safe = { (name: String) in
             name.map { "/:\\".contains($0) || $0.isWhitespace ? "-" : String($0) }.joined()
         }

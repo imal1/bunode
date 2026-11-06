@@ -7,16 +7,31 @@ struct HomeView: View {
     let router: PopoverRouter
     let openSettings: (SettingsPane?, Bool) -> Void
 
+    /// The Service row with keyboard focus.
+    @FocusState private var focusedService: UInt64?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+                .background {
+                    // ⌘R restarts the focused row's Service (design-handoff §9).
+                    Button("Restart") {
+                        if let id = focusedService, let service = model.service(id), model.status(of: service) == .running {
+                            model.restart(id)
+                        }
+                    }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                }
             if model.snapshot.projects.isEmpty {
                 emptyState
             } else {
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(model.snapshot.projects, id: \.id) { project in
-                            ProjectSection(model: model, project: project, router: router)
+                            ProjectSection(model: model, project: project, router: router, focus: $focusedService)
                         }
                     }
                 }
@@ -57,6 +72,7 @@ private struct ProjectSection: View {
     let model: AppModel
     let project: ProjectState
     let router: PopoverRouter
+    var focus: FocusState<UInt64?>.Binding
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -91,6 +107,8 @@ private struct ProjectSection: View {
                 ServiceRow(model: model, project: project, service: service) {
                     router.push(.service(service.id))
                 }
+                .focusable()
+                .focused(focus, equals: service.id)
             }
         }
     }
@@ -161,6 +179,16 @@ struct ServiceRow: View {
             } else if !status.isBusy {
                 model.start(service.id)
             }
+        }
+        .contextMenu {
+            if status == .running {
+                Button("Restart") { model.restart(service.id) }
+                Button("Stop") { model.stop(service.id) }
+            } else if !status.isBusy {
+                Button("Start") { model.start(service.id) }
+            }
+            Divider()
+            Button("Open") { open() }
         }
     }
 

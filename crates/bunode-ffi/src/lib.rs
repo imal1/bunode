@@ -272,6 +272,11 @@ impl BunodeCore {
         Ok(self.supervisor.start(service_id)?)
     }
 
+    /// Stops the Run completely, then starts a new one. Returns at once.
+    pub fn restart(&self, service_id: u64) -> Result<(), CoreError> {
+        Ok(self.supervisor.restart(service_id)?)
+    }
+
     /// Stops the Service's Run. Returns at once.
     pub fn stop(&self, service_id: u64) {
         self.supervisor.stop(service_id);

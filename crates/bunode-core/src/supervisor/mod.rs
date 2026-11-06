@@ -91,6 +91,8 @@ pub(crate) struct Shared {
     login_shell: Option<PathBuf>,
     environment_timeout: Duration,
     log_files: LogFiles,
+    /// Where Runs' tasks run.
+    runtime: tokio::runtime::Handle,
     /// Held while creating a lifeline and spawning a runner, so that no
     /// other spawn can inherit the lifeline before it is close-on-exec.
     spawn_lock: Mutex<()>,
@@ -128,6 +130,8 @@ struct RunEntry {
     logs: Arc<Mutex<LogBuffer>>,
     /// The Run's log file, while the Run is live.
     file: Option<RunLogWriter>,
+    /// Restart: start a new Run as soon as this one is over.
+    restart_after: bool,
 }
 
 /// Where a Run's output goes: memory for the Logs view, and its file.
@@ -200,6 +204,7 @@ impl Supervisor {
                 login_shell: options.login_shell,
                 environment_timeout: options.environment_timeout,
                 log_files: LogFiles::new(options.logs_dir, options.log_limits),
+                runtime: runtime.handle().clone(),
                 spawn_lock: Mutex::new(()),
             }),
             runtime,
@@ -468,97 +473,35 @@ impl Supervisor {
     /// Starts a Run of the Service, unless one is already live. Returns at
     /// once; the Run's progress arrives through snapshots.
     pub fn start(&self, service_id: ServiceId) -> Result<()> {
+        self.shared.start(service_id)
+    }
+
+    /// Restarts a running Service: its Run is stopped completely, process
+    /// group and all, then a new Run starts. Restarting while a restart is
+    /// under way does nothing. A Service that isn't running just starts.
+    pub fn restart(&self, service_id: ServiceId) -> Result<()> {
         let mut state = self.shared.lock();
-        if state
-            .runs
-            .get(&service_id)
-            .is_some_and(|run| run.status.is_live())
-        {
-            return Ok(());
-        }
-        let (project, service) = find_service(&state.config, service_id)?;
-        let spec = launch::launch_spec(project, service, &state.config.settings, &state.base_env);
-        let project_id = project.id;
-        let command = service.command.clone();
-        let logs = Arc::new(Mutex::new(LogBuffer::new(
-            state.config.settings.log_lines_kept as usize,
-        )));
-        if let Some(query) = state.log_filters.get(&service_id) {
-            lock_logs(&logs).set_filter(query);
-        }
-
-        // Run numbers count every Run, including ones that fail to start.
-        let mut config = state.config.clone();
-        let run_number = {
-            let service = config
-                .project_mut(project_id)
-                .and_then(|p| p.services.iter_mut().find(|s| s.id == service_id))
-                .ok_or(Error::UnknownService)?;
-            service.runs += 1;
-            service.runs
+        let Some(run) = state.runs.get_mut(&service_id) else {
+            drop(state);
+            return self.shared.start(service_id);
         };
-        // A failed save must not keep the Service from starting.
-        let _ = self.shared.store.save(&config);
-        state.config = config;
-        let log = RunLog {
-            buffer: logs.clone(),
-            file: RunLogWriter::start(&self.shared.log_files, service_id, run_number, logs.clone()),
-        };
-        log.system(&format!("Run #{run_number}: {command}"));
-
-        let spec = match spec {
-            Ok(spec) => spec,
-            Err(message) => {
-                log.system(&message);
-                state.runs.insert(
-                    service_id,
-                    RunEntry {
-                        run_number,
-                        status: RunStatus::Failed,
-                        pid: None,
-                        stop_requested: false,
-                        control: None,
-                        last_exit: Some(message),
-                        logs,
-                        file: None,
-                    },
-                );
-                drop(state);
-                self.shared.notifier.notify();
-                return Ok(());
+        match run.status {
+            RunStatus::Restarting => return Ok(()),
+            RunStatus::Starting | RunStatus::Running | RunStatus::Stopping => {
+                if let Some(control) = &run.control {
+                    let _ = control.send(Control::Stop);
+                }
+                run.stop_requested = true;
+                run.restart_after = true;
+                run.status = RunStatus::Restarting;
             }
-        };
-
-        let (control, control_rx) = async_mpsc::unbounded_channel();
-        state.runs.insert(
-            service_id,
-            RunEntry {
-                run_number,
-                status: RunStatus::Starting,
-                pid: None,
-                stop_requested: false,
-                control: Some(control),
-                last_exit: None,
-                logs: logs.clone(),
-                file: Some(log.file.clone()),
-            },
-        );
+            RunStatus::Stopped | RunStatus::Crashed | RunStatus::Failed => {
+                drop(state);
+                return self.shared.start(service_id);
+            }
+        }
         drop(state);
         self.shared.notifier.notify();
-
-        let shared = self.shared.clone();
-        self.runtime.spawn(async move {
-            let outcome = run::drive(
-                shared.clone(),
-                service_id,
-                run_number,
-                spec,
-                log,
-                control_rx,
-            )
-            .await;
-            shared.finish(service_id, run_number, outcome);
-        });
         Ok(())
     }
 
@@ -683,7 +626,12 @@ impl Supervisor {
         };
         let _ = sender.send(control);
         run.stop_requested = true;
-        if matches!(run.status, RunStatus::Starting | RunStatus::Running) {
+        // Stopping wins over a pending restart.
+        run.restart_after = false;
+        if matches!(
+            run.status,
+            RunStatus::Starting | RunStatus::Running | RunStatus::Restarting
+        ) {
             run.status = RunStatus::Stopping;
         }
         drop(state);
@@ -702,6 +650,104 @@ impl Drop for Supervisor {
 }
 
 impl Shared {
+    /// Starts a Run of the Service, unless one is already live.
+    fn start(self: &Arc<Self>, service_id: ServiceId) -> Result<()> {
+        let mut state = self.lock();
+        if state
+            .runs
+            .get(&service_id)
+            .is_some_and(|run| run.status.is_live())
+        {
+            return Ok(());
+        }
+        let (project, service) = find_service(&state.config, service_id)?;
+        let spec = launch::launch_spec(project, service, &state.config.settings, &state.base_env);
+        let project_id = project.id;
+        let command = service.command.clone();
+        let logs = Arc::new(Mutex::new(LogBuffer::new(
+            state.config.settings.log_lines_kept as usize,
+        )));
+        if let Some(query) = state.log_filters.get(&service_id) {
+            lock_logs(&logs).set_filter(query);
+        }
+
+        // Run numbers count every Run, including ones that fail to start.
+        let mut config = state.config.clone();
+        let run_number = {
+            let service = config
+                .project_mut(project_id)
+                .and_then(|p| p.services.iter_mut().find(|s| s.id == service_id))
+                .ok_or(Error::UnknownService)?;
+            service.runs += 1;
+            service.runs
+        };
+        // A failed save must not keep the Service from starting.
+        let _ = self.store.save(&config);
+        state.config = config;
+        let log = RunLog {
+            buffer: logs.clone(),
+            file: RunLogWriter::start(&self.log_files, service_id, run_number, logs.clone()),
+        };
+        log.system(&format!("Run #{run_number}: {command}"));
+
+        let spec = match spec {
+            Ok(spec) => spec,
+            Err(message) => {
+                log.system(&message);
+                state.runs.insert(
+                    service_id,
+                    RunEntry {
+                        run_number,
+                        status: RunStatus::Failed,
+                        pid: None,
+                        stop_requested: false,
+                        control: None,
+                        last_exit: Some(message),
+                        logs,
+                        file: None,
+                        restart_after: false,
+                    },
+                );
+                drop(state);
+                self.notifier.notify();
+                return Ok(());
+            }
+        };
+
+        let (control, control_rx) = async_mpsc::unbounded_channel();
+        state.runs.insert(
+            service_id,
+            RunEntry {
+                run_number,
+                status: RunStatus::Starting,
+                pid: None,
+                stop_requested: false,
+                control: Some(control),
+                last_exit: None,
+                logs: logs.clone(),
+                file: Some(log.file.clone()),
+                restart_after: false,
+            },
+        );
+        drop(state);
+        self.notifier.notify();
+
+        let shared = self.clone();
+        self.runtime.spawn(async move {
+            let outcome = run::drive(
+                shared.clone(),
+                service_id,
+                run_number,
+                spec,
+                log,
+                control_rx,
+            )
+            .await;
+            shared.finish(service_id, run_number, outcome);
+        });
+        Ok(())
+    }
+
     fn lock(&self) -> MutexGuard<'_, State> {
         // A panic while holding the lock must not take the whole app down.
         self.state.lock().unwrap_or_else(|e| e.into_inner())
@@ -731,8 +777,9 @@ impl Shared {
         self.notifier.notify();
     }
 
-    /// The Run is over; record how it ended.
-    fn finish(&self, service_id: ServiceId, run_number: u64, outcome: Outcome) {
+    /// The Run is over; record how it ended, and start the next one if this
+    /// was a restart.
+    fn finish(self: &Arc<Self>, service_id: ServiceId, run_number: u64, outcome: Outcome) {
         let mut state = self.lock();
         let Some(run) = state.runs.get_mut(&service_id) else {
             return;
@@ -751,7 +798,11 @@ impl Shared {
         run.last_exit = note;
         run.pid = None;
         run.control = None;
+        let restart = std::mem::take(&mut run.restart_after);
         drop(state);
+        if restart {
+            let _ = self.start(service_id);
+        }
         self.notifier.notify();
     }
 }
