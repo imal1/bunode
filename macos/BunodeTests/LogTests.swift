@@ -123,3 +123,36 @@ struct RunLogTests {
         #expect(model.service(service.id)?.logCount == 0)
     }
 }
+
+struct ExportNameTests {
+    @Test func namesExportsAfterTheRun() {
+        #expect(AppModel.exportFileName(project: "api", service: "dev", run: 14) == "api-dev-run14.log")
+        #expect(AppModel.exportFileName(project: "acme", service: "web / dev", run: 2) == "acme-web---dev-run2.log")
+        #expect(AppModel.exportFileName(project: "api", service: "dev", run: nil) == "api-dev.log")
+    }
+}
+
+@MainActor
+struct ExportTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func exportsTheFullLog() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        _ = await model.addProject(at: code.folder("app"))
+        let project = try #require(model.snapshot.projects.first)
+        let service = try await model.addService(to: project.id, name: "echo", command: "printf 'hello\\n'", folder: nil).get()
+        model.start(service.id)
+        let deadline = Date.now.addingTimeInterval(15)
+        while model.service(service.id)?.runNumber == nil || model.service(service.id)?.status.isLive == true {
+            guard Date.now < deadline else { break }
+            try await Task.sleep(for: .milliseconds(50))
+            model.refresh()
+        }
+        let out = code.url.appending(path: "export.log")
+        #expect(await model.exportLog(service.id, to: out) == nil)
+        let text = try String(contentsOf: out, encoding: .utf8)
+        #expect(text.contains(" out hello"))
+        #expect(text.contains(" bunode Run #1: printf"))
+    }
+}

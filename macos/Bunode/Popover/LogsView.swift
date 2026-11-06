@@ -138,6 +138,8 @@ struct LogsView: View {
             Button("Clear") { model.clearLogs(serviceID) }
             Button("Copy", action: copyAll)
                 .disabled(service.logCount == 0)
+            Button("Export…") { export(service) }
+                .disabled(service.runNumber == nil)
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
@@ -153,6 +155,24 @@ struct LogsView: View {
         } else {
             feed.sync(first: service.logFirst, count: service.logCount, generation: service.logFilterGeneration) { from, max in
                 model.logLines(serviceID, from: from, max: max)
+            }
+        }
+    }
+
+    /// Saves the Run's full log, not just the lines kept in memory.
+    private func export(_ service: ServiceState) {
+        guard let project else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = AppModel.exportFileName(project: project.name, service: service.name, run: service.runNumber)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        NSApp.activate()
+        Task {
+            guard await panel.begin() == .OK, let url = panel.url else { return }
+            if let problem = await model.exportLog(serviceID, to: url) {
+                toaster.show(problem)
+            } else {
+                toaster.show(String(localized: "Saved \(url.lastPathComponent)"))
             }
         }
     }

@@ -314,6 +314,13 @@ impl BunodeCore {
         self.supervisor.log_matching_lines(service_id, from, max)
     }
 
+    /// Logs › Export…: the full log of the current or last Run.
+    pub fn export_log(&self, service_id: u64, destination: String) -> Result<(), CoreError> {
+        Ok(self
+            .supervisor
+            .export_log(service_id, std::path::Path::new(&destination))?)
+    }
+
     /// Logs › Clear: hides the lines shown so far.
     pub fn clear_logs(&self, service_id: u64) {
         self.supervisor.clear_logs(service_id);

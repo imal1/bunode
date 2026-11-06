@@ -18,7 +18,8 @@ use tokio::sync::mpsc as async_mpsc;
 use crate::env;
 use crate::error::{Error, Result};
 use crate::launch;
-use crate::logs::{LogBuffer, LogLine};
+use crate::logfile::{Limits, LogFiles, RunLogWriter};
+use crate::logs::{LogBuffer, LogLine, LogStream};
 use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
@@ -57,15 +58,21 @@ pub struct SupervisorOptions {
     pub login_shell: Option<PathBuf>,
     /// How long the login shell gets to print its environment.
     pub environment_timeout: Duration,
+    /// Where Run logs are written; `<data_dir>/Logs` by default.
+    pub logs_dir: PathBuf,
+    pub log_limits: Limits,
 }
 
 impl SupervisorOptions {
     pub fn new(data_dir: impl Into<PathBuf>, runner_path: impl Into<PathBuf>) -> SupervisorOptions {
+        let data_dir = data_dir.into();
         SupervisorOptions {
-            data_dir: data_dir.into(),
+            logs_dir: data_dir.join("Logs"),
+            data_dir,
             runner_path: runner_path.into(),
             login_shell: Some(env::default_shell()),
             environment_timeout: Duration::from_secs(10),
+            log_limits: Limits::default(),
         }
     }
 }
@@ -83,6 +90,7 @@ pub(crate) struct Shared {
     runner_path: PathBuf,
     login_shell: Option<PathBuf>,
     environment_timeout: Duration,
+    log_files: LogFiles,
     /// Held while creating a lifeline and spawning a runner, so that no
     /// other spawn can inherit the lifeline before it is close-on-exec.
     spawn_lock: Mutex<()>,
@@ -116,8 +124,31 @@ struct RunEntry {
     /// How to reach the Run's task while it is live.
     control: Option<async_mpsc::UnboundedSender<Control>>,
     last_exit: Option<String>,
-    /// The Run's output; kept after it ends, until the next Run.
+    /// The Run's output in memory; kept after it ends, until the next Run.
     logs: Arc<Mutex<LogBuffer>>,
+    /// The Run's log file, while the Run is live.
+    file: Option<RunLogWriter>,
+}
+
+/// Where a Run's output goes: memory for the Logs view, and its file.
+#[derive(Clone)]
+pub(crate) struct RunLog {
+    pub(crate) buffer: Arc<Mutex<LogBuffer>>,
+    pub(crate) file: RunLogWriter,
+}
+
+impl RunLog {
+    pub(crate) fn line(&self, stream: LogStream, line: crate::ansi::StyledLine) {
+        let time = now_ms();
+        self.file.line(time, stream, &line.text);
+        lock_logs(&self.buffer).push(stream, time, line);
+    }
+
+    pub(crate) fn system(&self, text: &str) {
+        let time = now_ms();
+        self.file.line(time, LogStream::System, text);
+        lock_logs(&self.buffer).push_system(time, text);
+    }
 }
 
 pub(crate) fn now_ms() -> i64 {
@@ -168,6 +199,7 @@ impl Supervisor {
                 runner_path: options.runner_path,
                 login_shell: options.login_shell,
                 environment_timeout: options.environment_timeout,
+                log_files: LogFiles::new(options.logs_dir, options.log_limits),
                 spawn_lock: Mutex::new(()),
             }),
             runtime,
@@ -468,12 +500,16 @@ impl Supervisor {
         // A failed save must not keep the Service from starting.
         let _ = self.shared.store.save(&config);
         state.config = config;
-        lock_logs(&logs).push_system(now_ms(), format!("Run #{run_number}: {command}"));
+        let log = RunLog {
+            buffer: logs.clone(),
+            file: RunLogWriter::start(&self.shared.log_files, service_id, run_number, logs.clone()),
+        };
+        log.system(&format!("Run #{run_number}: {command}"));
 
         let spec = match spec {
             Ok(spec) => spec,
             Err(message) => {
-                lock_logs(&logs).push_system(now_ms(), message.clone());
+                log.system(&message);
                 state.runs.insert(
                     service_id,
                     RunEntry {
@@ -484,6 +520,7 @@ impl Supervisor {
                         control: None,
                         last_exit: Some(message),
                         logs,
+                        file: None,
                     },
                 );
                 drop(state);
@@ -503,6 +540,7 @@ impl Supervisor {
                 control: Some(control),
                 last_exit: None,
                 logs: logs.clone(),
+                file: Some(log.file.clone()),
             },
         );
         drop(state);
@@ -515,7 +553,7 @@ impl Supervisor {
                 service_id,
                 run_number,
                 spec,
-                logs,
+                log,
                 control_rx,
             )
             .await;
@@ -574,6 +612,29 @@ impl Supervisor {
             Some(logs) => lock_logs(&logs).matching_lines(from, max as usize),
             None => Vec::new(),
         }
+    }
+
+    /// Logs › Export…: writes the full log of the Service's current or last
+    /// Run, not only the lines kept in memory, to `destination`.
+    pub fn export_log(&self, service_id: ServiceId, destination: &Path) -> Result<()> {
+        let (run_number, file) = {
+            let state = self.shared.lock();
+            let run = state
+                .runs
+                .get(&service_id)
+                .ok_or_else(|| Error::Invalid("This Service has no Runs yet.".into()))?;
+            (run.run_number, run.file.clone())
+        };
+        if let Some(file) = file {
+            file.flush(Duration::from_secs(2));
+        }
+        self.shared
+            .log_files
+            .export(service_id, run_number, destination)
+            .map(|_| ())
+            .map_err(|e| {
+                Error::Invalid(format!("Couldn't export to {}: {e}", destination.display()))
+            })
     }
 
     /// Logs › Clear: hides the lines shown so far. Files are not touched.
@@ -681,7 +742,11 @@ impl Shared {
         }
         let (status, note) = outcome.classify(run.stop_requested);
         let line = note.clone().unwrap_or_else(|| "Stopped".into());
-        lock_logs(&run.logs).push_system(now_ms(), line);
+        let time = now_ms();
+        if let Some(file) = run.file.take() {
+            file.line(time, LogStream::System, &line);
+        }
+        lock_logs(&run.logs).push_system(time, line);
         run.status = status;
         run.last_exit = note;
         run.pid = None;

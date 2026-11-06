@@ -4,7 +4,7 @@
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use nix::sys::signal::{Signal, killpg};
@@ -15,10 +15,10 @@ use tokio::process::Command;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::{Instant, sleep_until};
 
-use super::{Shared, lock_logs, now_ms};
+use super::{RunLog, Shared};
 use crate::ansi::LineParser;
 use crate::launch::LaunchSpec;
-use crate::logs::{LogBuffer, LogStream};
+use crate::logs::LogStream;
 use crate::model::ServiceId;
 use crate::snapshot::RunStatus;
 
@@ -108,7 +108,7 @@ pub(crate) async fn drive(
     service_id: ServiceId,
     run_number: u64,
     spec: LaunchSpec,
-    logs: Arc<Mutex<LogBuffer>>,
+    log: RunLog,
     mut control: UnboundedReceiver<Control>,
 ) -> Outcome {
     if !spec.cwd.is_dir() {
@@ -132,7 +132,7 @@ pub(crate) async fn drive(
         collectors.push(tokio::spawn(collect(
             stdout,
             LogStream::Stdout,
-            logs.clone(),
+            log.clone(),
             shared.clone(),
         )));
     }
@@ -140,7 +140,7 @@ pub(crate) async fn drive(
         collectors.push(tokio::spawn(collect(
             stderr,
             LogStream::Stderr,
-            logs.clone(),
+            log.clone(),
             shared.clone(),
         )));
     }
@@ -240,7 +240,7 @@ fn spawn_runner(
 async fn collect(
     stream: impl AsyncRead + Unpin,
     kind: LogStream,
-    logs: Arc<Mutex<LogBuffer>>,
+    log: RunLog,
     shared: Arc<Shared>,
 ) {
     let mut reader = BufReader::with_capacity(64 * 1024, stream);
@@ -255,8 +255,7 @@ async fn collect(
         while matches!(line.last(), Some(b'\n' | b'\r')) {
             line.pop();
         }
-        let styled = parser.line(&line);
-        lock_logs(&logs).push(kind, now_ms(), styled);
+        log.line(kind, parser.line(&line));
         shared.notifier.notify();
     }
 }

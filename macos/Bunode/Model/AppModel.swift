@@ -196,6 +196,28 @@ final class AppModel {
         core.setLogFilter(serviceId: serviceID, query: query)
     }
 
+    /// Logs › Export…: the full log of the current or last Run.
+    func exportLog(_ serviceID: UInt64, to url: URL) async -> String? {
+        let core = self.core
+        let path = url.path(percentEncoded: false)
+        let result = await Task.detached {
+            Result { try core.exportLog(serviceId: serviceID, destination: path) }
+        }.value
+        if case .failure(let error) = result {
+            return error.userMessage
+        }
+        return nil
+    }
+
+    /// `api-dev-run14.log`
+    static func exportFileName(project: String, service: String, run: UInt64?) -> String {
+        let safe = { (name: String) in
+            name.map { "/:\\".contains($0) || $0.isWhitespace ? "-" : String($0) }.joined()
+        }
+        let run = run.map { "-run\($0)" } ?? ""
+        return "\(safe(project))-\(safe(service))\(run).log"
+    }
+
     func clearLogs(_ serviceID: UInt64) {
         core.clearLogs(serviceId: serviceID)
         refresh()

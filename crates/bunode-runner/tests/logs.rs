@@ -66,6 +66,28 @@ fn search_filters_and_follows_new_lines() {
 }
 
 #[test]
+fn export_saves_the_full_log_not_just_what_memory_keeps() {
+    require_tool("node");
+    let h = Harness::new();
+    h.supervisor.set_log_lines_kept(5_000).unwrap();
+    let id = h.service("flood", "node flood.js 20000");
+    h.supervisor.start(id).unwrap();
+    let done = h.wait(id, "the flood to end", |s| !s.status.is_live());
+    assert_eq!(done.log_count, 5_000);
+
+    h.supervisor.clear_logs(id);
+    let out = h.scratch.path().join("flood-run1.log");
+    h.supervisor.export_log(id, &out).unwrap();
+    let exported = std::fs::read_to_string(&out).unwrap();
+    let lines: Vec<&str> = exported.lines().collect();
+    // Every line, Bunode's two included, even after Clear.
+    assert_eq!(lines.len(), 20_002);
+    assert!(lines[0].contains(" bunode Run #1: node flood.js 20000"));
+    assert!(lines.iter().any(|l| l.ends_with(" err line 20000")));
+    assert!(lines.iter().any(|l| l.ends_with(" out line 1")));
+}
+
+#[test]
 fn a_flood_of_output_stays_bounded_and_coalesced() {
     require_tool("node");
     let h = Harness::new();
@@ -82,11 +104,25 @@ fn a_flood_of_output_stays_bounded_and_coalesced() {
     // 200,000 lines plus the two system lines; the default keeps 10,000.
     assert_eq!(done.log_count, 10_000);
     assert_eq!(done.log_count + done.log_dropped, 200_002);
-    // stdout and stderr are separate pipes and interleave freely, but the
-    // newest line of each is kept, and Bunode's own line comes last.
+    // stdout and stderr are separate pipes read side by side, so either may
+    // finish first; the one that finished last still has its final line.
+    // Within each stream the order is kept, and Bunode's line comes last.
     let kept = h.supervisor.log_lines(id, 0, 10_000);
-    assert!(kept.iter().any(|l| l.text == "line 199999"));
-    assert!(kept.iter().any(|l| l.text == "line 200000"));
+    assert!(
+        kept.iter()
+            .any(|l| l.text == "line 199999" || l.text == "line 200000")
+    );
+    for stream in [LogStream::Stdout, LogStream::Stderr] {
+        let numbers: Vec<u64> = kept
+            .iter()
+            .filter(|l| l.stream == stream)
+            .filter_map(|l| l.text.strip_prefix("line ")?.parse().ok())
+            .collect();
+        assert!(
+            numbers.windows(2).all(|w| w[0] < w[1]),
+            "{stream:?} out of order"
+        );
+    }
     assert_eq!(kept.last().unwrap().stream, LogStream::System);
 
     // At most one report per 100 ms, not one per line.

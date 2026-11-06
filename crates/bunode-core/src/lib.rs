@@ -10,6 +10,7 @@ pub mod ansi;
 pub mod env;
 pub mod error;
 pub mod launch;
+pub mod logfile;
 pub mod logs;
 pub mod model;
 pub mod package;
