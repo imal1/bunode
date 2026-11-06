@@ -5,7 +5,7 @@ CONFIGURATION ?= Release
 DERIVED_DATA  := build/DerivedData
 PROJECT       := macos/Bunode.xcodeproj
 APP           := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/Bunode.app
-XCODEBUILD    := xcodebuild -project $(PROJECT) -scheme Bunode -derivedDataPath $(DERIVED_DATA) -quiet
+XCODEBUILD    := xcodebuild -project $(PROJECT) -scheme Bunode -derivedDataPath $(DERIVED_DATA)
 
 .PHONY: all app xcframework project run test test-rust test-app lint clean
 
@@ -21,7 +21,7 @@ project: xcframework
 
 ## app: build Bunode.app
 app: project
-	$(XCODEBUILD) -configuration $(CONFIGURATION) -destination 'generic/platform=macOS' build
+	$(XCODEBUILD) -quiet -configuration $(CONFIGURATION) -destination 'generic/platform=macOS' build
 	@echo "Built $(APP)"
 
 ## run: build and launch Bunode.app
@@ -34,8 +34,9 @@ test: test-rust test-app
 test-rust:
 	cargo test --workspace
 
+# Not -quiet, so the log shows which tests ran.
 test-app: project
-	$(XCODEBUILD) -configuration Debug -destination 'platform=macOS' test
+	$(XCODEBUILD) -configuration Debug -destination 'platform=macOS,arch=$(shell uname -m)' test
 
 ## lint: formatting, clippy and the bunode-core dependency rule
 lint:

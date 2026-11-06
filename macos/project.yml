@@ -6,7 +6,6 @@ options:
   bundleIdPrefix: io.github.imal1
   deploymentTarget:
     macOS: "26.0"
-  createIntermediateGroups: true
 
 settings:
   base:
