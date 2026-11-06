@@ -315,6 +315,10 @@ mod tests {
             "node server.js --port 3000"
         );
         assert_eq!(display_command(&args(&["npm run dev"])), "npm run dev");
+        assert_eq!(
+            display_command(&args(&["npm run tree -- /tmp/x/pids"])),
+            "npm run tree -- /tmp/x/pids"
+        );
     }
 
     fn info(pid: i32, name: &str) -> ProcessInfo {

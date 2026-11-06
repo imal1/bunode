@@ -69,9 +69,13 @@ pub(super) fn arguments(pid: i32) -> Option<Vec<String>> {
     rest = &rest[path_end..];
     let start = rest.iter().position(|&b| b != 0)?;
     rest = &rest[start..];
+    // A process that rewrote its title (Node does, e.g. "npm run dev")
+    // leaves the title and then NULs where its arguments were: the empty
+    // ones are dropped.
     let args: Vec<String> = rest
         .split(|&b| b == 0)
         .take(argc)
+        .filter(|a| !a.is_empty())
         .map(|a| String::from_utf8_lossy(a).into_owned())
         .collect();
     (!args.is_empty()).then_some(args)
