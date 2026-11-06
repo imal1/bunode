@@ -93,7 +93,7 @@ pub fn parse_command(command: &str) -> Result<Vec<String>, String> {
     Ok(words)
 }
 
-pub(crate) fn set_env(env: &mut Vec<(OsString, OsString)>, key: OsString, value: OsString) {
+pub fn set_env(env: &mut Vec<(OsString, OsString)>, key: OsString, value: OsString) {
     match env.iter_mut().find(|(k, _)| *k == key) {
         Some(entry) => entry.1 = value,
         None => env.push((key, value)),

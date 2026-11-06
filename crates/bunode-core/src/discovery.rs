@@ -265,6 +265,70 @@ impl Scanner {
     }
 }
 
+/// Who holds a port Bunode was about to use (design-handoff §5.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortOwner {
+    pub pid: u32,
+    /// "astro dev"
+    pub command: String,
+    /// "Terminal"
+    pub source: String,
+}
+
+/// The user's process listening on TCP `port`, if any. Reads every process
+/// of the user, so it is for a Start, not for a loop.
+pub fn port_owner(port: u16) -> Option<PortOwner> {
+    let uid = sys::current_uid();
+    let infos: HashMap<i32, ProcessInfo> = sys::all_pids()
+        .into_iter()
+        .filter_map(sys::process)
+        .map(|p| (p.pid, p))
+        .collect();
+    let owner = infos
+        .values()
+        .filter(|p| p.uid == uid)
+        .find(|p| sys::listening_ports(p.pid).contains(&port))?;
+    let mut ancestors = Vec::new();
+    let mut current = infos.get(&owner.ppid);
+    while let Some(info) = current {
+        if ancestors.len() > 64 || info.pid <= 1 && !ancestors.is_empty() {
+            ancestors.push(info);
+            break;
+        }
+        ancestors.push(info);
+        current = infos.get(&info.ppid).filter(|p| p.pid != info.pid);
+    }
+    let command = sys::arguments(owner.pid)
+        .as_deref()
+        .map(display_command)
+        .unwrap_or_else(|| owner.name.clone());
+    Some(PortOwner {
+        pid: owner.pid as u32,
+        command,
+        source: source_of(&ancestors),
+    })
+}
+
+/// Whether something already listens on TCP `port`: Bunode can't bind it
+/// on the loopback or the wildcard address, or one of the user's processes
+/// listens on it.
+pub fn port_in_use(port: u16) -> bool {
+    use std::net::{Ipv4Addr, Ipv6Addr, TcpListener};
+    let free = |addr: std::net::SocketAddr| TcpListener::bind(addr).is_ok();
+    !(free((Ipv4Addr::LOCALHOST, port).into())
+        && free((Ipv4Addr::UNSPECIFIED, port).into())
+        && (free((Ipv6Addr::LOCALHOST, port).into()) || !ipv6_available()))
+}
+
+fn ipv6_available() -> bool {
+    std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, 0)).is_ok()
+}
+
+/// The first free port after `port`, for `Use :N`.
+pub fn next_free_port(port: u16) -> Option<u16> {
+    (port.checked_add(1)?..=port.saturating_add(200)).find(|&p| !port_in_use(p))
+}
+
 /// What one scan found.
 pub struct Scan {
     pub discovered: Vec<DiscoveredProcess>,
@@ -330,6 +394,20 @@ mod tests {
             start: 1,
             name: name.into(),
         }
+    }
+
+    #[test]
+    fn knows_who_holds_a_port() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(port_in_use(port));
+        let owner = port_owner(port).expect("this test process");
+        assert_eq!(owner.pid, std::process::id());
+        // (Whether `next` is still free a moment later is up to other tests.)
+        let next = next_free_port(port).unwrap();
+        assert!(next > port);
+        drop(listener);
+        assert!(!port_in_use(port));
     }
 
     #[test]

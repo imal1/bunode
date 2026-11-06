@@ -26,9 +26,9 @@ use crate::logs::{LogBuffer, LogLine, LogStream};
 use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
-    AddProjectOutcome, EnvironmentState, NewService, ProjectScripts, ProjectState, RunEnd,
-    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool,
-    ToolState,
+    AddProjectOutcome, EnvironmentState, NewService, PortConflictOwner, ProjectScripts,
+    ProjectState, RunEnd, RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState,
+    SettingsState, Snapshot, StartOutcome, Tool, ToolState,
 };
 use crate::store::ConfigStore;
 
@@ -127,6 +127,8 @@ struct State {
     environment: EnvironmentInfo,
     /// The Logs search of each Service; a new Run keeps it.
     log_filters: HashMap<ServiceId, String>,
+    /// `Use :N`: the `PORT` of a Service's next Run only.
+    port_overrides: HashMap<ServiceId, u16>,
     /// Projects to remove once their last live Run has ended.
     removing_projects: std::collections::HashSet<ProjectId>,
     /// Node and Bun processes Bunode did not start, from the last scan.
@@ -239,6 +241,7 @@ impl Supervisor {
                         tools: Vec::new(),
                     },
                     log_filters: HashMap::new(),
+                    port_overrides: HashMap::new(),
                     removing_projects: Default::default(),
                     discovered: Vec::new(),
                     exiting: Default::default(),
@@ -799,9 +802,82 @@ impl Supervisor {
     // MARK: - Runs
 
     /// Starts a Run of the Service, unless one is already live. Returns at
-    /// once; the Run's progress arrives through snapshots.
-    pub fn start(&self, service_id: ServiceId) -> Result<()> {
-        self.shared.start(service_id)
+    /// once; the Run's progress arrives through snapshots. A Service with a
+    /// Port is checked first: if something else listens there, nothing
+    /// starts and the outcome says who (Bunode never stops it).
+    pub fn start(&self, service_id: ServiceId) -> Result<StartOutcome> {
+        let port = {
+            let state = self.shared.lock();
+            if state
+                .runs
+                .get(&service_id)
+                .is_some_and(|run| run.status.is_live())
+            {
+                return Ok(StartOutcome::Started);
+            }
+            find_service(&state.config, service_id)?.1.port
+        };
+        if let Some(port) = port
+            && let Some(conflict) = self.port_conflict(port)
+        {
+            return Ok(conflict);
+        }
+        self.shared.start(service_id)?;
+        Ok(StartOutcome::Started)
+    }
+
+    /// Port conflict › Use :N: starts this one Run with `PORT=N`. The
+    /// Service's own Port stays as it is.
+    pub fn start_with_port(&self, service_id: ServiceId, port: u16) -> Result<StartOutcome> {
+        if let Some(conflict) = self.port_conflict(port) {
+            return Ok(conflict);
+        }
+        self.shared.lock().port_overrides.insert(service_id, port);
+        self.shared.start(service_id)?;
+        Ok(StartOutcome::Started)
+    }
+
+    /// Whether `port` is free for this Mac's user; the conflict when not.
+    fn port_conflict(&self, port: u16) -> Option<StartOutcome> {
+        // One of Bunode's own Runs?
+        let own = {
+            let state = self.shared.lock();
+            state.runs.iter().find_map(|(id, run)| {
+                (run.status.is_live() && run.ports.contains(&port)).then(|| {
+                    let name = find_service(&state.config, *id)
+                        .map(|(p, s)| format!("{} › {}", p.name, s.name))
+                        .unwrap_or_default();
+                    PortConflictOwner {
+                        pid: run.pid.unwrap_or(0),
+                        command: name,
+                        source: "Bunode".into(),
+                        service_id: Some(*id),
+                    }
+                })
+            })
+        };
+        let owner = own.or_else(|| {
+            crate::discovery::port_owner(port).map(|o| PortConflictOwner {
+                pid: o.pid,
+                command: o.command,
+                source: o.source,
+                service_id: None,
+            })
+        });
+        if owner.is_none() && !crate::discovery::port_in_use(port) {
+            return None;
+        }
+        Some(StartOutcome::PortInUse {
+            port,
+            owner,
+            suggestion: crate::discovery::next_free_port(port),
+        })
+    }
+
+    /// Whether something listens on `port`; the port conflict bar goes
+    /// away once it doesn't.
+    pub fn port_in_use(&self, port: u16) -> bool {
+        crate::discovery::port_in_use(port)
     }
 
     /// Restarts a running Service: its Run is stopped completely, process
@@ -989,8 +1065,13 @@ impl Shared {
         {
             return Ok(());
         }
+        let port_override = state.port_overrides.remove(&service_id);
         let (project, service) = find_service(&state.config, service_id)?;
-        let spec = launch::launch_spec(project, service, &state.config.settings, &state.base_env);
+        let mut spec =
+            launch::launch_spec(project, service, &state.config.settings, &state.base_env);
+        if let (Ok(spec), Some(port)) = (&mut spec, port_override) {
+            launch::set_env(&mut spec.env, "PORT".into(), port.to_string().into());
+        }
         let project_id = project.id;
         let command = service.command.clone();
         let logs = Arc::new(Mutex::new(LogBuffer::new(
@@ -1018,6 +1099,9 @@ impl Shared {
             file: RunLogWriter::start(&self.log_files, service_id, run_number, logs.clone()),
         };
         log.system(&format!("Run #{run_number}: {command}"));
+        if let Some(port) = port_override {
+            log.system(&format!("PORT={port} for this Run"));
+        }
 
         let spec = match spec {
             Ok(spec) => spec,

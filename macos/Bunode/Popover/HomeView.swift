@@ -134,7 +134,7 @@ private struct ProjectSection: View {
                 .focusable()
                 .focused(focus, equals: service.id)
                 if model.rowNotice?.serviceID == service.id {
-                    RowNoticeView(model: model)
+                    RowNoticeView(model: model, router: router)
                 }
             }
         }
@@ -266,20 +266,70 @@ private struct RowAction: View {
     }
 }
 
-/// The warning bar under a Service row: the Project's folder is missing
-/// (design-handoff §7). One at a time.
+/// The warning bar under a Service row (design-handoff §5.3, §7): the
+/// Service's Port is taken, or its Project's folder is missing. One at a
+/// time; its main button takes the focus.
 struct RowNoticeView: View {
     let model: AppModel
+    let router: PopoverRouter
+
+    @FocusState private var mainButtonFocused: Bool
 
     var body: some View {
-        if case .missingFolder(_, let projectID) = model.rowNotice, let project = model.project(projectID) {
-            InlineNotice(text: String(localized: "\(project.path.abbreviatingWithTilde) is missing.")) {
-                Button("Locate…") { locate(project) }
-                    .buttonStyle(.borderedProminent)
-                Button("Cancel") { model.dismissNotice() }
-                    .buttonStyle(.borderless)
+        Group {
+            switch model.rowNotice {
+            case .missingFolder(_, let projectID)?:
+                if let project = model.project(projectID) {
+                    InlineNotice(text: String(localized: "\(project.path.abbreviatingWithTilde) is missing.")) {
+                        Button("Cancel") { model.dismissNotice() }
+                            .buttonStyle(.borderless)
+                        Button("Locate…") { locate(project) }
+                            .buttonStyle(.borderedProminent)
+                            .focused($mainButtonFocused)
+                    }
+                }
+            case .portConflict(let serviceID, let port, let owner, let suggestion)?:
+                InlineNotice(
+                    text: conflictText(port: port, owner: owner),
+                    detail: suggestion.map { String(localized: "Sets PORT=\(String($0)) for this Run. Tools that ignore PORT need their own flag.") }
+                ) {
+                    Button("Cancel") { model.dismissNotice() }
+                        .buttonStyle(.borderless)
+                    if let owner, owner.serviceId == nil {
+                        Button("Show Process") {
+                            router.push(.processes(focus: owner.pid))
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    if let suggestion {
+                        Button("Use :\(String(suggestion))") { model.start(serviceID, port: suggestion) }
+                            .buttonStyle(.borderedProminent)
+                            .focused($mainButtonFocused)
+                    }
+                }
+                // Once whatever held the port is gone, so is the bar.
+                .task(id: port) {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(1))
+                        if await !model.portInUse(port) {
+                            model.dismissNotice()
+                            return
+                        }
+                    }
+                }
+            case nil:
+                EmptyView()
             }
         }
+        .onAppear { mainButtonFocused = true }
+    }
+
+    /// `Port 4321 is used by “astro dev” from Terminal. Bunode won’t stop it.`
+    private func conflictText(port: UInt16, owner: PortConflictOwner?) -> String {
+        guard let owner else {
+            return String(localized: "Port \(String(port)) is used by another program. Bunode won’t stop it.")
+        }
+        return String(localized: "Port \(String(port)) is used by “\(owner.command)” from \(owner.source). Bunode won’t stop it.")
     }
 
     private func locate(_ project: ProjectState) {
@@ -290,38 +340,6 @@ struct RowNoticeView: View {
             if model.relocateProject(project.id, to: url) != nil {
                 NSSound.beep()
             }
-        }
-    }
-}
-
-extension ServiceState {
-    /// The port a row shows (design-handoff §2.2): the one the live Run
-    /// listens on, else the configured one, else none.
-    func shownPort(status: RunStatus) -> (port: UInt16, isLive: Bool)? {
-        if status.isLive, let live = livePorts.first {
-            return (live, true)
-        }
-        return port.map { ($0, false) }
-    }
-}
-
-/// `:3000` in the accent color while the Run listens on it, gray for the
-/// configured port, `+1` when the Run listens on more.
-struct PortLabel: View {
-    let service: ServiceState
-    let status: RunStatus
-
-    var body: some View {
-        if let shown = service.shownPort(status: status) {
-            HStack(spacing: 2) {
-                Text(verbatim: ":\(shown.port)")
-                if shown.isLive, service.livePorts.count > 1 {
-                    Text(verbatim: "+\(service.livePorts.count - 1)")
-                }
-            }
-            .font(.caption.monospaced())
-            .foregroundStyle(shown.isLive ? Color.accentColor : Color.secondary)
-            .help(service.livePorts.map { ":\($0)" }.joined(separator: " "))
         }
     }
 }

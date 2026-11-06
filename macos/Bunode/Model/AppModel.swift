@@ -19,10 +19,13 @@ final class AppModel {
     enum RowNotice: Equatable {
         /// Start was refused because the Project's folder is gone.
         case missingFolder(serviceID: UInt64, projectID: UInt64)
+        /// Start was refused because the Service's Port is taken.
+        case portConflict(serviceID: UInt64, port: UInt16, owner: PortConflictOwner?, suggestion: UInt16?)
 
         var serviceID: UInt64 {
             switch self {
             case .missingFolder(let serviceID, _): serviceID
+            case .portConflict(let serviceID, _, _, _): serviceID
             }
         }
     }
@@ -181,9 +184,34 @@ final class AppModel {
         if rowNotice?.serviceID == serviceID {
             rowNotice = nil
         }
-        send(serviceID, showing: .starting) { core in
-            try? core.start(serviceId: serviceID)
+        launch(serviceID) { core in try? core.start(serviceId: serviceID) }
+    }
+
+    /// Port conflict › Use :N: this one Run gets `PORT=N`.
+    func start(_ serviceID: UInt64, port: UInt16) {
+        rowNotice = nil
+        launch(serviceID) { core in try? core.startWithPort(serviceId: serviceID, port: port) }
+    }
+
+    /// Starts with feedback at once; a taken port shows the conflict bar,
+    /// replacing any other (one at a time, design-handoff §5.3).
+    private func launch(_ serviceID: UInt64, _ start: @escaping @Sendable (BunodeCore) -> StartOutcome?) {
+        optimistic[serviceID] = .starting
+        let core = self.core
+        Task {
+            let outcome = await Task.detached { start(core) }.value
+            optimistic[serviceID] = nil
+            if case .portInUse(let port, let owner, let suggestion) = outcome {
+                rowNotice = .portConflict(serviceID: serviceID, port: port, owner: owner, suggestion: suggestion)
+            }
+            refresh()
         }
+    }
+
+    /// Whether something listens on `port`.
+    func portInUse(_ port: UInt16) async -> Bool {
+        let core = self.core
+        return await Task.detached { core.portInUse(port: port) }.value
     }
 
     /// Stops the Run completely, then starts a new one.

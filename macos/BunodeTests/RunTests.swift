@@ -130,7 +130,7 @@ struct QuitTests {
         for name in ["one", "two"] {
             ids.append(try await model.addService(to: project.id, name: name, command: "sleep 30", folder: nil).get().id)
         }
-        ids.forEach(model.start)
+        for id in ids { model.start(id) }
         let deadline = Date.now.addingTimeInterval(15)
         while model.statusSummary.running < 2, Date.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
@@ -190,5 +190,48 @@ struct DiscoveryTests {
         #expect(process.command.hasPrefix("node -e"))
         #expect(model.stopDiscovered(process) == nil)
         kill(pid_t(pid), SIGKILL)
+    }
+}
+
+@MainActor
+struct PortConflictTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func aTakenPortShowsTheConflictInsteadOfStarting() async throws {
+        // Hold a port in this process.
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(socket) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        address.sin_port = 0
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(socket, $0, length) } }
+        _ = listen(socket, 1)
+        _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(socket, $0, &length) } }
+        let port = UInt16(bigEndian: address.sin_port)
+
+        let model = AppModel(dataDirectory: data.url)
+        _ = await model.addProject(at: code.folder("app"))
+        let project = try #require(model.snapshot.projects.first)
+        let service = try await model.addService(to: project.id, name: "web", command: "sleep 30", folder: nil).get()
+        #expect(model.updateService(service.id, ServiceEdit(command: "sleep 30", folder: nil, port: port, runThroughShell: false)) == nil)
+
+        model.start(service.id)
+        let deadline = Date.now.addingTimeInterval(10)
+        while model.rowNotice == nil, Date.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard case .portConflict(let id, let taken, _, let suggestion)? = model.rowNotice else {
+            Issue.record("no port conflict: \(String(describing: model.rowNotice))")
+            return
+        }
+        #expect(id == service.id)
+        #expect(taken == port)
+        #expect(model.service(service.id)?.status == .stopped)
+        let next = try #require(suggestion)
+        #expect(next > port)
+        #expect(await model.portInUse(port))
     }
 }

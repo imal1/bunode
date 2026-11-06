@@ -32,6 +32,9 @@ struct ServiceView: View {
                 } trailing: {
                     StartStopButton(model: model, service: service, status: status)
                 }
+                if model.rowNotice?.serviceID == serviceID {
+                    RowNoticeView(model: model, router: router)
+                }
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 10) {
                         Card {

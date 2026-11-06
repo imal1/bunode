@@ -10,8 +10,9 @@ use std::sync::Arc;
 
 use bunode_core::{
     AddProjectOutcome, DiscoveredProcess, EnvironmentState, LogColor, LogLine, LogSpan, LogStream,
-    LogStyle, NewService, PackageManager, ProjectScripts, ProjectState, RunEnd, RunStatus,
-    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, Tool, ToolState,
+    LogStyle, NewService, PackageManager, PortConflictOwner, ProjectScripts, ProjectState, RunEnd,
+    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot,
+    StartOutcome, Tool, ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -223,6 +224,24 @@ pub enum LogColor {
     Rgb { red: u8, green: u8, blue: u8 },
 }
 
+#[uniffi::remote(Enum)]
+pub enum StartOutcome {
+    Started,
+    PortInUse {
+        port: u16,
+        owner: Option<PortConflictOwner>,
+        suggestion: Option<u16>,
+    },
+}
+
+#[uniffi::remote(Record)]
+pub struct PortConflictOwner {
+    pub pid: u32,
+    pub command: String,
+    pub source: String,
+    pub service_id: Option<u64>,
+}
+
 // MARK: - Errors
 
 /// An error with a message written for the user.
@@ -337,9 +356,20 @@ impl BunodeCore {
         Ok(self.supervisor.delete_service(service_id)?)
     }
 
-    /// Starts a Run unless one is live. Returns at once.
-    pub fn start(&self, service_id: u64) -> Result<(), CoreError> {
+    /// Starts a Run unless one is live, or reports that its Port is taken.
+    /// Returns at once.
+    pub fn start(&self, service_id: u64) -> Result<StartOutcome, CoreError> {
         Ok(self.supervisor.start(service_id)?)
+    }
+
+    /// `Use :N`: starts this one Run with `PORT=N`.
+    pub fn start_with_port(&self, service_id: u64, port: u16) -> Result<StartOutcome, CoreError> {
+        Ok(self.supervisor.start_with_port(service_id, port)?)
+    }
+
+    /// Whether something listens on `port`.
+    pub fn port_in_use(&self, port: u16) -> bool {
+        self.supervisor.port_in_use(port)
     }
 
     /// Looks for other Node and Bun processes now.

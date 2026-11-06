@@ -160,6 +160,30 @@ pub struct SettingsState {
     pub log_lines_kept: u32,
 }
 
+/// What Start did (design-handoff §5.3).
+#[derive(Debug, Clone, PartialEq)]
+pub enum StartOutcome {
+    /// A Run is starting, or was already live.
+    Started,
+    /// The Service's port is taken; nothing started.
+    PortInUse {
+        port: u16,
+        /// Who holds it, when it is one of the user's processes.
+        owner: Option<PortConflictOwner>,
+        /// The first free port after it, for `Use :N`.
+        suggestion: Option<u16>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PortConflictOwner {
+    pub pid: u32,
+    pub command: String,
+    pub source: String,
+    /// The owner is another of Bunode's Services.
+    pub service_id: Option<u64>,
+}
+
 /// The result of adding a Project folder.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AddProjectOutcome {
