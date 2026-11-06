@@ -1,0 +1,7 @@
+{
+  "name": "@monorepo-npm/web",
+  "private": true,
+  "scripts": {
+    "where": "node -e \"console.log('cwd ' + process.cwd())\""
+  }
+}

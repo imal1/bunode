@@ -25,7 +25,7 @@ struct ServiceView: View {
     var body: some View {
         if let service, let project {
             let status = model.status(of: service)
-            let displayName = "\(project.name) › \(service.name)"
+            let displayName = "\(project.name) › \(service.displayName)"
             VStack(alignment: .leading, spacing: 0) {
                 TopBar(title: displayName, onBack: router.back) {
                     StatusLine(service: service, status: status, isNotResponding: model.notResponding.contains(serviceID))

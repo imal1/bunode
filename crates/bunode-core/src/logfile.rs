@@ -145,7 +145,7 @@ pub struct RunLogWriter {
 }
 
 /// How many lines may wait for the disk before new ones are skipped.
-const QUEUE: usize = 16 * 1024;
+const QUEUE: usize = 64 * 1024;
 
 impl RunLogWriter {
     /// Starts the writer thread of Run `run` of `service`. Problems are
@@ -265,6 +265,14 @@ fn write_loop(
         }
     }
     if let Some((mut file, _)) = writer {
+        let skipped = *skipped.lock().unwrap_or_else(|e| e.into_inner());
+        if skipped > 0 {
+            let note = format!(
+                "{} bunode {skipped} lines were not written to this file because the disk could not keep up.\n",
+                timestamp(crate::supervisor::now_ms())
+            );
+            let _ = file.write_all(note.as_bytes());
+        }
         let _ = file.flush();
     }
 }

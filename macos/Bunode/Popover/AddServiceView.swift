@@ -62,11 +62,21 @@ struct AddServiceView: View {
             Text("Scripts in package.json")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            ForEach(scripts.groups, id: \.folder) { group in
+            ForEach(scripts.groups.filter { !$0.scripts.isEmpty }, id: \.folder) { group in
                 if let package = group.packageName {
-                    Text(package)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                    // A workspace package: its name, and where its scripts run.
+                    HStack(spacing: 4) {
+                        Text(package)
+                            .font(.caption.weight(.semibold))
+                        if let folder = group.folder {
+                            Text(folder)
+                                .font(.caption.monospaced())
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.top, 2)
                 }
                 FlowLayout(spacing: 6) {
                     ForEach(group.scripts, id: \.name) { option in
@@ -153,13 +163,21 @@ struct AddServiceView: View {
         name = option.name
     }
 
-    /// Why the name can't be used, shown under the fields.
+    /// The folder the new Service runs in: the selected script's package.
+    private var folder: String? {
+        selectedOption == nil ? nil : selection?.folder
+    }
+
+    /// Why the name can't be used, shown under the fields. Names are unique
+    /// among the Services of the same folder.
     private func nameProblem(in project: ProjectState) -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.count > 40 {
             return String(localized: "Use at most 40 characters.")
         }
-        let taken = project.services.contains { $0.name.lowercased() == trimmed.lowercased() }
+        let taken = project.services.contains {
+            $0.folder == folder && $0.name.lowercased() == trimmed.lowercased()
+        }
         if !trimmed.isEmpty, taken {
             return String(localized: "Name already used in \(project.name)")
         }
@@ -176,13 +194,13 @@ struct AddServiceView: View {
     private func add(to project: ProjectState) {
         guard canAdd(to: project) else { return }
         isAdding = true
-        let folder = selectedOption == nil ? nil : selection?.folder
+        let folder = self.folder
         Task {
             let result = await model.addService(to: project.id, name: name, command: command, folder: folder)
             isAdding = false
             switch result {
             case .success(let service):
-                toaster.show(String(localized: "Added \(project.name) › \(service.name)"))
+                toaster.show(String(localized: "Added \(project.name) › \(service.displayName)"))
                 router.popToHome()
             case .failure(let failure):
                 error = failure.userMessage

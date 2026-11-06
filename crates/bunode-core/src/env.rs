@@ -108,16 +108,30 @@ pub fn is_executable(path: &Path) -> bool {
 
 /// Runs `path --version` and returns what it printed, without a leading `v`.
 pub async fn version(path: &Path, spawn_lock: &Mutex<()>) -> Option<String> {
-    let child = {
-        let _guard = spawn_lock.lock().unwrap_or_else(|e| e.into_inner());
-        Command::new(path)
-            .arg("--version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .ok()?
+    // A file that was just written can briefly be "busy" on Linux while
+    // another thread's fork still holds it open; try again a few times.
+    let mut attempts = 0;
+    let child = loop {
+        let spawned = {
+            let _guard = spawn_lock.lock().unwrap_or_else(|e| e.into_inner());
+            Command::new(path)
+                .arg("--version")
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .kill_on_drop(true)
+                .spawn()
+        };
+        match spawned {
+            Ok(child) => break child,
+            Err(e)
+                if e.raw_os_error() == Some(nix::errno::Errno::ETXTBSY as i32) && attempts < 5 =>
+            {
+                attempts += 1;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(_) => return None,
+        }
     };
     let output = tokio::time::timeout(Duration::from_secs(5), child.wait_with_output())
         .await

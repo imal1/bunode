@@ -1,0 +1,8 @@
+{
+  "name": "monorepo-npm",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "lint": "node -e \"console.log('lint')\""
+  }
+}

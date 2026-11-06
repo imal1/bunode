@@ -130,14 +130,14 @@ struct ServiceRow: View {
     }
 
     private var displayName: String {
-        "\(project.name) › \(service.name)"
+        "\(project.name) › \(service.displayName)"
     }
 
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
                 StatusDot(style: status.dotStyle)
-                Text(service.name)
+                Text(service.displayName)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if let note {

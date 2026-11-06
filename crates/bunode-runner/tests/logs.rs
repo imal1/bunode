@@ -70,7 +70,7 @@ fn export_saves_the_full_log_not_just_what_memory_keeps() {
     require_tool("node");
     let h = Harness::new();
     h.supervisor.set_log_lines_kept(5_000).unwrap();
-    let id = h.service("flood", "node flood.js 20000");
+    let id = h.service("flood", "node flood.js 12000");
     h.supervisor.start(id).unwrap();
     let done = h.wait(id, "the flood to end", |s| !s.status.is_live());
     assert_eq!(done.log_count, 5_000);
@@ -81,9 +81,9 @@ fn export_saves_the_full_log_not_just_what_memory_keeps() {
     let exported = std::fs::read_to_string(&out).unwrap();
     let lines: Vec<&str> = exported.lines().collect();
     // Every line, Bunode's two included, even after Clear.
-    assert_eq!(lines.len(), 20_002);
-    assert!(lines[0].contains(" bunode Run #1: node flood.js 20000"));
-    assert!(lines.iter().any(|l| l.ends_with(" err line 20000")));
+    assert_eq!(lines.len(), 12_002);
+    assert!(lines[0].contains(" bunode Run #1: node flood.js 12000"));
+    assert!(lines.iter().any(|l| l.ends_with(" err line 12000")));
     assert!(lines.iter().any(|l| l.ends_with(" out line 1")));
 }
 

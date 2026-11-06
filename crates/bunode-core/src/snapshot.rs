@@ -77,6 +77,8 @@ pub struct ServiceState {
     pub id: u64,
     pub project_id: u64,
     pub name: String,
+    /// The name as Home shows it: "web › dev" for a Service in a subfolder.
+    pub display_name: String,
     pub command: String,
     /// Relative to the Project's directory; `None` is the directory itself.
     pub folder: Option<String>,

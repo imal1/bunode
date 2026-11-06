@@ -139,3 +139,28 @@ struct EditServiceTests {
         #expect(FileManager.default.fileExists(atPath: folder.appending(path: "package.json").path(percentEncoded: false)))
     }
 }
+
+@MainActor
+struct MonorepoTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func offersPackageScriptsAndNamesThemByFolder() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        let acme = code.folder("acme", files: [
+            "package.json": #"{"workspaces": ["apps/*"], "scripts": {"dev": "turbo dev"}}"#,
+        ])
+        _ = code.folder("acme/apps/web", files: ["package.json": #"{"name": "@acme/web", "scripts": {"dev": "vite"}}"#])
+        _ = await model.addProject(at: acme)
+        let project = try #require(model.snapshot.projects.first)
+
+        let scripts = try #require(await model.projectScripts(project.id))
+        #expect(scripts.groups.map(\.folder) == [nil, "apps/web"])
+        #expect(scripts.groups[1].packageName == "@acme/web")
+
+        let root = try await model.addService(to: project.id, name: "dev", command: "npm run dev", folder: nil).get()
+        let web = try await model.addService(to: project.id, name: "dev", command: "npm run dev", folder: "apps/web").get()
+        #expect(root.displayName == "dev")
+        #expect(web.displayName == "web › dev")
+    }
+}

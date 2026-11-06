@@ -81,6 +81,7 @@ pub struct ServiceState {
     pub id: u64,
     pub project_id: u64,
     pub name: String,
+    pub display_name: String,
     pub command: String,
     pub folder: Option<String>,
     pub port: Option<u16>,

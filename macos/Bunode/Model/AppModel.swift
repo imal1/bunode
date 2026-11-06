@@ -149,7 +149,7 @@ final class AppModel {
             try? await Task.sleep(for: .milliseconds(100))
             refresh()
         }
-        return String(localized: "Deleted \(project.name) › \(service.name). Files in \(project.path.abbreviatingWithTilde) are untouched.")
+        return String(localized: "Deleted \(project.name) › \(service.displayName). Files in \(project.path.abbreviatingWithTilde) are untouched.")
     }
 
     // MARK: - Runs

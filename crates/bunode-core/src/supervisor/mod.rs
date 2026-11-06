@@ -128,7 +128,8 @@ struct RunEntry {
     last_exit: Option<String>,
     /// The Run's output in memory; kept after it ends, until the next Run.
     logs: Arc<Mutex<LogBuffer>>,
-    /// The Run's log file, while the Run is live.
+    /// The Run's log file. Kept after the Run ends, so an export can wait
+    /// for the last lines to reach the disk; the next Run replaces it.
     file: Option<RunLogWriter>,
     /// Restart: start a new Run as soon as this one is over.
     restart_after: bool,
@@ -379,25 +380,36 @@ impl Supervisor {
                 .iter()
                 .any(|s| s.command == command && s.folder.as_deref() == folder)
         };
-        let root = ScriptGroup {
-            package_name: None,
-            folder: None,
-            scripts: scripts
+        let options = |scripts: &[package::Script], folder: Option<&Path>| -> Vec<ScriptOption> {
+            scripts
                 .iter()
-                .flatten()
                 .map(|script| {
                     let command = package::script_command(manager, &script.name);
                     ScriptOption {
-                        used: used(&command, None),
+                        used: used(&command, folder),
                         name: script.name.clone(),
                         command,
                     }
                 })
-                .collect(),
+                .collect()
         };
+        let mut groups = vec![ScriptGroup {
+            package_name: None,
+            folder: None,
+            scripts: options(scripts.as_deref().unwrap_or_default(), None),
+        }];
+        // Monorepo packages run their scripts in their own folder.
+        for package in crate::workspace::packages(&path) {
+            let folder = PathBuf::from(&package.folder);
+            groups.push(ScriptGroup {
+                scripts: options(&package.scripts, Some(&folder)),
+                package_name: Some(package.name),
+                folder: Some(package.folder),
+            });
+        }
         Ok(ProjectScripts {
             has_package_json: scripts.is_some(),
-            groups: vec![root],
+            groups,
         })
     }
 
@@ -408,16 +420,12 @@ impl Supervisor {
             .config
             .project(project_id)
             .ok_or(Error::UnknownProject)?;
-        let name = validate_service_name(project, &new.name, None)?;
         let command = new.command.trim();
         if command.is_empty() {
             return Err(Error::Invalid("Enter a command.".into()));
         }
-        let folder = new
-            .folder
-            .map(|f| f.trim().to_owned())
-            .filter(|f| !f.is_empty() && f != ".")
-            .map(PathBuf::from);
+        let folder = validate_folder(&project.path, new.folder.as_deref())?;
+        let name = validate_service_name(project, &new.name, folder.as_deref(), None)?;
 
         let mut config = state.config.clone();
         let service = Service {
@@ -776,7 +784,7 @@ impl Shared {
                         control: None,
                         last_exit: Some(message),
                         logs,
-                        file: None,
+                        file: Some(log.file.clone()),
                         restart_after: false,
                         delete_after: false,
                         config_changed: false,
@@ -883,7 +891,7 @@ impl Shared {
         let (status, note) = outcome.classify(run.stop_requested);
         let line = note.clone().unwrap_or_else(|| "Stopped".into());
         let time = now_ms();
-        if let Some(file) = run.file.take() {
+        if let Some(file) = &run.file {
             file.line(time, LogStream::System, &line);
         }
         lock_logs(&run.logs).push_system(time, line);
@@ -976,11 +984,13 @@ fn validate_folder(project: &Path, folder: Option<&str>) -> Result<Option<PathBu
     Ok(Some(relative.to_path_buf()))
 }
 
-/// Checks a Service name: 1–40 characters and unique in the Project,
-/// ignoring case. Returns it trimmed.
+/// Checks a Service name: 1–40 characters and unique among the Project's
+/// Services in the same folder, ignoring case (a monorepo has a `dev` in
+/// many packages). Returns it trimmed.
 fn validate_service_name(
     project: &Project,
     name: &str,
+    folder: Option<&Path>,
     except: Option<ServiceId>,
 ) -> Result<String> {
     let name = name.trim();
@@ -992,10 +1002,11 @@ fn validate_service_name(
             "Use at most {MAX_SERVICE_NAME_LENGTH} characters."
         )));
     }
-    let taken = project
-        .services
-        .iter()
-        .any(|s| Some(s.id) != except && s.name.to_lowercase() == name.to_lowercase());
+    let taken = project.services.iter().any(|s| {
+        Some(s.id) != except
+            && s.folder.as_deref() == folder
+            && s.name.to_lowercase() == name.to_lowercase()
+    });
     if taken {
         return Err(Error::Invalid(format!(
             "Name already used in {}",
@@ -1023,10 +1034,16 @@ fn effective_manager(
 
 fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -> ServiceState {
     let logs = run.map(|r| lock_logs(&r.logs).info()).unwrap_or_default();
+    // A Service in a subfolder shows the folder's name first: "web › dev".
+    let display_name = match service.folder.as_deref().and_then(Path::file_name) {
+        Some(folder) => format!("{} › {}", folder.to_string_lossy(), service.name),
+        None => service.name.clone(),
+    };
     ServiceState {
         id: service.id,
         project_id: project.id,
         name: service.name.clone(),
+        display_name,
         command: service.command.clone(),
         folder: service.folder.as_ref().map(|f| f.display().to_string()),
         port: service.port,

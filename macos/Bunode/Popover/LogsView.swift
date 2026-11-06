@@ -19,7 +19,7 @@ struct LogsView: View {
 
     var body: some View {
         if let service, let project {
-            let displayName = "\(project.name) › \(service.name)"
+            let displayName = "\(project.name) › \(service.displayName)"
             VStack(alignment: .leading, spacing: 0) {
                 TopBar(title: title(for: service), backLabel: String(localized: "Back to \(displayName)"), onBack: router.back) {
                     Text(displayName)

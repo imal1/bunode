@@ -17,6 +17,7 @@ pub mod package;
 pub mod snapshot;
 pub mod store;
 pub mod supervisor;
+pub mod workspace;
 
 pub use ansi::{LogColor, LogSpan, LogStyle};
 pub use error::{Error, Result};

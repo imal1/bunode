@@ -1,0 +1,7 @@
+{
+  "name": "@monorepo-npm/ui",
+  "private": true,
+  "scripts": {
+    "build": "node -e \"console.log('built ui')\""
+  }
+}
