@@ -38,7 +38,7 @@ extension PackageManager {
 extension Error {
     /// The message to show the user. Core errors carry one already.
     var userMessage: String {
-        if case CoreError.Failed(let message) = self {
+        if let error = self as? CoreError, case .Failed(let message) = error {
             return message
         }
         return localizedDescription
