@@ -438,3 +438,35 @@ struct ExternalRow: View {
         return label
     }
 }
+
+extension ServiceState {
+    /// The port a row shows (design-handoff §2.2): the one the live Run
+    /// listens on, else the configured one, else none.
+    func shownPort(status: RunStatus) -> (port: UInt16, isLive: Bool)? {
+        if status.isLive, let live = livePorts.first {
+            return (live, true)
+        }
+        return port.map { ($0, false) }
+    }
+}
+
+/// `:3000` in the accent color while the Run listens on it, gray for the
+/// configured port, `+1` when the Run listens on more.
+struct PortLabel: View {
+    let service: ServiceState
+    let status: RunStatus
+
+    var body: some View {
+        if let shown = service.shownPort(status: status) {
+            HStack(spacing: 2) {
+                Text(verbatim: ":\(shown.port)")
+                if shown.isLive, service.livePorts.count > 1 {
+                    Text(verbatim: "+\(service.livePorts.count - 1)")
+                }
+            }
+            .font(.caption.monospaced())
+            .foregroundStyle(shown.isLive ? Color.accentColor : Color.secondary)
+            .help(service.livePorts.map { ":\($0)" }.joined(separator: " "))
+        }
+    }
+}
