@@ -52,3 +52,35 @@ struct RunTests {
         #expect(!AppModel(dataDirectory: data.url).snapshot.settings.showRunningCount)
     }
 }
+
+@MainActor
+struct FailureTests {
+    let data = TemporaryDirectory()
+    let code = TemporaryDirectory()
+
+    @Test func missingCommandFailsAndTurnsTheIconRed() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        _ = await model.addProject(at: code.folder("app"))
+        let project = try #require(model.snapshot.projects.first)
+        let service = try await model.addService(to: project.id, name: "broken", command: "bunode-no-such-command", folder: nil).get()
+
+        model.start(service.id)
+        let deadline = Date.now.addingTimeInterval(15)
+        while model.service(service.id)?.status != .failed, Date.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            model.refresh()
+        }
+        #expect(model.service(service.id)?.status == .failed)
+        #expect(model.service(service.id)?.lastExit?.contains("bunode-no-such-command") == true)
+        #expect(model.statusSummary.aggregate == .error)
+        #expect(model.statusSummary.accessibilityLabel == "Bunode, 0 running, 1 crashed")
+    }
+
+    @Test func forceStopSettingPersists() {
+        let model = AppModel(dataDirectory: data.url)
+        #expect(model.snapshot.settings.forceStopAfterSecs == 5)
+        #expect(model.responseTimeout == 10)
+        model.setForceStopAfter(30)
+        #expect(AppModel(dataDirectory: data.url).snapshot.settings.forceStopAfterSecs == 30)
+    }
+}

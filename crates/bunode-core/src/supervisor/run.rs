@@ -4,6 +4,7 @@
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::process::Stdio;
+use std::time::Duration;
 
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
@@ -11,11 +12,16 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::time::{Instant, sleep_until};
 
 use super::Shared;
 use crate::launch::LaunchSpec;
 use crate::model::ServiceId;
 use crate::snapshot::RunStatus;
+
+/// After a force kill, how long the runner gets to report before it is
+/// killed too.
+const RUNNER_KILL_GRACE: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Control {
@@ -123,6 +129,8 @@ pub(crate) async fn drive(
     let mut group: Option<Pid> = None;
     let mut outcome: Option<Outcome> = None;
     let mut controls_open = true;
+    // Set by a force kill: if the runner hasn't gone by then, it is killed.
+    let mut runner_deadline: Option<Instant> = None;
 
     loop {
         tokio::select! {
@@ -150,11 +158,20 @@ pub(crate) async fn drive(
                     if let Some(group) = group {
                         let _ = killpg(group, Signal::SIGKILL);
                     }
+                    runner_deadline.get_or_insert(Instant::now() + RUNNER_KILL_GRACE);
                 }
                 // The Supervisor is going away: closing the lifeline stops the Run.
                 None => {
                     controls_open = false;
                     let _ = write.shutdown().await;
+                }
+            },
+            // The runner itself is not responding: end it, and the group.
+            () = sleep_until(runner_deadline.unwrap_or_else(Instant::now)), if runner_deadline.is_some() => {
+                runner_deadline = None;
+                let _ = runner.start_kill();
+                if let Some(group) = group {
+                    let _ = killpg(group, Signal::SIGKILL);
                 }
             },
         }

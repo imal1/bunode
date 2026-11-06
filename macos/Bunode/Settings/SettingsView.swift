@@ -131,8 +131,24 @@ struct AdvancedPane: View {
     let model: AppModel
 
     var body: some View {
-        Form {}
-            .formStyle(.grouped)
+        Form {
+            Section("Stop") {
+                Picker(selection: Binding(
+                    get: { model.snapshot.settings.forceStopAfterSecs },
+                    set: { model.setForceStopAfter($0) }
+                )) {
+                    ForEach([UInt32(3), 5, 10, 30], id: \.self) { seconds in
+                        Text("\(seconds) s").tag(seconds)
+                    }
+                } label: {
+                    Text("Force stop after")
+                    Text("Stop asks nicely first, then force-quits.")
+                }
+                .pickerStyle(.menu)
+            }
+        }
+        .formStyle(.grouped)
+        .controlSize(.small)
     }
 }
 

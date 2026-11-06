@@ -29,6 +29,9 @@ use run::{Control, Outcome};
 /// Changes are reported at most this often (requirements §2.2).
 const COALESCE: Duration = Duration::from_millis(100);
 
+/// The choices of Advanced › Force stop after, in seconds.
+pub const FORCE_STOP_CHOICES: [u32; 4] = [3, 5, 10, 30];
+
 /// Service names are 1–40 characters (design-handoff §6.2).
 pub const MAX_SERVICE_NAME_LENGTH: usize = 40;
 
@@ -259,6 +262,17 @@ impl Supervisor {
     /// General › Show running count.
     pub fn set_show_running_count(&self, show: bool) -> Result<()> {
         self.update_settings(|settings| settings.show_running_count = show)
+    }
+
+    /// Advanced › Force stop after: 3, 5, 10 or 30 seconds. Applies to Runs
+    /// started from now on.
+    pub fn set_force_stop_after(&self, seconds: u32) -> Result<()> {
+        if !FORCE_STOP_CHOICES.contains(&seconds) {
+            return Err(Error::Invalid(format!(
+                "Force stop after must be one of {FORCE_STOP_CHOICES:?} seconds."
+            )));
+        }
+        self.update_settings(|settings| settings.force_stop_after_secs = seconds)
     }
 
     fn update_settings(&self, change: impl FnOnce(&mut crate::model::Settings)) -> Result<()> {
@@ -786,11 +800,17 @@ mod tests {
     fn settings_persist() {
         let data = tempfile::tempdir().unwrap();
         let (supervisor, _) = open(data.path());
-        assert!(supervisor.snapshot().settings.show_running_count);
+        let settings = supervisor.snapshot().settings;
+        assert!(settings.show_running_count);
+        assert_eq!(settings.force_stop_after_secs, 5);
         supervisor.set_show_running_count(false).unwrap();
+        supervisor.set_force_stop_after(10).unwrap();
+        assert!(supervisor.set_force_stop_after(7).is_err());
         drop(supervisor);
         let (reloaded, _) = open(data.path());
-        assert!(!reloaded.snapshot().settings.show_running_count);
+        let settings = reloaded.snapshot().settings;
+        assert!(!settings.show_running_count);
+        assert_eq!(settings.force_stop_after_secs, 10);
     }
 
     #[test]

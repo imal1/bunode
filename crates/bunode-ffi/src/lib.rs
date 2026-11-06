@@ -218,6 +218,11 @@ impl BunodeCore {
     pub fn set_show_running_count(&self, show: bool) -> Result<(), CoreError> {
         Ok(self.supervisor.set_show_running_count(show)?)
     }
+
+    /// Advanced › Force stop after: 3, 5, 10 or 30 seconds.
+    pub fn set_force_stop_after(&self, seconds: u32) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_force_stop_after(seconds)?)
+    }
 }
 
 #[cfg(test)]

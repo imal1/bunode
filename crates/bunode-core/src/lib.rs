@@ -20,7 +20,7 @@ pub use snapshot::{
     AddProjectOutcome, NewService, ProjectScripts, ProjectState, RunStatus, ScriptGroup,
     ScriptOption, ServiceState, SettingsState, Snapshot,
 };
-pub use supervisor::{Listener, Supervisor, SupervisorOptions};
+pub use supervisor::{FORCE_STOP_CHOICES, Listener, Supervisor, SupervisorOptions};
 
 /// The version of `bunode-core`, as set in its `Cargo.toml`.
 pub fn version() -> &'static str {

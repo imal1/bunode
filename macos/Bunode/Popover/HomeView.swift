@@ -100,6 +100,12 @@ struct ServiceRow: View {
     let service: ServiceState
 
     private var status: RunStatus { model.status(of: service) }
+    private var isNotResponding: Bool { model.notResponding.contains(service.id) }
+
+    /// Crashed, Failed or Not responding.
+    private var note: String? {
+        isNotResponding ? String(localized: "Not responding") : status.rowNote
+    }
 
     private var displayName: String {
         "\(project.name) › \(service.name)"
@@ -112,10 +118,11 @@ struct ServiceRow: View {
                 Text(service.name)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                if let note = status.rowNote {
+                if let note {
                     Text(note)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .help(service.lastExit ?? note)
                 }
                 Spacer(minLength: 4)
                 if let port = service.port {
@@ -128,8 +135,8 @@ struct ServiceRow: View {
             .frame(maxWidth: .infinity, minHeight: 32)
             .contentShape(Rectangle())
 
-            RowAction(status: status, displayName: displayName) {
-                if status == .running {
+            RowAction(status: status, isNotResponding: isNotResponding, displayName: displayName) {
+                if status == .running || isNotResponding {
                     model.stop(service.id)
                 } else {
                     model.start(service.id)
@@ -151,7 +158,7 @@ struct ServiceRow: View {
     }
 
     private var accessibilityLabel: String {
-        var label = "\(displayName), \(status.label)"
+        var label = "\(displayName), \(note ?? status.label)"
         if let port = service.port {
             label += String(localized: ", port \(String(port))")
         }
@@ -163,12 +170,16 @@ struct ServiceRow: View {
 /// the Supervisor works (design-handoff §2.2, §5.1).
 private struct RowAction: View {
     let status: RunStatus
+    /// A stuck Run gets its Stop button back, which force-kills.
+    let isNotResponding: Bool
     let displayName: String
     let action: () -> Void
 
+    private var showsStop: Bool { status == .running || isNotResponding }
+
     var body: some View {
         Group {
-            if status.isBusy {
+            if status.isBusy && !isNotResponding {
                 ProgressView()
                     .controlSize(.small)
                     .scaleEffect(0.7)
@@ -176,7 +187,7 @@ private struct RowAction: View {
             } else {
                 Button(action: action) {
                     Group {
-                        if status == .running {
+                        if showsStop {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.primary)
                                 .frame(width: 10, height: 10)
@@ -190,8 +201,8 @@ private struct RowAction: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .help(status == .running ? "Stop \(displayName)" : "Start \(displayName)")
-                .accessibilityLabel(status == .running ? "Stop \(displayName)" : "Start \(displayName)")
+                .help(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
+                .accessibilityLabel(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
             }
         }
     }

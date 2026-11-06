@@ -11,6 +11,11 @@ final class AppModel {
     /// Statuses shown before the Supervisor confirms a command, so a click
     /// gets visible feedback at once (design-handoff §5.1).
     private(set) var optimistic: [UInt64: RunStatus] = [:]
+    /// Services the Supervisor has kept in Starting or Stopping for too long.
+    private(set) var notResponding: Set<UInt64> = []
+
+    @ObservationIgnored private var busyWatch = BusyWatch()
+    @ObservationIgnored private var watchdog: Task<Void, Never>?
 
     @ObservationIgnored let core: BunodeCore
     @ObservationIgnored private var updates: Task<Void, Never>?
@@ -44,6 +49,29 @@ final class AppModel {
 
     func refresh() {
         snapshot = core.snapshot()
+        watchBusyServices()
+    }
+
+    /// Starting/Stopping for longer than Force stop + 5 s with no news.
+    var responseTimeout: TimeInterval {
+        TimeInterval(snapshot.settings.forceStopAfterSecs) + 5
+    }
+
+    private func watchBusyServices() {
+        let busy = Set(services.filter { $0.status.isBusy }.map(\.id))
+        busyWatch.update(busy: busy, now: .now)
+        notResponding.formIntersection(busy)
+        guard !busyWatch.isEmpty, watchdog == nil else { return }
+        watchdog = Task { [weak self] in
+            while let self, !self.busyWatch.isEmpty {
+                let overdue = self.busyWatch.overdue(now: .now, timeout: self.responseTimeout)
+                if overdue != self.notResponding {
+                    self.notResponding = overdue
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            self?.watchdog = nil
+        }
     }
 
     func project(_ id: UInt64) -> ProjectState? {
@@ -102,7 +130,12 @@ final class AppModel {
         }
     }
 
+    /// Stops the Run; when it is not responding, force-kills it instead.
     func stop(_ serviceID: UInt64) {
+        if notResponding.contains(serviceID) {
+            forceKill(serviceID)
+            return
+        }
         send(serviceID, showing: .stopping) { core in
             core.stop(serviceId: serviceID)
         }
@@ -128,6 +161,12 @@ final class AppModel {
 
     func setShowRunningCount(_ show: Bool) {
         try? core.setShowRunningCount(show: show)
+        refresh()
+    }
+
+    /// Advanced › Force stop after, in seconds.
+    func setForceStopAfter(_ seconds: UInt32) {
+        try? core.setForceStopAfter(seconds: seconds)
         refresh()
     }
 

@@ -1,0 +1,8 @@
+{
+  "name": "crash",
+  "private": true,
+  "scripts": {
+    "immediately": "node immediately.js",
+    "later": "node later.js"
+  }
+}
