@@ -309,19 +309,16 @@ pub fn port_owner(port: u16) -> Option<PortOwner> {
     })
 }
 
-/// Whether something already listens on TCP `port`: Bunode can't bind it
-/// on the loopback or the wildcard address, or one of the user's processes
-/// listens on it.
+/// Whether something already listens on TCP `port` on this Mac: a
+/// connection to it on the loopback address, IPv4 or IPv6, is accepted.
+/// (Trying to bind the port instead gives false alarms on macOS for a
+/// moment after a listener closes.)
 pub fn port_in_use(port: u16) -> bool {
-    use std::net::{Ipv4Addr, Ipv6Addr, TcpListener};
-    let free = |addr: std::net::SocketAddr| TcpListener::bind(addr).is_ok();
-    !(free((Ipv4Addr::LOCALHOST, port).into())
-        && free((Ipv4Addr::UNSPECIFIED, port).into())
-        && (free((Ipv6Addr::LOCALHOST, port).into()) || !ipv6_available()))
-}
-
-fn ipv6_available() -> bool {
-    std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, 0)).is_ok()
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
+    use std::time::Duration;
+    let accepts =
+        |addr: SocketAddr| TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok();
+    accepts((Ipv4Addr::LOCALHOST, port).into()) || accepts((Ipv6Addr::LOCALHOST, port).into())
 }
 
 /// The first free port after `port`, for `Use :N`.
