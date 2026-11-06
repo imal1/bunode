@@ -419,12 +419,12 @@ mod tests {
         // (Whether `next` is still free a moment later is up to other tests.)
         let next = next_free_port(port).unwrap();
         assert!(next > port);
+        // Whether the port is free again right after `drop` can't be checked
+        // here: on macOS a child that another test spawns at the same moment
+        // can inherit the listening socket before it is close-on-exec. The
+        // integration test `a_port_held_outside_bunode_names_its_process`
+        // checks a port freeing up when its process exits.
         drop(listener);
-        let accepted = probe_port(port);
-        assert!(
-            accepted.is_empty(),
-            "port {port} still accepts: {accepted:?}"
-        );
     }
 
     #[test]
