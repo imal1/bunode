@@ -142,6 +142,9 @@ struct EnvironmentInfo {
     loading: bool,
     problem: Option<String>,
     tools: Vec<ToolState>,
+    /// Counts tool lookups so that a slow, older one (one that read the
+    /// settings before a Change…) can't overwrite a newer result.
+    tools_lookup: u64,
 }
 
 struct RunEntry {
@@ -239,6 +242,7 @@ impl Supervisor {
                         loading: false,
                         problem: None,
                         tools: Vec::new(),
+                        tools_lookup: 0,
                     },
                     log_filters: HashMap::new(),
                     port_overrides: HashMap::new(),
@@ -1393,9 +1397,14 @@ async fn discover(shared: Arc<Shared>) {
 
 /// Finds `node` and `bun`, the user's picks first, and asks their versions.
 async fn resolve_tools(shared: &Shared) {
-    let (base_env, settings) = {
-        let state = shared.lock();
-        (state.base_env.clone(), state.config.settings.clone())
+    let (base_env, settings, lookup) = {
+        let mut state = shared.lock();
+        state.environment.tools_lookup += 1;
+        (
+            state.base_env.clone(),
+            state.config.settings.clone(),
+            state.environment.tools_lookup,
+        )
     };
     let mut tools = Vec::new();
     for tool in [Tool::Node, Tool::Bun] {
@@ -1419,7 +1428,10 @@ async fn resolve_tools(shared: &Shared) {
             is_custom,
         });
     }
-    shared.lock().environment.tools = tools;
+    let mut state = shared.lock();
+    if state.environment.tools_lookup == lookup {
+        state.environment.tools = tools;
+    }
 }
 
 fn find_service(config: &Config, service_id: ServiceId) -> Result<(&Project, &Service)> {
