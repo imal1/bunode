@@ -47,6 +47,12 @@ final class LogMirror {
         return .update(removed: removed, appended: appended.count)
     }
 
+    /// Forgets everything, e.g. when the search changes.
+    func reset() {
+        lines = []
+        first = 0
+    }
+
     func line(at row: Int) -> LogLine? {
         lines.indices.contains(row) ? lines[row] : nil
     }
@@ -57,9 +63,10 @@ final class LogMirror {
         var next = from
         while UInt64(result.count) < count {
             let chunk = fetch(next, UInt32(min(5_000, count - UInt64(result.count))))
-            guard let last = chunk.last else { break }
+            guard !chunk.isEmpty else { break }
             result.append(contentsOf: chunk)
-            next = last.seq + 1
+            // Positions are line numbers, or match numbers while searching.
+            next += UInt64(chunk.count)
         }
         return result
     }

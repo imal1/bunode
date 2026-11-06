@@ -63,6 +63,7 @@ struct LogMirrorTests {
     }
 }
 
+@MainActor
 struct LogPaletteTests {
     @Test func countsWrappedLines() {
         #expect(LogPalette.wrappedLineCount(of: "", columns: 10) == 1)
@@ -81,6 +82,7 @@ struct LogPaletteTests {
     @Test func pluralizesLines() {
         #expect(String(localized: "\(1) lines") == "1 line")
         #expect(String(localized: "\(10_000) lines") == "10,000 lines")
+        #expect(String(localized: "\(1) matches") == "1 match")
     }
 }
 
@@ -107,6 +109,15 @@ struct RunLogTests {
         #expect(lines.map(\.text).contains("one"))
         #expect(lines.map(\.text).contains("two"))
         #expect(lines.first?.stream == .system)
+
+        model.setLogFilter(service.id, "TWO")
+        let searchDeadline = Date.now.addingTimeInterval(5)
+        while model.service(service.id)?.logMatchCount != 1, Date.now < searchDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+            model.refresh()
+        }
+        let match = try #require(model.service(service.id))
+        #expect(model.logMatchingLines(service.id, from: match.logMatchFirst, max: 10).map(\.text) == ["two"])
 
         model.clearLogs(service.id)
         #expect(model.service(service.id)?.logCount == 0)

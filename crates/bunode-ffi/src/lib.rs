@@ -92,6 +92,9 @@ pub struct ServiceState {
     pub log_first: u64,
     pub log_count: u64,
     pub log_dropped: u64,
+    pub log_match_first: u64,
+    pub log_match_count: u64,
+    pub log_filter_generation: u64,
 }
 
 #[uniffi::remote(Enum)]
@@ -299,6 +302,16 @@ impl BunodeCore {
     /// Up to `max` lines of the Service's current or last Run, from `from` on.
     pub fn log_lines(&self, service_id: u64, from: u64, max: u32) -> Vec<LogLine> {
         self.supervisor.log_lines(service_id, from, max)
+    }
+
+    /// Logs › Search; an empty query shows everything. Returns at once.
+    pub fn set_log_filter(&self, service_id: u64, query: String) {
+        self.supervisor.set_log_filter(service_id, &query);
+    }
+
+    /// Up to `max` lines matching the search, from match number `from` on.
+    pub fn log_matching_lines(&self, service_id: u64, from: u64, max: u32) -> Vec<LogLine> {
+        self.supervisor.log_matching_lines(service_id, from, max)
     }
 
     /// Logs › Clear: hides the lines shown so far.

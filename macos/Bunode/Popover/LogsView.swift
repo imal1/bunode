@@ -9,6 +9,10 @@ struct LogsView: View {
     let toaster: Toaster
 
     @State private var feed = LogFeed()
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
+
+    private var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     private var service: ServiceState? { model.service(serviceID) }
     private var project: ProjectState? { service.flatMap { model.project($0.projectId) } }
@@ -22,10 +26,11 @@ struct LogsView: View {
                 } trailing: {
                     trailingButton(service)
                 }
+                searchField
                 ZStack {
                     LogTableView(feed: feed, accessibilityName: String(localized: "Logs of \(displayName)"))
-                    if service.logCount == 0 {
-                        Text("No output yet.")
+                    if let empty = emptyText(service) {
+                        Text(empty)
                             .font(.callout)
                             .foregroundStyle(Color(nsColor: LogPalette.time))
                             .allowsHitTesting(false)
@@ -37,10 +42,64 @@ struct LogsView: View {
 
                 footer(service)
             }
-            .onAppear(perform: sync)
+            .onAppear {
+                // Entering Logs always starts without a search.
+                model.setLogFilter(serviceID, "")
+                sync()
+            }
+            .onDisappear { model.setLogFilter(serviceID, "") }
+            .onChange(of: query) { model.setLogFilter(serviceID, query) }
             .onChange(of: service.logFirst, sync)
             .onChange(of: service.logCount, sync)
+            .onChange(of: service.logMatchFirst, sync)
+            .onChange(of: service.logMatchCount, sync)
+            .onChange(of: service.logFilterGeneration, sync)
+            .background {
+                // ⌘F and ⌘K (design-handoff §9), as invisible buttons.
+                Group {
+                    Button("Search") { searchFocused = true }
+                        .keyboardShortcut("f", modifiers: .command)
+                    Button("Clear") { model.clearLogs(serviceID) }
+                        .keyboardShortcut("k", modifiers: .command)
+                }
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            }
         }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+            TextField("Search", text: $query)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Clear search")
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(Color(nsColor: .quinarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+        .padding(EdgeInsets(top: 0, leading: 2, bottom: 6, trailing: 2))
+    }
+
+    private func emptyText(_ service: ServiceState) -> String? {
+        if isSearching {
+            return service.logMatchCount == 0 ? String(localized: "No lines match.") : nil
+        }
+        return service.logCount == 0 ? String(localized: "No output yet.") : nil
     }
 
     private func title(for service: ServiceState) -> String {
@@ -64,6 +123,10 @@ struct LogsView: View {
         HStack(spacing: 4) {
             HStack(spacing: 0) {
                 Text("\(Int(service.logCount)) lines")
+                if isSearching {
+                    Text(verbatim: " · ")
+                    Text("\(Int(service.logMatchCount)) matches")
+                }
                 if service.logDropped > 0 {
                     Text(verbatim: " · ")
                     Text("\(Int(service.logDropped)) dropped")
@@ -83,8 +146,14 @@ struct LogsView: View {
 
     private func sync() {
         guard let service = model.service(serviceID) else { return }
-        feed.sync(first: service.logFirst, count: service.logCount) { from, max in
-            model.logLines(serviceID, from: from, max: max)
+        if isSearching {
+            feed.sync(first: service.logMatchFirst, count: service.logMatchCount, generation: service.logFilterGeneration) { from, max in
+                model.logMatchingLines(serviceID, from: from, max: max)
+            }
+        } else {
+            feed.sync(first: service.logFirst, count: service.logCount, generation: service.logFilterGeneration) { from, max in
+                model.logLines(serviceID, from: from, max: max)
+            }
         }
     }
 

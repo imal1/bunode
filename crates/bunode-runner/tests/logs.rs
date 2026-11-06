@@ -40,6 +40,32 @@ fn collects_stdout_stderr_and_system_lines() {
 }
 
 #[test]
+fn search_filters_and_follows_new_lines() {
+    require_tool("node");
+    let h = Harness::new();
+    let id = h.service("flood", "node flood.js 1000");
+    h.supervisor.set_log_filter(id, "LINE 99");
+    h.supervisor.start(id).unwrap();
+    let done = h.wait(id, "the flood to end", |s| {
+        !s.status.is_live() && s.log_match_count == 11
+    });
+    let matches = h
+        .supervisor
+        .log_matching_lines(id, done.log_match_first, 100);
+    let mut texts: Vec<&str> = matches.iter().map(|l| l.text.as_str()).collect();
+    texts.sort();
+    assert_eq!(texts[0], "line 99");
+    assert!(texts.contains(&"line 999"));
+
+    let generation = done.log_filter_generation;
+    h.supervisor.set_log_filter(id, "");
+    h.wait(id, "the search to go away", |s| {
+        s.log_filter_generation != generation
+    });
+    assert_eq!(h.state(id).log_match_count, 0);
+}
+
+#[test]
 fn a_flood_of_output_stays_bounded_and_coalesced() {
     require_tool("node");
     let h = Harness::new();

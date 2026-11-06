@@ -10,7 +10,14 @@ final class LogFeed {
         didSet { controller?.apply(.reload) }
     }
 
-    func sync(first: UInt64, count: UInt64, fetch: LogMirror.Fetch) {
+    private var generation: UInt64?
+
+    /// `generation` changes when the search does; the table then starts over.
+    func sync(first: UInt64, count: UInt64, generation: UInt64, fetch: LogMirror.Fetch) {
+        if generation != self.generation {
+            self.generation = generation
+            mirror.reset()
+        }
         let change = mirror.sync(first: first, count: count, fetch: fetch)
         controller?.apply(change)
     }

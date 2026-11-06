@@ -187,6 +187,15 @@ final class AppModel {
         core.logLines(serviceId: serviceID, from: from, max: max)
     }
 
+    func logMatchingLines(_ serviceID: UInt64, from: UInt64, max: UInt32) -> [LogLine] {
+        core.logMatchingLines(serviceId: serviceID, from: from, max: max)
+    }
+
+    /// Logs › Search; filtering happens in the core, off the main thread.
+    func setLogFilter(_ serviceID: UInt64, _ query: String) {
+        core.setLogFilter(serviceId: serviceID, query: query)
+    }
+
     func clearLogs(_ serviceID: UInt64) {
         core.clearLogs(serviceId: serviceID)
         refresh()

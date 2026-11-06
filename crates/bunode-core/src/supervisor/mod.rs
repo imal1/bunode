@@ -97,6 +97,8 @@ struct State {
     /// The environment new Runs start from.
     base_env: Vec<(OsString, OsString)>,
     environment: EnvironmentInfo,
+    /// The Logs search of each Service; a new Run keeps it.
+    log_filters: HashMap<ServiceId, String>,
 }
 
 struct EnvironmentInfo {
@@ -160,6 +162,7 @@ impl Supervisor {
                         problem: None,
                         tools: Vec::new(),
                     },
+                    log_filters: HashMap::new(),
                 }),
                 notifier: Notifier::new(listener),
                 runner_path: options.runner_path,
@@ -448,6 +451,9 @@ impl Supervisor {
         let logs = Arc::new(Mutex::new(LogBuffer::new(
             state.config.settings.log_lines_kept as usize,
         )));
+        if let Some(query) = state.log_filters.get(&service_id) {
+            lock_logs(&logs).set_filter(query);
+        }
 
         // Run numbers count every Run, including ones that fail to start.
         let mut config = state.config.clone();
@@ -530,6 +536,42 @@ impl Supervisor {
             .map(|run| run.logs.clone());
         match logs {
             Some(logs) => lock_logs(&logs).lines(from, max as usize),
+            None => Vec::new(),
+        }
+    }
+
+    /// Logs › Search: shows only lines containing `query`, ignoring case.
+    /// Returns at once; the matches arrive through snapshots, and new lines
+    /// that match are added as they come.
+    pub fn set_log_filter(&self, service_id: ServiceId, query: &str) {
+        let logs = {
+            let mut state = self.shared.lock();
+            if query.trim().is_empty() {
+                state.log_filters.remove(&service_id);
+            } else {
+                state.log_filters.insert(service_id, query.to_owned());
+            }
+            state.runs.get(&service_id).map(|run| run.logs.clone())
+        };
+        let Some(logs) = logs else { return };
+        let shared = self.shared.clone();
+        let query = query.to_owned();
+        self.runtime.spawn_blocking(move || {
+            lock_logs(&logs).set_filter(&query);
+            shared.notifier.notify();
+        });
+    }
+
+    /// Up to `max` lines matching the search, from match number `from` on.
+    pub fn log_matching_lines(&self, service_id: ServiceId, from: u64, max: u32) -> Vec<LogLine> {
+        let logs = self
+            .shared
+            .lock()
+            .runs
+            .get(&service_id)
+            .map(|run| run.logs.clone());
+        match logs {
+            Some(logs) => lock_logs(&logs).matching_lines(from, max as usize),
             None => Vec::new(),
         }
     }
@@ -755,6 +797,9 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         log_first: logs.first,
         log_count: logs.count,
         log_dropped: logs.dropped,
+        log_match_first: logs.match_first,
+        log_match_count: logs.match_count,
+        log_filter_generation: logs.filter_generation,
     }
 }
 

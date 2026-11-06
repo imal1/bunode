@@ -96,6 +96,11 @@ pub struct ServiceState {
     pub log_first: u64,
     pub log_count: u64,
     pub log_dropped: u64,
+    /// With a Logs search: the first match number and how many matches,
+    /// and a number that changes whenever the search does.
+    pub log_match_first: u64,
+    pub log_match_count: u64,
+    pub log_filter_generation: u64,
 }
 
 /// Where a Service's Run is in its life (design-handoff §5.1).
