@@ -2,7 +2,7 @@
 
 > 来源：设计画布 [Bunode 产品设计](https://claude.ai/artifact/5fhSPrDsLykC49nR2fPhfU)（3 张画板：`MenuBar`、`Settings`、`Dialogs`，版本 `1793949989-deaa`）。
 > 术语以 [`GLOSSARY.md`](../GLOSSARY.md) 为准。技术栈：SwiftUI + AppKit（[ADR-0001](adr/0001-native-swift-ui-with-rust-core.md)），状态来自 Rust Supervisor。
-> 画布是 HTML 原型，**不是像素规范**：数值给的是意图，落地时一律换成系统控件和语义色（见「设计 Token」）。标 **〔待定〕** 的条目设计没给答案，需要拍板后再做。
+> 画布是 HTML 原型，**不是像素规范**：数值给的是意图，落地时一律换成系统控件和语义色（见「设计 Token」）。设计没画、由本文补齐的部分标注“设计未画”。
 
 ---
 
@@ -18,7 +18,7 @@
 | C4 | MVP 日志补：隐式自动滚动、丢弃行数提示、`Export…`。级别过滤放到第二阶段 | §2.2 Logs、§7 |
 | C5 | 已登记 Project 目录里的 Discovered Process，在该 Project 下显示只读的 External 行 | §2.2 Home |
 | C6 | Projects 行可改包管理器，多锁文件时显示警告 | §2.3 Projects |
-| C7 | 补 `Failed` 状态：红点 + 行备注 `Failed` | §5.1 |
+| C7 | 补 `Failed` 状态：与 Crashed 同样置灰，行备注 `Failed` | §5.1 |
 
 ---
 
@@ -57,7 +57,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，在一张清�
 | 圆角 | 14（系统 popover 默认即可） |
 | 内边距 | 6 pt 四周 |
 | 结构 | 纵向：Header（固定）→ 可滚动内容（`flex:1`）→ 分隔线（1 pt, `separator`, 左右 8 pt 内缩, 上 6 下 4）→ 底部菜单（固定） |
-| 视图栈 | `home` → `service` → `logs`；`home` → `addService`；`home` → `processes`。同一时间只显示一个视图，切换时 Popover 宽度不变，高度变化 |
+| 视图栈 | `home` → `service` → `logs` / `environment`；`home` → `addService`；`home` → `processes`。同一时间只显示一个视图，切换时 Popover 宽度不变，高度变化 |
 
 **Home 视图**
 
@@ -80,7 +80,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，在一张清�
 - **Header**：`Bunode`（13 pt semibold，`flex:1`）· `N running`（12 pt，`secondaryLabel`）· 外部进程按钮（芯片图标 14 pt + 数字，高 28，左右 6 pt 内边距，间距 4）。三者间距 8。
 - **Project 小标题**：11 pt semibold `secondaryLabel`；右侧 `+` 图标按钮 24×24（图标 12 pt）。
 - **Service 行**（容器圆角 8，hover 背景 `fill-hover`）：
-  - 主按钮（整行左侧，`flex:1`，高 32，padding 0/4/0/10，间距 8）：状态点 7×7 → 名字（13 pt，单行省略）→ 备注（11 pt，仅 Crashed/Failed 时显示，`status-error-text`）→ 端口（11 pt mono）。
+  - 主按钮（整行左侧，`flex:1`，高 32，padding 0/4/0/10，间距 8）：状态点 7×7 → 名字（13 pt，单行省略）→ 备注（11 pt，仅 Crashed/Failed 时显示，`label-secondary`）→ 端口（11 pt mono）。
   - 行尾操作按钮 28×26，圆角 7：运行中为 Stop（10 pt 实心圆角方块，`label` 色）；可启动为 Start（10 pt 实心三角，`accent` 色）；过渡态为 12 pt 旋转 spinner，不可点。
   - 端口文字：Run 存活且有实际端口 → 显示实际端口、`accent` 色；否则显示配置端口、`tertiaryLabel` 色；都没有则不显示。
 - **External 行**（C5）：Project 下有 Discovered Process 时，排在该 Project 的 Service 行之后。高 28，芯片图标 12 pt + `External · astro dev`（12 pt，`label-secondary`，单行省略）+ 端口（11 pt mono，`label-tertiary`），没有行尾按钮。点击进入 Other processes 并滚动到该进程。只读，永远不当作 Service 的 Run。
@@ -111,6 +111,17 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，在一张清�
 - 日志区：**AppKit 虚拟化视图**（`NSTableView`/`NSTextView` + 按可见范围拉取，需求 §2.2），画布高 400 pt；背景 `log-bg`（深色，浅色模式下也保持深色）；圆角 9；上下 padding 8；11 pt mono，行高 1.6。每行两列：时间（58 pt 宽，`HH:mm:ss`，`log-time`）+ 正文（自动换行、长单词断行）。列间距 8，行左右 padding 10。
 - 底栏（padding 8/2/2，间距 4）：左侧 `N lines` 或 `N lines · M matches`（11 pt）· `Clear` · `Copy`（透明次要按钮）· `Export…`（`NSSavePanel`，导出该 Run 的完整日志文件，默认文件名 `api-dev-run14.log`）。丢弃过行时，左侧计数后加 ` · 1,204 dropped`（同为 `label-secondary`）。
 
+**Environment 视图**（Service 视图里点 `Environment › Edit…`）
+
+- 顶栏：Back（返回 Service 视图）+ `Environment` / 副标题 `api › dev`。
+- 一张卡片，每行一个变量：Key 输入框（12 pt mono，110 宽）· `=` · Value 输入框（12 pt mono，`flex:1`，默认遮罩为 `••••••`）· 显示 / 隐藏图标按钮（`eye` / `eye.slash`，24×24）· 删除图标按钮（`minus.circle`，24×24）。
+- 卡片最后一行：`Add Variable` 文字按钮（`accent`），新增空行并聚焦 Key。
+- 卡片下方 11 pt 说明：`.env files are not read. Your tools load them as usual.`
+- 自动保存（失焦或回车），规则同 §5.4：Run 存活时出现 `Saved. Applies on the next Run.` 条。
+- 校验：Key 只允许 `[A-Za-z_][A-Za-z0-9_]*`，同一 Service 内唯一；不合法时 Key 框红色描边，下方 11 pt `Invalid name` / `Already set`，该行不保存。Key 和 Value 都为空的行在离开视图时丢弃。
+- 空态：卡片内只有 `Add Variable` 一行。
+- VoiceOver：Value 框 label `Value of PORT`，遮罩时读作 `hidden`。
+
 **Other processes 视图**（Header 的芯片按钮，或冲突提示的 `Show Process`）
 
 - 顶栏：Back + `Other processes` / 副标题 `Started outside Bunode · watch only`。
@@ -121,7 +132,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，在一张清�
 
 | 项 | 规格 |
 |---|---|
-| 窗口 | 标准 `NSWindow`（`Settings` scene），内容 **700×540 pt**，不可调整大小 〔待定：Projects 很多时是否允许纵向拉伸〕 |
+| 窗口 | 标准 `NSWindow`（`Settings` scene），内容固定 **700×540 pt**（画布尺寸，刻意偏小，不再放大），不可调整大小，也不能纵向拉伸；Projects 很多时主区内滚动 |
 | 侧栏 | 宽 168，背景 `sidebar-bg`，padding 14/8/12；交通灯下方留 26。导航项高 32，圆角 8，图标 17 pt + 9 间距 + 13 pt medium 文字。底部 `Source code` 外链（尾部 11 pt ↗） |
 | 选中态 | 背景 `accent`、文字白色；落地用 `List(selection:)` + `.sidebar` 样式，系统会给出正确选中色 |
 | 主区 | 标题 15 pt bold，padding 20/22/14；内容 padding 0/20/20，可滚动，分组间距 12 |
@@ -131,7 +142,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，在一张清�
 
 | 分组 | 行 | 控件 | 默认 |
 |---|---|---|---|
-| App | Open at login · “Bunode lives in the menu bar.” | Switch | On 〔待定：首次启动是否默认开〕 |
+| App | Open at login · “Bunode lives in the menu bar.” | Switch | **Off**（首次启动不自动注册登录项，由用户自己打开） |
 | App | Show running count · “Next to the menu bar icon.” | Switch | On |
 | Runs | Restart Services that crash · “Default for new Services. Up to 3 times a minute.” | Switch | On（C3：只作新 Service 的默认值） |
 | Runs | Notify on crash · “One notification per crash.” | Switch | On |
@@ -190,9 +201,9 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，在一张清�
 | `sidebar-bg` | `#EDEDF0` | `.sidebar` 列表样式自带 | Settings 侧栏 |
 | `status-running` | `#34C759` | `.green` / `systemGreen` | 运行中 |
 | `status-busy` | `#FF9F0A` | `.orange` / `systemOrange` | Starting / Stopping / Restarting（脉冲） |
-| `status-error` | `#FF3B30` | `.red` / `systemRed` | Crashed / Failed 点、菜单栏图标中心点 |
+| `status-error` | `#FF3B30` | `.red` / `systemRed` | 仅菜单栏图标中心点（列表里的 Crashed / Failed 置灰，见 §5.1） |
 | `status-idle` | `#AEAEB2` | `systemGray`（`.gray`） | Stopped |
-| `status-error-text` | `#B42318` | `systemRed` 文本变体（深色下要亮） | “Crashed” 备注、`Delete Service…` |
+| `status-error-text` | `#B42318` | `systemRed` 文本变体（深色下要亮） | `Delete Service…`、校验错误 |
 | `destructive` | `#D70015`、`#C4000F`（两处不一致） | `.destructive` 按钮角色 | 删除 / 强杀确认按钮。**统一为系统 destructive，不选 hex** |
 | `warning-bg` / `warning-text` | `#FFF4E0` / `#5C3A00` | 自定义 Asset Color（含深色变体） | 端口冲突、SIGTERM 确认内联条 |
 | `info-bg` / `info-text` | `rgba(10,99,214,.08)` / `#0A4FA8` | `accentColor.opacity(0.1)` / `accentColor` | “Applies on the next Run” 条 |
@@ -282,8 +293,8 @@ conflict: DiscoveredProcess?     // 启动前端口检查命中
 | Starting | `status-busy` 脉冲 | — | spinner（不可点） | `Starting…`，无按钮 | 无按钮 |
 | Running | `status-running` | — | Stop | `Running · Run #N ·` `:port` 链接 + `Stop` | `Restart` |
 | Stopping / Restarting | `status-busy` 脉冲 | — | spinner | `Stopping…` / `Restarting…` | 无按钮 |
-| Crashed | `status-error` | `Crashed` | Start | `Crashed` + `Start` | `Start` |
-| Failed | `status-error` | `Failed` | Start | `Failed` + `Start` | `Start` |
+| Crashed | `status-idle` 实心（置灰） | `Crashed`（`label-secondary`） | Start | `Crashed` + `Start` | `Start` |
+| Failed | `status-idle` 实心（置灰） | `Failed`（`label-secondary`） | Start | `Failed` + `Start` | `Start` |
 
 规则：
 
@@ -306,7 +317,7 @@ conflict: DiscoveredProcess?     // 启动前端口检查命中
 | 端口链接 | 点击 | 浏览器打开 `http://localhost:<livePort>`（需求 §3.5） |
 | `Folder › Change…` | 点击 | `NSOpenPanel`，起始目录为 Project 根，**只允许选 Project 目录或其子目录**（需求 §3.1），选到外面时提示并拒绝 |
 | `Port` 输入 | 输入 | 只接受数字，最多 5 位，1–65535；空 = 无预期端口 |
-| `Environment › Edit…` | 点击 | 〔待定〕打开 key = value 编辑表（Popover 内新视图或 sheet）。值默认遮罩（需求 §6） |
+| `Environment › Edit…` | 点击 | 进入 Environment 视图（§2.2）。值默认遮罩（需求 §6） |
 | `Logs` 行 | 点击 | 进入 Logs 视图，清空搜索词 |
 | `Delete Service…` | 点击 | 原位替换为 `InlineConfirm`（见 §5.5） |
 | 芯片按钮 | 点击 | 进入 Other processes |
@@ -409,7 +420,7 @@ conflict: DiscoveredProcess?     // 启动前端口检查命中
 
 ## 7. 边界情况
 
-- **30+ Service**：Home 内容区滚动；Popover 不超过屏幕高。打开时滚动到顶部 〔待定：是否先显示 Crashed〕。
+- **30+ Service**：Home 内容区滚动；Popover 不超过屏幕高。打开时总在顶部，不自动滚到崩溃的行；Crashed / Failed 行只置灰，不高亮、不置顶，顺序不变。崩溃的提醒靠菜单栏图标红点和 `Notify on crash` 通知。
 - **长名字 / monorepo**：`acme › storybook-docs-preview › dev` 这类显示名在 340 pt 下必然截断，tooltip 必须有。
 - **国际化**：首版英文，预留简体中文（需求 §2.1）。中文帮助文字一般更短；德语等更长，帮助文字截断可接受，但按钮文案（`Stop 2 Services and Quit`）不可截断——允许按钮变宽，alert 按钮纵向堆叠本来就容纳得下。所有带数量的文案用 String Catalog 复数规则，不要字符串拼接。
 - **高频日志**：日志区只追加，不全量刷新；用户向上滚动离开底部时暂停自动滚动，回到底部恢复（隐式自动滚动开关，C4）。丢弃行时在底栏计数后显示 ` · 1,204 dropped`。
@@ -453,7 +464,7 @@ conflict: DiscoveredProcess?     // 启动前端口检查命中
 
 要求：
 
-- **状态不只靠颜色**：每行的 VoiceOver label 包含状态（`"api › dev, Running, port 3000"`）；视觉上 Crashed/Failed 有文字备注，busy 有 spinner；Stopped/Running 由行尾 Start/Stop 图标区分。Stopped 点用空心圆（1.5 pt 描边，ASCII 稿里就是 `○`），增加形状差异。
+- **状态不只靠颜色**：每行的 VoiceOver label 包含状态（`"api › dev, Running, port 3000"`）；视觉上 Crashed/Failed 有文字备注，busy 有 spinner；Stopped/Running 由行尾 Start/Stop 图标区分。Stopped 点用空心圆（1.5 pt 描边，ASCII 稿里就是 `○`），Crashed/Failed 用灰色实心圆，靠形状和备注与 Stopped 区分。
 - **Service 行**：画布是“一个大按钮 + 一个图标按钮”。落地为一个 accessibility 元素：label 如上，默认动作 = 打开设置，`accessibilityAction(named: "Start"/"Stop")` 暴露启停，避免读两遍。
 - **图标按钮都要 label + tooltip**：`Stop api › dev`、`Start api › dev`、`Add Service to acme`、`Back` / `Back to api › dev`、`Other Node and Bun processes, 3`、`Open :3000 in browser`。
 - **开关**：label = 行标题，value = on/off；帮助文字作为 `accessibilityHint`。
@@ -490,6 +501,7 @@ Popover
   "Run through shell" · "For pipes, && and globs"
   "External · %@" · "Not responding" · "Sets PORT=%d for this Run. Tools that ignore PORT need their own flag."
   "Environment" · "%d variables" · "None · .env files are not read" · "Edit…"
+  "Add Variable" · ".env files are not read. Your tools load them as usual." · "Value of %@" · "Invalid name" · "Already set"
   "Logs" · "%d lines" · "Saved. Applies on the next Run." · "Restart now"
   "Delete Service…" · "It is running and will be stopped first. " · "Only the Service is removed; files in %@ stay."
   "Stop and Delete" · "Delete" · "Deleted %@. Files in %@ are untouched."
@@ -524,9 +536,4 @@ Dialogs
 
 ## 11. 待定事项汇总
 
-C1–C7 及端口传递、退出确认、键盘、动效、未画状态均已定（§0 及正文）。仍需决定：
-
-1. Settings 窗口是否允许纵向拉伸（§2.3）。
-2. `Open at login` 首次启动是否默认开（§2.3）。
-3. Environment 编辑器形态：Popover 内新视图，还是 sheet（§5.2）。
-4. Service 很多时，打开 Popover 是否先滚到 Crashed / Failed 的行（§7）。
+已全部定稿（2026-11-06）：Settings 窗口固定 700×540 不可拉伸；`Open at login` 默认关；环境变量用 Popover 内的 Environment 视图；Crashed / Failed 行只置灰，不自动滚动。

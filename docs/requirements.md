@@ -358,7 +358,7 @@ Popover 与 Settings 窗口共用同一状态来源（Supervisor），避免状�
 
 支持：
 
-- macOS 登录时启动 Bunode。
+- macOS 登录时启动 Bunode（默认关闭，由用户在 Settings 中开启）。
 - 登录时自动启动指定 Service。
 - Bunode 意外退出后清理遗留 Run（见 3.2）。
 - 项目异常退出时按策略重启。
