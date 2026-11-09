@@ -14,6 +14,10 @@ _Avoid_: App, workspace, repo
 A named run configuration belonging to a Project, either a package script or a custom command, run in the Project's directory or one of its subdirectories (such as a workspace package). It is the unit the user starts and stops, and has at most one live Run at a time.
 _Avoid_: Run config, task, job, script (a script is only one possible source of a Service)
 
+**Short-lived Service**:
+A Service whose command is a build, test or lint package script, so its Run is expected to end by itself. Every other Service is treated as long-running.
+_Avoid_: one-shot task, build job
+
 ### Runtime
 
 **Run**:

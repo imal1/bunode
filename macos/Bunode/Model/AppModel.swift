@@ -116,12 +116,7 @@ final class AppModel {
 
     /// What the menu bar item shows.
     var statusSummary: StatusSummary {
-        let statuses = services.map(status(of:))
-        return StatusSummary(
-            running: statuses.count(where: { $0 == .running }),
-            crashed: statuses.count(where: { $0 == .crashed || $0 == .failed }),
-            showsCount: snapshot.settings.showRunningCount
-        )
+        StatusSummary(services: services, status: status(of:), showsCount: snapshot.settings.showRunningCount)
     }
 
     // MARK: - Commands

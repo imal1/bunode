@@ -3,7 +3,8 @@ import Foundation
 /// What the menu bar status item shows (design-handoff §2.1). Derived from
 /// the Supervisor's state; the status item never computes it itself.
 struct StatusSummary: Equatable {
-    /// Services whose Run is `running` (not starting or stopping).
+    /// Long-running Services whose Run is `running` (not starting or
+    /// stopping). A build in progress isn't something left running.
     var running = 0
     /// Services whose last Run crashed or failed.
     var crashed = 0
@@ -35,5 +36,13 @@ struct StatusSummary: Equatable {
             parts.append(String(localized: "\(crashed) crashed"))
         }
         return parts.joined(separator: ", ")
+    }
+}
+
+extension StatusSummary {
+    init(services: [ServiceState], status: (ServiceState) -> RunStatus, showsCount: Bool) {
+        running = services.count(where: { status($0) == .running && !$0.isShortLived })
+        crashed = services.count(where: { status($0) == .crashed || status($0) == .failed })
+        self.showsCount = showsCount
     }
 }

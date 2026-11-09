@@ -268,8 +268,8 @@ struct StatusLine: View {
         HStack(spacing: 5) {
             Text(verbatim: projectName)
                 .truncationMode(.tail)
-            StatusDot(style: status.dotStyle, size: 6)
-            Text(isNotResponding ? String(localized: "Not responding") : status.label)
+            StatusDot(style: service.dotStyle(status: status), size: 6)
+            Text(isNotResponding ? String(localized: "Not responding") : service.statusLabel(status: status))
                 .fixedSize()
             if let port = service.shownPorts(status: status).first {
                 // Opens the server in the browser (requirements §3.5).
@@ -307,7 +307,7 @@ struct StartStopButton: View {
             if status == .running || isNotResponding {
                 Button("Stop") { model.stop(service.id) }
             } else if !status.isBusy {
-                Button("Start") { model.start(service.id) }
+                Button(service.startTitle) { model.start(service.id) }
                     .buttonStyle(.borderedProminent)
             }
         }

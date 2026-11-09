@@ -15,7 +15,7 @@ extension ProjectState {
 /// sits next to it, Stopped is a hollow ring and busy states pulse
 /// (design-handoff §9).
 enum DotStyle: Equatable {
-    case stopped, running, busy, failed
+    case stopped, stoppedShortLived, running, done, busy, failed
 }
 
 struct StatusDot: View {
@@ -28,9 +28,9 @@ struct StatusDot: View {
     var body: some View {
         Group {
             switch style {
-            case .stopped:
+            case .stopped, .stoppedShortLived:
                 Circle().strokeBorder(Color(nsColor: .systemGray), lineWidth: 1.5)
-            case .running:
+            case .running, .done:
                 Circle().fill(Color(nsColor: .systemGreen))
             case .failed:
                 Circle().fill(Color(nsColor: .systemRed))
@@ -58,9 +58,9 @@ struct StatusTile: View {
 
     private var colors: (fill: Color, icon: Color) {
         switch style {
-        case .stopped:
+        case .stopped, .stoppedShortLived:
             (Color(nsColor: .quaternaryLabelColor), .secondary)
-        case .running:
+        case .running, .done:
             (Color(light: 0xDDF5E3, dark: NSColor.systemGreen.withAlphaComponent(0.22)),
              Color(light: 0x1B7F3A, highContrast: 0x0E5A26, dark: .systemGreen))
         case .busy:
@@ -91,6 +91,12 @@ struct StatusTile: View {
             }
             .stroke(style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
             .frame(width: 16, height: 16)
+        case .stoppedShortLived:
+            Image(systemName: "hammer")
+                .font(.system(size: 13, weight: .medium))
+        case .done:
+            Image(systemName: "checkmark")
+                .font(.system(size: 12, weight: .bold))
         case .busy:
             TimelineView(.animation) { context in
                 Circle()

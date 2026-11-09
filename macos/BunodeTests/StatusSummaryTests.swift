@@ -28,17 +28,17 @@ struct StatusSummaryTests {
     }
 }
 
-struct PortDisplayTests {
-    private func service(port: UInt16?, live: [UInt16]) -> ServiceState {
-        ServiceState(
-            id: 1, projectId: 1, name: "dev", displayName: "dev", command: "x", folder: nil,
-            port: port, runThroughShell: false, status: .running, runNumber: 1, pid: 10,
-            lastExit: nil, logFirst: 0, logCount: 0, logDropped: 0, logMatchFirst: 0,
-            logMatchCount: 0, logFilterGeneration: 0, hasPendingConfig: false, endedBy: nil,
-            livePorts: live
-        )
-    }
+private func service(command: String = "x", port: UInt16? = nil, live: [UInt16] = [], endedBy: RunEnd? = nil) -> ServiceState {
+    ServiceState(
+        id: 1, projectId: 1, name: "dev", displayName: "dev", command: command, folder: nil,
+        port: port, runThroughShell: false, status: .running, runNumber: 1, pid: 10,
+        lastExit: nil, logFirst: 0, logCount: 0, logDropped: 0, logMatchFirst: 0,
+        logMatchCount: 0, logFilterGeneration: 0, hasPendingConfig: false, endedBy: endedBy,
+        livePorts: live
+    )
+}
 
+struct PortDisplayTests {
     @Test func showsOnlyThePortsARunningRunListensOn() {
         #expect(service(port: 3000, live: [5173, 5174]).shownPorts(status: .running) == [5173, 5174])
         #expect(service(port: 3000, live: []).shownPorts(status: .running).isEmpty)
@@ -75,6 +75,75 @@ struct ShortCommandTests {
     ])
     func anythingElseStaysWhole(command: String) {
         #expect(ServiceState.shortCommand(command) == command)
+    }
+}
+
+struct ShortLivedServiceTests {
+    @Test func aRunningShortLivedServiceIsNotCounted() {
+        let services = [service(command: "bun run build"), service(command: "bun run start")]
+        let summary = StatusSummary(services: services, status: { _ in .running }, showsCount: true)
+        #expect(summary.running == 1)
+        #expect(summary.countText == "1")
+    }
+
+    @Test func aFailedShortLivedServiceStillCountsAsCrashed() {
+        let summary = StatusSummary(services: [service(command: "bun run build")], status: { _ in .crashed }, showsCount: true)
+        #expect(summary.crashed == 1)
+        #expect(summary.aggregate == .error)
+    }
+
+    @Test(arguments: ["bun run build", "npm test", "pnpm lint", "yarn run build:web", "bun run test:e2e"])
+    func buildTestAndLintScriptsAreShortLived(command: String) {
+        #expect(service(command: command).isShortLived)
+    }
+
+    @Test(arguments: [
+        "bun run start", "pnpm dev", "npm run serve", "bun run preview", "bun run build:watch",
+        "pnpm test-watch", "bun run test --watch", "bun run migrate", "node build.js", "build",
+    ])
+    func everythingElseIsLongLived(command: String) {
+        #expect(!service(command: command).isShortLived)
+    }
+
+    @Test func atRestItShowsAHammerAndOffersRun() {
+        let build = service(command: "bun run build")
+        #expect(build.dotStyle(status: .stopped) == .stoppedShortLived)
+        #expect(build.statusLabel(status: .stopped) == "Stopped")
+        #expect(build.startTitle == "Run")
+    }
+
+    @Test func runningIsInProgressNotGreen() {
+        let build = service(command: "bun run build")
+        #expect(build.dotStyle(status: .running) == .busy)
+        #expect(build.statusLabel(status: .running) == "Running…")
+    }
+
+    @Test func exitingByItselfIsDone() {
+        let build = service(command: "bun run build", endedBy: .exited)
+        #expect(build.dotStyle(status: .stopped) == .done)
+        #expect(build.statusLabel(status: .stopped) == "Done")
+    }
+
+    @Test func beingStoppedIsNotDone() {
+        let build = service(command: "bun run build", endedBy: .stoppedByUser)
+        #expect(build.dotStyle(status: .stopped) == .stoppedShortLived)
+        #expect(build.statusLabel(status: .stopped) == "Stopped")
+    }
+
+    @Test func aNonZeroExitReadsFailed() {
+        let build = service(command: "bun run build", endedBy: .crashed)
+        #expect(build.dotStyle(status: .crashed) == .failed)
+        #expect(build.statusLabel(status: .crashed) == "Failed")
+    }
+
+    @Test func aLongLivedServiceKeepsItsReading() {
+        let start = service(command: "bun run start", endedBy: .exited)
+        #expect(start.dotStyle(status: .stopped) == .stopped)
+        #expect(start.statusLabel(status: .stopped) == "Stopped")
+        #expect(start.dotStyle(status: .running) == .running)
+        #expect(start.statusLabel(status: .running) == "Running")
+        #expect(start.statusLabel(status: .crashed) == "Crashed")
+        #expect(start.startTitle == "Start")
     }
 }
 

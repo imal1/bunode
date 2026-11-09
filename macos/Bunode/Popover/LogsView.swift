@@ -117,7 +117,7 @@ struct LogsView: View {
                 .keyboardShortcut("r", modifiers: .command)
                 .controlSize(.small)
         } else if !status.isLive {
-            Button("Start") { model.start(service.id) }
+            Button(service.startTitle) { model.start(service.id) }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }

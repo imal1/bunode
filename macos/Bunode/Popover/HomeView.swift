@@ -246,7 +246,7 @@ struct ServiceRow: View {
     private var statusText: String {
         if isFolderMissing { return String(localized: "Folder missing") }
         if isNotResponding { return String(localized: "Not responding") }
-        return status.label
+        return service.statusLabel(status: status)
     }
 
     private var isStatusError: Bool {
@@ -259,6 +259,14 @@ struct ServiceRow: View {
     /// A busy Run has nothing to press unless it is stuck.
     private var hasAction: Bool { offersStop || !status.isBusy }
 
+    private var isDone: Bool { service.dotStyle(status: status) == .done }
+
+    /// What the row-end button says it does.
+    private var actionLabel: String {
+        if offersStop { return String(localized: "Stop \(displayName)") }
+        return service.isShortLived ? String(localized: "Run \(displayName)") : String(localized: "Start \(displayName)")
+    }
+
     private func startOrStop() {
         if offersStop {
             model.stop(service.id)
@@ -270,7 +278,7 @@ struct ServiceRow: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 10) {
-                StatusTile(style: status.dotStyle)
+                StatusTile(style: service.dotStyle(status: status))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(verbatim: ServiceState.shortCommand(service.command))
@@ -292,7 +300,7 @@ struct ServiceRow: View {
                 hasButton: hasAction,
                 offersStop: offersStop,
                 isRevealed: isHovered || isFocused,
-                displayName: displayName,
+                label: actionLabel,
                 action: startOrStop
             )
             .padding(.trailing, 6)
@@ -306,7 +314,7 @@ struct ServiceRow: View {
         .accessibilityAction(.default, open)
         .accessibilityActions {
             if hasAction {
-                Button(action: startOrStop) { offersStop ? Text("Stop") : Text("Start") }
+                Button(action: startOrStop) { offersStop ? Text("Stop") : Text(service.startTitle) }
             }
         }
         .contextMenu {
@@ -314,7 +322,7 @@ struct ServiceRow: View {
                 Button("Restart") { model.restart(service.id) }
                 Button("Stop") { model.stop(service.id) }
             } else if !status.isBusy {
-                Button("Start") { model.start(service.id) }
+                Button(service.startTitle) { model.start(service.id) }
             }
             Divider()
             Button("Open") { open() }
@@ -327,7 +335,7 @@ struct ServiceRow: View {
         HStack(spacing: 0) {
             Text(verbatim: service.folder.map { "\(project.name) › \($0)" } ?? project.name)
                 .truncationMode(.tail)
-            if status != .stopped || isFolderMissing {
+            if status != .stopped || isDone || isFolderMissing {
                 HStack(spacing: 0) {
                     Text(verbatim: " · ")
                     Text(verbatim: statusText)
@@ -385,7 +393,7 @@ private struct RowAction: View {
     let hasButton: Bool
     let offersStop: Bool
     let isRevealed: Bool
-    let displayName: String
+    let label: String
     let action: () -> Void
 
     /// Tab can land on the button itself.
@@ -419,8 +427,8 @@ private struct RowAction: View {
                 .buttonStyle(.borderless)
                 .focused($isFocused)
                 .opacity(showsButton ? 1 : 0)
-                .help(offersStop ? "Stop \(displayName)" : "Start \(displayName)")
-                .accessibilityLabel(offersStop ? "Stop \(displayName)" : "Start \(displayName)")
+                .help(label)
+                .accessibilityLabel(label)
             }
         }
         .frame(width: 28, height: 28)
@@ -508,13 +516,6 @@ struct RowNoticeView: View {
 }
 
 extension ServiceState {
-    /// What a row and the Service view title call a command (design-handoff
-    /// §2.2): the script name of a preset, otherwise the whole command.
-    static func shortCommand(_ command: String) -> String {
-        let preset = /(?:bun|npm|pnpm|yarn)(?:\s+run)?\s+((?:dev|start|serve|preview|build|test|lint)(?:[:-]\S+)?)/
-        return command.wholeMatch(of: preset).map { String($0.1) } ?? command
-    }
-
     /// The ports shown for a Service (design-handoff §2.2, §5.1, §11): only
     /// what a running Run listens on, on the row and in the Service view's
     /// status line. The configured Port is a field of the Service view.

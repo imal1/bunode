@@ -77,7 +77,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 |---|---|
 | 图标 | 15×15 pt 六边形描边（1.5 pt）+ 中心 2 pt 半径实心点。做成 template image（描边跟随菜单栏颜色），中心点单独着色 |
 | 中心点颜色 | 任一 Service `crashed`/`failed` → `status-error`；否则任一 `running` → `status-running`；否则 `status-idle`。Popover 顶栏的 7 pt 点用同一规则 |
-| 计数 | 图标右侧 5 pt 间距，12 pt semibold，显示 **running** 数量（不含 starting/stopping）。General › `Show running count` 关闭时隐藏；数量为 0 时也隐藏数字（画布显示 0，以本文为准） |
+| 计数 | 图标右侧 5 pt 间距，12 pt semibold，显示 **running** 数量（不含 starting/stopping，也不含短时 Service，§5.1）。General › `Show running count` 关闭时隐藏；数量为 0 时也隐藏数字（画布显示 0，以本文为准） |
 | 按下态 | 用系统 `NSStatusBarButton` 高亮，不要自绘（画布模拟值：高 22，圆角 5，黑 12%） |
 | VoiceOver | `"Bunode, 2 running"`；有崩溃时 `"Bunode, 2 running, 1 crashed"` |
 
@@ -118,7 +118,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 
 | 区块 | 尺寸 | 内容 | 滚动 |
 |---|---|---|---|
-| 顶栏 | padding 上 4 右 8 下 8 左 10，约 47 高 | 第一行 `Bunode`（14 semibold）+ 7 pt 状态点，间距 6。第二行 `{running} running · {total} Services`（12，`label-secondary`）。右上 `Add Service` 文字链 12.5，`accent`，悬停下划线 | 固定 |
+| 顶栏 | padding 上 4 右 8 下 8 左 10，约 47 高 | 第一行 `Bunode`（14 semibold）+ 7 pt 状态点，间距 6。第二行 `{running} running · {total} Services`（12，`label-secondary`，`running` 与菜单栏计数相同）。右上 `Add Service` 文字链 12.5，`accent`，悬停下划线 | 固定 |
 | 分隔线 | 1 pt，左右缩进 8，下边距 4 | `separator` | 固定 |
 | Service 列表 | 每行 46，行间距 0 | 见下 | **只有这一区滚动** |
 | 分隔线 | 上下边距 4，左右缩进 8 | | 固定 |
@@ -146,7 +146,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
   常用脚本分三类：服务 `dev` `start` `serve` `preview`，构建 `build`，检查 `test` `lint`，带 `:` 或 `-` 后缀的算同类（`build:web`）。其他脚本名、带参数的命令（`bun run dev --port 3000`）和 `pnpm --filter` 没有预设，整条显示。
 
 - **端口胶囊**：距命令 6，高 16，padding 0/5，圆角 4，`tag-bg`，10.5 pt 等宽数字，`label-secondary`（#48484A）。只在 Run 存活且有端口时显示（待拍板，§11）。多端口保留 `+N`，tooltip 列全部端口。胶囊不压缩，命令先省略。
-- **第二行**：11.5 pt `label-secondary`，`{project}` 接 ` · {状态}`。Stopped 不显示状态词。有 `folder` 时写 `{project} › {folder}`（待拍板，§11）。
+- **第二行**：11.5 pt `label-secondary`，`{project}` 接 ` · {状态}`。Stopped 不显示状态词，短时 Service 的 Done 要显示（§5.1）。有 `folder` 时写 `{project} › {folder}`（待拍板，§11）。
 - **行尾** 28×28：`rest` 箭头（10 pt，stroke 2.2，`label-tertiary`）和启停按钮（28×28，圆角 7，图标 10 pt，悬停黑 8%）叠放，用 opacity 切换，避免行宽跳动。
 - **端口冲突条**挂在该行下方：外边距 2/8/6/50，左缘 50 对齐文字列（`row-text-inset`），让人看出它属于上面那行。padding 8/10，圆角 8，见 §5.3。
 - 列表顺序：Project 登记顺序 + Service 创建顺序，同 Project 相邻。
@@ -393,6 +393,17 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 
 行的 tooltip 显示完整命令和目录；Crashed、Failed 时再加 `last_exit`。
 
+**短时 Service**（2026-11-09 定）：构建和检查类常用脚本（`build` `test` `lint`，§2.2）会自己结束。带 `:watch` 或 `-watch` 后缀的不算，仍是长时。服务类和没有预设的命令都按上表显示。短时 Service 与上表的差别：
+
+| 状态 | 色块（bg / fg / 图标） | 第二行 | Service 视图顶栏 |
+|---|---|---|---|
+| Stopped（还没跑过，或被 Stop） | `tile-stopped` / SF `hammer` 13 pt | `{project}` | `Stopped` + `Run` |
+| Running | `tile-busy` / spinner | `{project} · Running…`，无端口胶囊 | `Running…` + `Stop` |
+| Stopped（自己以 0 退出） | `tile-running` / SF `checkmark` 12 pt | `{project} · Done` | `Done` + `Run` |
+| Crashed | `tile-error` / 感叹号 15 pt | `{project} · Failed`（`status-error-text`） | `Failed` + `Run` |
+
+上表其余状态不变。所有 `Start`（行尾、右键、Service 视图、Logs）都写 `Run`。短时 Service 不计入 running 数量；失败仍计入崩溃数，菜单栏点变红。
+
 规则：
 
 - **防重复点击**：Start 后立即切到 busy，行尾按钮消失，直到 Supervisor 推回 `running`/`failed`（需求 §3.2-3）。UI 不自己计时；原型里的 1000 / 800 / 1200 ms 只是演示。
@@ -612,6 +623,7 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 Popover
   "Bunode" · "%d running · %d Services" · "Add Service" · "Settings" · "Quit"
   "Crashed" · "Failed" · "Starting…" · "Running" · "Stopping…" · "Restarting…" · "Stopped" · "Not responding" · "Folder missing"
+  "Run" · "Run %@" · "Running…" · "Done"
   "No commands yet." · "No Projects yet." · "Add Project…"
   "Other processes" · "%d started outside Bunode" · "None right now"
   "Run #%d" · "No Runs yet"
@@ -667,5 +679,6 @@ Dialogs
 | 同命令条目的第二行 | 画布只显示 Project 名。`pnpm dev` 分布在两个子目录时无法区分 | 有 `folder` 时显示 `{project} › {folder}` |
 | Popover 背景 | 曾定为接近不透明，Llama 参考图是系统半透明材质 | 系统默认材质（2026-11-09 定） |
 | 命令显示 | 画布写完整命令，包管理器前缀灰色 | 常用脚本只写脚本名，其余整条（2026-11-09 定） |
+| 短时 Service | 画布只画常驻服务，构建跑完会显示成 `Stopped` | `build` `test` `lint` 单独显示，不计入 running 数量（§5.1，2026-11-09 定） |
 
 此前已定（2026-11-06）：Settings 窗口固定 700×540 不可拉伸；`Open at login` 默认关；环境变量用 Popover 内的 Environment 视图；Crashed / Failed 行不自动滚动（“只置灰”已被 C7 的本版状态取代）。
