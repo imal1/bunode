@@ -49,7 +49,6 @@
 | Add Service 路由 | `.addService(projectID:)` 从 Project 进入 | 从顶栏进入，默认第一个 Project，页面内用胶囊切换。`Name` 字段去掉 | `AddServiceView` |
 | 底部 | 两行菜单，带 ⌘ 提示 | 版本信息 + `Settings` `Quit` 两个小按钮。⌘, 和 ⌘Q 继续生效 | `PopoverView.MenuRow` |
 | 打开时焦点 | 第一行有焦点框 | 打开时不显示焦点框，见 §9 | `HomeView.focusFirstRow` |
-| Popover 背景 | NSPopover 默认材质 | 接近不透明，桌面内容不透出，避免干扰两行小字 | `StatusItemController` |
 | 滚动上限 | 屏幕可见高度 − 40 − 120 | 120 改为约 156，见 §2.2 | `PopoverScroll.maxHeight` |
 
 ---
@@ -87,7 +86,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 | 项 | 规格 |
 |---|---|
 | 容器 | `NSPopover`，宽 **340 pt 固定**，高度随内容。画布的 636 是画板限制，不是规格 |
-| 背景 | `popover-bg`，内容层铺不透明底色。实现后确认箭头区域和内容同色 |
+| 背景 | 系统 NSPopover 默认材质，内容层不铺底色 |
 | 圆角、阴影、箭头 | 系统 NSPopover，不要自绘（画布模拟 14 圆角和投影） |
 | 内边距 | 6 pt 四周，行宽 = 340 − 12 = 328 |
 | 结构 | 纵向：顶栏（固定）→ Service 列表（滚动）→ Other processes（固定）→ 底栏（固定） |
@@ -272,9 +271,8 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 | `label-tertiary` | `#AEAEB2`、`#8A8A8E` | `tertiaryLabelColor` | 行尾箭头（装饰） |
 | `accent` | `#0A63D6` | `Color.accentColor` / `controlAccentColor` | 主按钮、`Add Service`、链接、开关开 |
 | `separator` | `rgba(0,0,0,.07–.08)` | `separatorColor` | 行分隔、Popover 分隔线 |
-| `fill-hover` | `rgba(0,0,0,.05)` | `quaternarySystemFill` | 行和按钮悬停 |
+| `fill-hover` | `rgba(0,0,0,.05)` | `Color.primary.opacity(0.07)` | 行和按钮悬停、Service 行键盘选中 |
 | `fill-subtle` | `rgba(0,0,0,.05–.06)` | `.quinary` / `controlBackgroundColor` | 搜索框、次要按钮底 |
-| `popover-bg` | `rgba(246,246,249,.97)` | `windowBackgroundColor` | Popover 内容层 |
 | `card-bg` | `rgba(255,255,255,.75)` | `.background.secondary` | Popover 卡片 |
 | `tag-bg` | `rgba(0,0,0,.06)` | `.quinary` | 端口胶囊 |
 | `tile-stopped-bg` / `-fg` | `rgba(0,0,0,.07)` / `#6C6C70` | `.quaternary` / `.secondary` | Stopped 色块 |
@@ -405,7 +403,7 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 |---|---|---|
 | 菜单栏图标 | 点击 | 开 / 关 Popover。再次打开时总是回到 `home` 视图 |
 | Service 行 | Hover | 背景 `fill-hover`，100 ms 过渡。箭头淡出，Start 或 Stop 淡入。busy 状态没有按钮，箭头不变 |
-| Service 行 | 键盘聚焦 | 同 Hover，额外画焦点环，启停按钮可见 |
+| Service 行 | 键盘聚焦 | 同 Hover，不画焦点环，启停按钮可见 |
 | Service 行 | 点击 | 进入 Service 视图 |
 | Service 行 | 右键 | Running：Restart、Stop、Open。Stopped、Crashed：Start、Open。busy：Open |
 | Start / Stop 图标 | 点击 | 直接启停，不确认，不触发行点击 |
@@ -602,7 +600,7 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 | ⌘, / ⌘Q | 任意 | Settings / Quit |
 
 - 对话框：Return = 默认按钮，Esc = Cancel/Keep Running。**破坏性操作（Remove、Force Kill）的默认按钮是取消**，退出对话框的默认按钮是 `Stop N Services and Quit`（画布注释明确如此）。
-- 焦点环：系统默认（画布模拟为 3 pt `accent` 35% 外描边）。
+- 焦点环：系统默认（画布模拟为 3 pt `accent` 35% 外描边）。Service 行除外，键盘选中和 Hover 一样只有整行底色。
 
 ---
 
@@ -665,6 +663,6 @@ Dialogs
 | Service 视图开关文案（C2） | 画布写 `Use login shell`，C2 和代码是 `Run through shell`（`For pipes, && and globs`） | 保留 `Run through shell`，画布是旧文案 |
 | Settings 里能否改包管理器（C6） | 现有 `ProjectsPane` 有 Picker 和多锁文件警告，极简版 Settings 只显示文字 | 仅在检测到多个锁文件时显示 Picker |
 | 同命令条目的第二行 | 画布只显示 Project 名。`pnpm dev` 分布在两个子目录时无法区分 | 有 `folder` 时显示 `{project} › {folder}` |
-| Popover 背景 | 当前定为接近不透明，Llama 参考图是系统半透明材质 | 接近不透明 |
+| Popover 背景 | 曾定为接近不透明，Llama 参考图是系统半透明材质 | 系统默认材质（2026-11-09 定） |
 
 此前已定（2026-11-06）：Settings 窗口固定 700×540 不可拉伸；`Open at login` 默认关；环境变量用 Popover 内的 Environment 视图；Crashed / Failed 行不自动滚动（“只置灰”已被 C7 的本版状态取代）。

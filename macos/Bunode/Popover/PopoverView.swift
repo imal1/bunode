@@ -34,7 +34,6 @@ struct PopoverView: View {
         }
         .padding(6)
         .frame(width: 340)
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
         .toasts(toaster, maxWidth: 380)
         // Esc (design-handoff §9): an open confirmation's Cancel takes it
         // first (it is the cancel action); then the warning bar, then one

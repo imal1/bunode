@@ -322,7 +322,7 @@ private struct HoverHighlight: ViewModifier {
         content
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(isHighlighted ? Color(nsColor: .quaternarySystemFill) : .clear)
+                    .fill(isHighlighted ? Color.primary.opacity(0.07) : .clear)
                     .animation(.easeOut(duration: 0.1), value: isHighlighted)
             }
             .onHover { isHovered = $0 }

@@ -10,7 +10,7 @@ struct HomeView: View {
     /// The Service row with keyboard focus.
     @FocusState private var focusedService: UInt64?
     /// The list itself: it takes the keyboard when the popover opens, so no
-    /// row wears a focus ring until an arrow key picks one (design-handoff §9).
+    /// row is selected until an arrow key picks one (design-handoff §9).
     @FocusState private var listFocused: Bool
 
     var body: some View {
@@ -48,8 +48,8 @@ struct HomeView: View {
                                 ServiceRow(model: model, project: project, service: service, isFocused: focusedService == service.id) {
                                     router.push(.service(service.id))
                                 }
-                                .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 9))
                                 .focusable()
+                                .focusEffectDisabled()
                                 .focused($focusedService, equals: service.id)
                                 if model.rowNotice?.serviceID == service.id {
                                     // Lined up with the row's text column.
@@ -425,7 +425,7 @@ private struct RowAction: View {
                     }
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
-                    .hoverHighlight(cornerRadius: 7)
+                    .hoverHighlight(cornerRadius: 7, isActive: isFocused)
                 }
                 .buttonStyle(.borderless)
                 .focused($isFocused)

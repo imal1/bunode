@@ -34,8 +34,6 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         content.sizingOptions = .preferredContentSize
         popover.contentViewController = content
         popover.behavior = .transient
-        // Lets the opaque background reach under the arrow.
-        popover.hasFullSizeContent = true
         popover.delegate = self
 
         if let button = statusItem.button {
