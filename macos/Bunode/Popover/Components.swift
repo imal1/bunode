@@ -11,9 +11,9 @@ extension ProjectState {
     }
 }
 
-/// How a status dot looks. Color is never the only signal: Stopped is a
-/// hollow ring, Crashed and Failed a solid gray dot with a note, busy
-/// states pulse next to a spinner (design-handoff §9).
+/// How a status dot looks. Color is never the only signal: the status word
+/// sits next to it, Stopped is a hollow ring and busy states pulse
+/// (design-handoff §9).
 enum DotStyle: Equatable {
     case stopped, running, busy, failed
 }
@@ -33,7 +33,7 @@ struct StatusDot: View {
             case .running:
                 Circle().fill(Color(nsColor: .systemGreen))
             case .failed:
-                Circle().fill(Color(nsColor: .systemGray))
+                Circle().fill(Color(nsColor: .systemRed))
             case .busy:
                 Circle()
                     .fill(Color(nsColor: .systemOrange))
@@ -188,6 +188,9 @@ struct CardRow<Control: View>: View {
 /// optional action on the right.
 struct TopBar<Subtitle: View, Trailing: View>: View {
     let title: String
+    /// What the tooltip and VoiceOver say instead, when `title` isn't the name.
+    var fullTitle: String?
+    var titleFont: Font = .body.weight(.semibold)
     var backLabel: String = String(localized: "Back")
     let onBack: () -> Void
     @ViewBuilder var subtitle: Subtitle
@@ -207,9 +210,11 @@ struct TopBar<Subtitle: View, Trailing: View>: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.body.weight(.semibold))
+                    .font(titleFont)
                     .lineLimit(1)
-                    .help(title)
+                    .truncationMode(.tail)
+                    .help(fullTitle ?? title)
+                    .accessibilityLabel(fullTitle ?? title)
                     .accessibilityAddTraits(.isHeader)
                 subtitle
                     .font(.caption)

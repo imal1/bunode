@@ -27,8 +27,14 @@ struct ServiceView: View {
             let status = model.status(of: service)
             let displayName = "\(project.name) › \(service.displayName)"
             VStack(alignment: .leading, spacing: 0) {
-                TopBar(title: displayName, backLabel: String(localized: "Back to Home"), onBack: router.back) {
-                    StatusLine(service: service, status: status, isNotResponding: model.notResponding.contains(serviceID))
+                TopBar(
+                    title: service.command,
+                    fullTitle: displayName,
+                    titleFont: .system(size: 12.5, weight: .semibold, design: .monospaced),
+                    backLabel: String(localized: "Back to Home"),
+                    onBack: router.back
+                ) {
+                    StatusLine(projectName: project.name, service: service, status: status, isNotResponding: model.notResponding.contains(serviceID))
                 } trailing: {
                     StartStopButton(model: model, service: service, status: status)
                 }
@@ -250,18 +256,22 @@ private struct PendingConfigBar: View {
     }
 }
 
-/// `Running · Run #14` with a small status dot.
+/// `{project} ● Running :3000` under the Service view's title. The Project
+/// name gives way first when short of room.
 struct StatusLine: View {
+    let projectName: String
     let service: ServiceState
     let status: RunStatus
     let isNotResponding: Bool
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
+            Text(verbatim: projectName)
+                .truncationMode(.tail)
             StatusDot(style: status.dotStyle, size: 6)
-            Text(text)
+            Text(isNotResponding ? String(localized: "Not responding") : status.label)
+                .fixedSize()
             if status.isLive, let port = service.livePorts.first {
-                Text(verbatim: "·")
                 // Opens the server in the browser (requirements §3.5).
                 Button {
                     if let url = URL(string: "http://localhost:\(port)") {
@@ -269,23 +279,17 @@ struct StatusLine: View {
                     }
                 } label: {
                     Text(verbatim: ":\(port)")
-                        .font(.caption.monospaced())
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(Color.accentColor)
                         .underline()
                 }
                 .buttonStyle(.plain)
+                .fixedSize()
                 .help("Open :\(String(port)) in browser")
                 .accessibilityLabel("Open :\(String(port)) in browser")
             }
         }
-    }
-
-    private var text: String {
-        var parts = [isNotResponding ? String(localized: "Not responding") : status.label]
-        if status.isLive, let run = service.runNumber {
-            parts.append(String(localized: "Run #\(String(run))"))
-        }
-        return parts.joined(separator: " · ")
+        .font(.system(size: 11))
     }
 }
 
