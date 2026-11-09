@@ -168,7 +168,7 @@ Bunode 不解析、不注入 `.env`，交由 Vite、Next、Bun 等工具自行�
 
 |字段|说明|
 |---|---|
-|Name|Service 名称|
+|Name|Service 名称。新建时自动取脚本名或命令最后一个词，不手填；Project 内唯一|
 |Working Directory|Project 目录或其子目录|
 |Source|package script / 自定义命令|
 |Runtime|Auto / Node / Bun|
@@ -271,7 +271,7 @@ Starting
 - Run：由 Bunode 启动，支持完整生命周期操作。
 - Discovered Process：由终端、IDE、Codex 等工具启动，默认提供查看及安全终止功能（仅 SIGTERM；升级为 SIGKILL 需用户确认）。
 
-Discovered Process 位于某个已登记 Project 的目录中时，在该 Project 下显示为“外部运行中”并标出端口，但**永远不被认领为 Service 的 Run**。此时启动对应 Service 会先提示端口或目录冲突。
+Discovered Process 统一在 Other processes 中查看并标出端口，位于已登记 Project 目录中的也一样，**永远不被认领为 Service 的 Run**。此时启动对应 Service 会先提示端口或目录冲突。
 
 外部进程只有在能够可靠恢复工作目录、命令、参数及环境的情况下才能提供重启操作。不能将 Kill + 猜测命令重新启动伪装成可靠的 Restart。
 
@@ -405,13 +405,11 @@ Bunode 不负责 Node/Bun 版本切换。
 
 宽 340 pt 固定，高度随内容，最大不超过屏幕。视图栈：
 
-- **Home**：按 Project 分组的 Service 列表，每行显示状态、端口和启停按钮；外部进程入口；Settings… 与 Quit。
+- **Home**：平铺的 Service 列表，一条命令一行，所属 Project 显示在第二行，同 Project 相邻。每行显示状态和端口，悬停或键盘聚焦时显示启停按钮。另有 `Add Service`、Other processes 入口、Settings 与 Quit。
 - **Service**：点 Service 行进入。命令、目录、端口、自动重启、Shell Mode、环境变量；自动保存，运行中修改提示“下次 Run 生效”；删除 Service。
-- **New Service**：点 Project 的 `+` 进入，从 `package.json` scripts 选择或手填命令。
+- **New Service**：点 Home 的 `Add Service` 进入，选择 Project，从 `package.json` scripts 选择或手填命令。
 - **Logs**：单个 Service 的实时日志、搜索、清空、复制、导出。
-- **Other processes**：Discovered Process 列表，仅查看与 SIGTERM。
-
-位于已登记 Project 目录中的 Discovered Process 在该 Project 下显示为只读的“External”行（3.3）。
+- **Other processes**：Discovered Process 列表，仅查看与 SIGTERM。位于已登记 Project 目录中的进程也在这里（3.3）。
 
 ### 4.3 Settings 窗口
 
