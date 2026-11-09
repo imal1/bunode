@@ -97,20 +97,24 @@ private struct ProjectRow: View {
             }
             .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
-            Picker("Package manager", selection: Binding(
-                get: { project.packageManagerChoice },
-                set: { model.setPackageManager(project.id, $0) }
-            )) {
-                Text("Auto (\(project.detectedPackageManager.displayName))").tag(PackageManager?.none)
-                Divider()
-                ForEach([PackageManager.npm, .pnpm, .yarn, .bun], id: \.self) { manager in
-                    Text(verbatim: manager.displayName).tag(PackageManager?.some(manager))
+            // A manual choice clears `severalLockfiles`; the Picker stays so
+            // it can be changed or set back to Auto.
+            if project.severalLockfiles || project.packageManagerChoice != nil {
+                Picker("Package manager", selection: Binding(
+                    get: { project.packageManagerChoice },
+                    set: { model.setPackageManager(project.id, $0) }
+                )) {
+                    Text("Auto (\(project.detectedPackageManager.displayName))").tag(PackageManager?.none)
+                    Divider()
+                    ForEach([PackageManager.npm, .pnpm, .yarn, .bun], id: \.self) { manager in
+                        Text(verbatim: manager.displayName).tag(PackageManager?.some(manager))
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .controlSize(.small)
-            .fixedSize()
             Button("Remove…", action: confirmRemove)
                 .controlSize(.small)
                 .disabled(isRemoving)
