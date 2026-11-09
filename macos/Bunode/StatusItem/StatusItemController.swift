@@ -12,6 +12,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let dot = StatusDotView()
     /// When the popover last closed; see `togglePopover(_:)`.
     private var lastClosed = Date.distantPast
+    /// NSPopover leaves this gap where the hidden arrow was. Raising its
+    /// anchor by as much puts the top edge against the menu bar, and holds
+    /// when the popover repositions itself after a height change.
+    private var anchorRaise: CGFloat = 0
 
     /// `openSettings(pane, addProject)` opens the Settings window, optionally
     /// on a pane and with the Add Project folder picker.
@@ -35,6 +39,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.contentViewController = content
         popover.behavior = .transient
         popover.delegate = self
+        // No arrow. NSPopover has no public switch for it; checking first
+        // means a macOS without the key keeps the arrow instead of crashing.
+        if popover.responds(to: NSSelectorFromString("setShouldHideAnchor:")) {
+            popover.setValue(true, forKey: "shouldHideAnchor")
+            anchorRaise = 9
+        }
 
         if let button = statusItem.button {
             button.image = StatusIcon.hexagon()
@@ -99,7 +109,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         router.reset()
         // Make the popover key, so its keyboard shortcuts (⌘, ⌘Q) work.
         NSApp.activate()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        let anchor = button.bounds.offsetBy(dx: 0, dy: button.isFlipped ? -anchorRaise : anchorRaise)
+        popover.show(relativeTo: anchor, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         button.highlight(true)
     }
