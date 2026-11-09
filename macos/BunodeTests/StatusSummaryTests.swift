@@ -47,34 +47,34 @@ struct PortDisplayTests {
     }
 }
 
-struct CommandPartsTests {
-    @Test func splitsOffAPackageManagerRun() {
-        let parts = ServiceState.commandParts("bun run dev")
-        #expect(parts.prefix == "bun run")
-        #expect(parts.rest == "dev")
+struct ShortCommandTests {
+    @Test(arguments: [
+        ("bun run start", "start"),
+        ("npm run build", "build"),
+        ("pnpm run build:web", "build:web"),
+        ("yarn run lint", "lint"),
+        ("pnpm dev", "dev"),
+        ("yarn serve", "serve"),
+        ("npm test", "test"),
+        ("bun run preview", "preview"),
+        ("bun  run   dev-api", "dev-api"),
+    ])
+    func aPresetScriptShowsItsName(command: String, short: String) {
+        #expect(ServiceState.shortCommand(command) == short)
     }
 
     @Test(arguments: [
-        ("npm run dev", "npm run", "dev"),
-        ("pnpm run build:web", "pnpm run", "build:web"),
-        ("yarn run test --watch", "yarn run", "test --watch"),
-        ("pnpm --filter ui storybook", "pnpm --filter", "ui storybook"),
-        ("pnpm storybook", "pnpm", "storybook"),
-        ("yarn dev", "yarn", "dev"),
-        ("bun index.ts", "bun", "index.ts"),
-        ("npm test", "npm", "test"),
+        "bun run storybook",
+        "npm run developer",
+        "bun run dev --port 3000",
+        "pnpm --filter web dev",
+        "bun index.ts",
+        "node server.js",
+        "bunx vite",
+        "npm",
     ])
-    func splitsEachPackageManagerForm(command: String, prefix: String, rest: String) {
-        let parts = ServiceState.commandParts(command)
-        #expect(parts.prefix == prefix)
-        #expect(parts.rest == rest)
-    }
-
-    @Test(arguments: ["node server.js", "bunx vite", "npm", "sleep 30"])
-    func leavesOtherCommandsWhole(command: String) {
-        let parts = ServiceState.commandParts(command)
-        #expect(parts.prefix == nil)
-        #expect(parts.rest == command)
+    func anythingElseStaysWhole(command: String) {
+        #expect(ServiceState.shortCommand(command) == command)
     }
 }
 

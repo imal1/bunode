@@ -273,7 +273,10 @@ struct ServiceRow: View {
                 StatusTile(style: status.dotStyle)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        CommandText(command: service.command)
+                        Text(verbatim: ServiceState.shortCommand(service.command))
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         PortPill(ports: service.shownPorts(status: status))
                     }
                     secondLine
@@ -353,27 +356,6 @@ struct ServiceRow: View {
             label += String(localized: ", port \(String(port))")
         }
         return label
-    }
-}
-
-/// A command with its package manager part in the secondary color.
-private struct CommandText: View {
-    let command: String
-
-    private var styled: AttributedString {
-        let parts = ServiceState.commandParts(command)
-        let rest = AttributedString(parts.rest)
-        guard let prefix = parts.prefix else { return rest }
-        var styledPrefix = AttributedString(prefix + " ")
-        styledPrefix.foregroundColor = Color.secondary
-        return styledPrefix + rest
-    }
-
-    var body: some View {
-        Text(styled)
-            .font(.system(size: 13, weight: .medium))
-            .lineLimit(1)
-            .truncationMode(.tail)
     }
 }
 
@@ -526,13 +508,11 @@ struct RowNoticeView: View {
 }
 
 extension ServiceState {
-    /// A command split for the row's first line (design-handoff §2.2): the
-    /// package manager part, drawn in the secondary color, and the rest.
-    static func commandParts(_ command: String) -> (prefix: String?, rest: String) {
-        guard let match = command.wholeMatch(of: /(bun run|npm run|pnpm run|yarn run|pnpm --filter|pnpm|yarn|bun|npm)\s+(.+)/) else {
-            return (nil, command)
-        }
-        return (String(match.1), String(match.2))
+    /// What a row and the Service view title call a command (design-handoff
+    /// §2.2): the script name of a preset, otherwise the whole command.
+    static func shortCommand(_ command: String) -> String {
+        let preset = /(?:bun|npm|pnpm|yarn)(?:\s+run)?\s+((?:dev|start|serve|preview|build|test|lint)(?:[:-]\S+)?)/
+        return command.wholeMatch(of: preset).map { String($0.1) } ?? command
     }
 
     /// The ports shown for a Service (design-handoff §2.2, §5.1, §11): only

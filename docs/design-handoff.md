@@ -100,13 +100,13 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 │  Bunode ●                      Add Service │  顶栏: padding 4/8/8/10
 │  2 running · 6 Services                    │
 │ ─────────────────────────────────────────  │
-│ [▣] bun run dev  :3000                  ›  │  Service 行: 高 46
+│ [▣] dev  :3000                          ›  │  Service 行: 高 46
 │     api · Running                          │
 │ [▣] bun run worker                      ›  │
 │     api                                    │
 │ [◌] pnpm --filter web dev               ›  │
 │     acme · Starting…                       │
-│ [!] bun run dev                         ›  │
+│ [!] dev                                 ›  │
 │     mcp-notes · Crashed                    │
 │ ─────────────────────────────────────────  │
 │ [⌕] Other processes                     ›  │  固定，高 46
@@ -139,9 +139,11 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 
 - **主按钮**（`flex:1`，宽 294，高 46，padding 0/6/0/8，间距 10）：色块 → 文字列。主按钮和行尾区是两个独立点击目标。
 - **色块** 32×32，圆角 9，配色和图标见 §5.1。
-- **第一行**：13 pt medium，单行尾部省略。按下面的正则拆包管理器前缀，前缀 `label-secondary`，其余 `label`；不匹配时整条用 `label`。
+- **第一行**：13 pt medium，单行尾部省略，`label`。包管理器跑常用脚本时只写脚本名，其余整条显示，tooltip 始终是完整命令（2026-11-09 定）：
 
-  `/^(bun run|npm run|pnpm run|yarn run|pnpm --filter|pnpm|yarn|bun|npm)\s+(.+)$/`
+  `/^(bun|npm|pnpm|yarn)(\s+run)?\s+((dev|start|serve|preview|build|test|lint)([:-]\S+)?)$/`
+
+  常用脚本分三类：服务 `dev` `start` `serve` `preview`，构建 `build`，检查 `test` `lint`，带 `:` 或 `-` 后缀的算同类（`build:web`）。其他脚本名、带参数的命令（`bun run dev --port 3000`）和 `pnpm --filter` 没有预设，整条显示。
 
 - **端口胶囊**：距命令 6，高 16，padding 0/5，圆角 4，`tag-bg`，10.5 pt 等宽数字，`label-secondary`（#48484A）。只在 Run 存活且有端口时显示（待拍板，§11）。多端口保留 `+N`，tooltip 列全部端口。胶囊不压缩，命令先省略。
 - **第二行**：11.5 pt `label-secondary`，`{project}` 接 ` · {状态}`。Stopped 不显示状态词。有 `folder` 时写 `{project} › {folder}`（待拍板，§11）。
@@ -151,7 +153,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 
 **Service 视图**（点 Service 行进入）
 
-- 顶栏（padding 0/2/8/0，间距 6）：Back 图标按钮 28×28 → 标题块（命令，mono 12.5 semibold，单行省略；副标题 11 pt，间距 5：Project、6 pt 状态点、状态词、运行时 `:port` 链接）→ `Stop`（次要按钮）或 `Start`（主按钮）。画布去掉了副标题的 `Run #N`，只留在 Logs 视图。
+- 顶栏（padding 0/2/8/0，间距 6）：Back 图标按钮 28×28 → 标题块（命令，短写规则同 Service 行第一行，mono 12.5 semibold，单行省略；副标题 11 pt，间距 5：Project、6 pt 状态点、状态词、运行时 `:port` 链接）→ `Stop`（次要按钮）或 `Start`（主按钮）。画布去掉了副标题的 `Run #N`，只留在 Logs 视图。
 - 端口冲突提示（如有，外边距 0/2/10，见 §5.3）。
 - 可滚动内容，三张卡片（卡片：左右外边距 2，下 10，圆角 10，背景 `card-bg`；卡片内行：最小高 38，padding 4/12，间距 10，行间 1 pt `separator`）：
   1. `Command`（输入框 180 宽 mono）· `Folder`（路径 11 pt mono 省略 + `Change…`）· `Port`（副标题 `Checked before each start`，输入框 64 宽右对齐，placeholder `none`）
@@ -268,7 +270,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 | Token | 画布值（浅色） | SwiftUI / AppKit | 用途 |
 |---|---|---|---|
 | `label` | `#1D1D1F` | `.primary` / `labelColor` | 命令、标题 |
-| `label-secondary` | `#6C6C70`、`#48484A` | `.secondary` / `secondaryLabelColor` | 第二行、命令前缀、帮助文字 |
+| `label-secondary` | `#6C6C70`、`#48484A` | `.secondary` / `secondaryLabelColor` | 第二行、帮助文字 |
 | `label-tertiary` | `#AEAEB2`、`#8A8A8E` | `tertiaryLabelColor` | 行尾箭头（装饰） |
 | `accent` | `#0A63D6` | `Color.accentColor` / `controlAccentColor` | 主按钮、`Add Service`、链接、开关开 |
 | `separator` | `rgba(0,0,0,.07–.08)` | `separatorColor` | 行分隔、Popover 分隔线 |
@@ -357,7 +359,6 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 | `ServiceRow` | stopped / busy / running / crashed / failed | `service`, `project`, `status`, `isNotResponding`, `open` | 主按钮打开 Service 视图。保留右键菜单（Restart、Stop、Start、Open），这是鼠标用户从 Home 重启的唯一入口 |
 | `StatusTile`（新） | stopped / running / busy / error | `style` | 替代行内的 `StatusDot`，复用 `RunStatus.dotStyle` 的分类 |
 | `StatusDot` | idle / running / busy（脉冲） / error | `RunStatus`, `size` | 顶栏和 Service 视图副标题 |
-| `CommandText`（新） | 有前缀 / 无前缀 | `command` | 拆分逻辑写成纯函数并加单元测试 |
 | `PortLabel` | tag | `service`, `status` | 胶囊外观，多端口 `+N` |
 | `RowAction` | chevron / start / stop | `status`, `isNotResponding`, `isRevealed` | 箭头和按钮叠放 |
 | `HomeHeader` | — | `running`, `total`, `hasError` | `Add Service` 用 `.buttonStyle(.link)` |
@@ -665,5 +666,6 @@ Dialogs
 | Settings 里能否改包管理器（C6） | 现有 `ProjectsPane` 有 Picker 和多锁文件警告，极简版 Settings 只显示文字 | 仅在检测到多个锁文件时显示 Picker |
 | 同命令条目的第二行 | 画布只显示 Project 名。`pnpm dev` 分布在两个子目录时无法区分 | 有 `folder` 时显示 `{project} › {folder}` |
 | Popover 背景 | 曾定为接近不透明，Llama 参考图是系统半透明材质 | 系统默认材质（2026-11-09 定） |
+| 命令显示 | 画布写完整命令，包管理器前缀灰色 | 常用脚本只写脚本名，其余整条（2026-11-09 定） |
 
 此前已定（2026-11-06）：Settings 窗口固定 700×540 不可拉伸；`Open at login` 默认关；环境变量用 Popover 内的 Environment 视图；Crashed / Failed 行不自动滚动（“只置灰”已被 C7 的本版状态取代）。

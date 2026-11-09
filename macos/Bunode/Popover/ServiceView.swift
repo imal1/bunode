@@ -28,7 +28,7 @@ struct ServiceView: View {
             let displayName = "\(project.name) › \(service.displayName)"
             VStack(alignment: .leading, spacing: 0) {
                 TopBar(
-                    title: service.command,
+                    title: ServiceState.shortCommand(service.command),
                     fullTitle: displayName,
                     titleFont: .system(size: 12.5, weight: .semibold, design: .monospaced),
                     backLabel: String(localized: "Back to Home"),
