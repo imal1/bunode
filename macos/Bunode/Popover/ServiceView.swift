@@ -34,6 +34,7 @@ struct ServiceView: View {
                 }
                 if model.rowNotice?.serviceID == serviceID {
                     RowNoticeView(model: model, router: router)
+                        .padding(EdgeInsets(top: 0, leading: 2, bottom: 10, trailing: 2))
                 }
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 10) {

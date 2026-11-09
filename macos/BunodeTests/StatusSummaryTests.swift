@@ -39,16 +39,42 @@ struct PortDisplayTests {
         )
     }
 
-    @Test func prefersTheLivePort() {
-        let live = service(port: 3000, live: [5173]).shownPort(status: .running)
-        #expect(live?.port == 5173)
-        #expect(live?.isLive == true)
-        let configured = service(port: 3000, live: []).shownPort(status: .running)
-        #expect(configured?.port == 3000)
-        #expect(configured?.isLive == false)
-        let stopped = service(port: 3000, live: [5173]).shownPort(status: .stopped)
-        #expect(stopped?.port == 3000)
-        #expect(service(port: nil, live: []).shownPort(status: .running) == nil)
+    @Test func showsOnlyThePortsARunningRunListensOn() {
+        #expect(service(port: 3000, live: [5173, 5174]).shownPorts(status: .running) == [5173, 5174])
+        #expect(service(port: 3000, live: []).shownPorts(status: .running).isEmpty)
+        #expect(service(port: 3000, live: [5173]).shownPorts(status: .stopped).isEmpty)
+        #expect(service(port: 3000, live: [5173]).shownPorts(status: .stopping).isEmpty)
+    }
+}
+
+struct CommandPartsTests {
+    @Test func splitsOffAPackageManagerRun() {
+        let parts = ServiceState.commandParts("bun run dev")
+        #expect(parts.prefix == "bun run")
+        #expect(parts.rest == "dev")
+    }
+
+    @Test(arguments: [
+        ("npm run dev", "npm run", "dev"),
+        ("pnpm run build:web", "pnpm run", "build:web"),
+        ("yarn run test --watch", "yarn run", "test --watch"),
+        ("pnpm --filter ui storybook", "pnpm --filter", "ui storybook"),
+        ("pnpm storybook", "pnpm", "storybook"),
+        ("yarn dev", "yarn", "dev"),
+        ("bun index.ts", "bun", "index.ts"),
+        ("npm test", "npm", "test"),
+    ])
+    func splitsEachPackageManagerForm(command: String, prefix: String, rest: String) {
+        let parts = ServiceState.commandParts(command)
+        #expect(parts.prefix == prefix)
+        #expect(parts.rest == rest)
+    }
+
+    @Test(arguments: ["node server.js", "bunx vite", "npm", "sleep 30"])
+    func leavesOtherCommandsWhole(command: String) {
+        let parts = ServiceState.commandParts(command)
+        #expect(parts.prefix == nil)
+        #expect(parts.rest == command)
     }
 }
 

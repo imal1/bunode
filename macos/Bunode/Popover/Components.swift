@@ -51,6 +51,93 @@ struct StatusDot: View {
     }
 }
 
+/// The 32 pt tile at the start of a Service row (design-handoff §5.1). Its
+/// color says what the Run is doing; the second line says it in words.
+struct StatusTile: View {
+    let style: DotStyle
+
+    private var colors: (fill: Color, icon: Color) {
+        switch style {
+        case .stopped:
+            (Color(nsColor: .quaternaryLabelColor), .secondary)
+        case .running:
+            (Color(light: 0xDDF5E3, dark: NSColor.systemGreen.withAlphaComponent(0.22)),
+             Color(light: 0x1B7F3A, highContrast: 0x0E5A26, dark: .systemGreen))
+        case .busy:
+            (Color(light: 0xFFEFD6, dark: NSColor.systemOrange.withAlphaComponent(0.22)),
+             Color(light: 0x9A5B00, highContrast: 0x6B3E00, dark: .systemOrange))
+        case .failed:
+            (Color(light: 0xFFE3E0, dark: NSColor.systemRed.withAlphaComponent(0.22)), .statusErrorText)
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9).fill(colors.fill)
+            icon.foregroundStyle(colors.icon)
+        }
+        .frame(width: 32, height: 32)
+        .animation(.easeOut(duration: 0.15), value: style)
+        .accessibilityHidden(true)
+    }
+
+    // The paths are design-handoff §5.1's, in its 16 pt view box.
+    @ViewBuilder private var icon: some View {
+        switch style {
+        case .stopped, .running:
+            Path { path in
+                path.addLines([CGPoint(x: 3.5, y: 4.5), CGPoint(x: 7, y: 8), CGPoint(x: 3.5, y: 11.5)])
+                path.addLines([CGPoint(x: 8.5, y: 12), CGPoint(x: 13, y: 12)])
+            }
+            .stroke(style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
+            .frame(width: 16, height: 16)
+        case .busy:
+            TimelineView(.animation) { context in
+                Circle()
+                    .trim(from: 0, to: 0.75)
+                    .stroke(style: StrokeStyle(lineWidth: 1.75, lineCap: .round))
+                    .frame(width: 10.5, height: 10.5)
+                    .rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9 * 360))
+            }
+        case .failed:
+            ZStack {
+                Path { path in
+                    path.addLines([CGPoint(x: 8, y: 3), CGPoint(x: 8, y: 9)])
+                }
+                .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                Path(ellipseIn: CGRect(x: 6.8, y: 11.3, width: 2.4, height: 2.4))
+            }
+            .frame(width: 16, height: 16)
+            .scaleEffect(15.0 / 16)
+        }
+    }
+}
+
+extension Color {
+    /// `status-error-text` (design-handoff §3).
+    static let statusErrorText = Color(light: 0xB42318, highContrast: 0x8A1810, dark: .systemRed)
+
+    /// A fixed color in Light, optionally darker under Increase Contrast,
+    /// and a system color (which adapts by itself) in Dark.
+    fileprivate init(light: UInt32, highContrast: UInt32? = nil, dark: NSColor) {
+        func color(_ hex: UInt32) -> NSColor {
+            NSColor(
+                srgbRed: CGFloat(hex >> 16 & 0xFF) / 255,
+                green: CGFloat(hex >> 8 & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: 1
+            )
+        }
+        self.init(nsColor: NSColor(name: nil) { appearance in
+            switch appearance.bestMatch(from: [.aqua, .accessibilityHighContrastAqua, .darkAqua, .accessibilityHighContrastDarkAqua]) {
+            case .darkAqua?, .accessibilityHighContrastDarkAqua?: dark
+            case .accessibilityHighContrastAqua?: color(highContrast ?? light)
+            default: color(light)
+            }
+        })
+    }
+}
+
 /// A rounded card of rows separated by hairlines.
 struct Card<Content: View>: View {
     @ViewBuilder var content: Content
@@ -237,10 +324,12 @@ private struct HoverHighlight: ViewModifier {
 }
 
 /// A warning bar with actions (design-handoff §4, InlineNotice): port
-/// conflicts, missing folders. Announced once when it appears.
+/// conflicts, missing folders. Announced once when it appears. The caller
+/// sets its margins.
 struct InlineNotice<Actions: View>: View {
     let text: String
     var detail: String?
+    var verticalPadding: CGFloat = 10
     @ViewBuilder var actions: Actions
 
     var body: some View {
@@ -264,9 +353,9 @@ struct InlineNotice<Actions: View>: View {
             }
             .controlSize(.small)
         }
-        .padding(10)
+        .padding(.vertical, verticalPadding)
+        .padding(.horizontal, 10)
         .background(Color.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-        .padding(EdgeInsets(top: 2, leading: 2, bottom: 6, trailing: 2))
         .onAppear {
             NSAccessibility.post(
                 element: NSApp as Any,

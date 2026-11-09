@@ -140,7 +140,7 @@ private struct ProcessRow: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.primary)
                 }
-                .padding(.horizontal, 8)
+                .padding(EdgeInsets(top: 2, leading: 10, bottom: 6, trailing: 10))
             }
         }
     }

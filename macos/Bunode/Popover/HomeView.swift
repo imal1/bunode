@@ -30,11 +30,29 @@ struct HomeView: View {
                 .padding(.bottom, 4)
             if model.snapshot.projects.isEmpty {
                 emptyState
+            } else if rowOrder.isEmpty {
+                Text("No commands yet.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 30)
+                    .padding(.horizontal, 16)
             } else {
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(model.snapshot.projects, id: \.id) { project in
-                            ProjectSection(model: model, project: project, router: router, focus: $focusedService)
+                            ForEach(project.services, id: \.id) { service in
+                                ServiceRow(model: model, project: project, service: service) {
+                                    router.push(.service(service.id))
+                                }
+                                .focusable()
+                                .focused($focusedService, equals: service.id)
+                                if model.rowNotice?.serviceID == service.id {
+                                    // Lined up with the row's text column.
+                                    RowNoticeView(model: model, router: router)
+                                        .padding(EdgeInsets(top: 2, leading: 50, bottom: 6, trailing: 8))
+                                }
+                            }
                         }
                     }
                 }
@@ -191,72 +209,8 @@ private struct OtherProcessesRow: View {
     }
 }
 
-private struct ProjectSection: View {
-    let model: AppModel
-    let project: ProjectState
-    let router: PopoverRouter
-    var focus: FocusState<UInt64?>.Binding
-
-    /// Discovered Processes running in this Project's folder.
-    private var externalProcesses: [DiscoveredProcess] {
-        project.external.compactMap { pid in model.snapshot.discovered.first { $0.pid == pid } }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
-                Text(project.name)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
-                if project.isMissing {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .help("\(project.path.abbreviatingWithTilde) is missing.")
-                        .accessibilityLabel("\(project.path.abbreviatingWithTilde) is missing.")
-                }
-                Spacer(minLength: 0)
-                Button {
-                    router.push(.addService(projectID: project.id))
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help("Add Service to \(project.name)")
-                .accessibilityLabel("Add Service to \(project.name)")
-            }
-            .padding(EdgeInsets(top: 6, leading: 10, bottom: 0, trailing: 2))
-
-            if project.services.isEmpty {
-                Text("No Services. Click + to add one.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(EdgeInsets(top: 2, leading: 10, bottom: 6, trailing: 10))
-            }
-            ForEach(project.services, id: \.id) { service in
-                ServiceRow(model: model, project: project, service: service) {
-                    router.push(.service(service.id))
-                }
-                .focusable()
-                .focused(focus, equals: service.id)
-                if model.rowNotice?.serviceID == service.id {
-                    RowNoticeView(model: model, router: router)
-                }
-            }
-            ForEach(externalProcesses, id: \.pid) { process in
-                ExternalRow(process: process) {
-                    router.push(.processes(focus: process.pid))
-                }
-            }
-        }
-    }
-}
-
+/// A Service on Home (design-handoff §2.2, §5.1): its status tile, then its
+/// command over where it lives and what its Run is doing.
 struct ServiceRow: View {
     let model: AppModel
     let project: ProjectState
@@ -266,34 +220,38 @@ struct ServiceRow: View {
 
     private var status: RunStatus { model.status(of: service) }
     private var isNotResponding: Bool { model.notResponding.contains(service.id) }
-
-    /// Crashed, Failed or Not responding.
-    private var note: String? {
-        isNotResponding ? String(localized: "Not responding") : status.rowNote
-    }
+    /// A live Run keeps its status even if its folder went away.
+    private var isFolderMissing: Bool { project.isMissing && !status.isLive }
 
     private var displayName: String {
         "\(project.name) › \(service.displayName)"
     }
 
+    private var statusText: String {
+        if isFolderMissing { return String(localized: "Folder missing") }
+        if isNotResponding { return String(localized: "Not responding") }
+        return status.label
+    }
+
+    private var isStatusError: Bool {
+        isFolderMissing || isNotResponding || status.dotStyle == .failed
+    }
+
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 8) {
-                StatusDot(style: status.dotStyle)
-                Text(service.displayName)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let note {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .help(service.lastExit ?? note)
+            HStack(spacing: 10) {
+                StatusTile(style: status.dotStyle)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        CommandText(command: service.command)
+                        PortPill(ports: service.shownPorts(status: status))
+                    }
+                    secondLine
                 }
-                Spacer(minLength: 4)
-                PortLabel(service: service, status: status)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 4))
-            .frame(maxWidth: .infinity, minHeight: 32)
+            .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 6))
+            .frame(height: 46)
             .contentShape(Rectangle())
             .onTapGesture(perform: open)
 
@@ -304,10 +262,10 @@ struct ServiceRow: View {
                     model.start(service.id)
                 }
             }
-            .padding(.trailing, 2)
+            .padding(.trailing, 6)
         }
-        .hoverHighlight()
-        .help(displayName)
+        .hoverHighlight(cornerRadius: 9)
+        .help(tooltip)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(.isButton)
@@ -331,17 +289,86 @@ struct ServiceRow: View {
         }
     }
 
+    /// `{project}`, `{project} › {folder}`, then ` · {status}` unless
+    /// Stopped. When short of room the Project name gives way first.
+    private var secondLine: some View {
+        HStack(spacing: 0) {
+            Text(verbatim: service.folder.map { "\(project.name) › \($0)" } ?? project.name)
+                .truncationMode(.tail)
+            if status != .stopped || isFolderMissing {
+                HStack(spacing: 0) {
+                    Text(verbatim: " · ")
+                    Text(verbatim: statusText)
+                        .foregroundStyle(isStatusError ? Color.statusErrorText : .secondary)
+                }
+                .fixedSize()
+            }
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    /// The full command and folder; a Crashed or Failed Run adds how it ended.
+    private var tooltip: String {
+        var lines = [service.command, project.runPath(folder: service.folder).abbreviatingWithTilde]
+        if status.dotStyle == .failed, let lastExit = service.lastExit {
+            lines.append(lastExit)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private var accessibilityLabel: String {
-        var label = "\(displayName), \(note ?? status.label)"
-        if let port = service.shownPort(status: status)?.port {
+        var label = "\(displayName), \(statusText)"
+        if let port = service.shownPorts(status: status).first {
             label += String(localized: ", port \(String(port))")
         }
         return label
     }
 }
 
-/// The button at the end of a Service row: Start, Stop, or a spinner while
-/// the Supervisor works (design-handoff §2.2, §5.1).
+/// A command with its package manager part in the secondary color.
+private struct CommandText: View {
+    let command: String
+
+    private var styled: AttributedString {
+        let parts = ServiceState.commandParts(command)
+        let rest = AttributedString(parts.rest)
+        guard let prefix = parts.prefix else { return rest }
+        var styledPrefix = AttributedString(prefix + " ")
+        styledPrefix.foregroundColor = Color.secondary
+        return styledPrefix + rest
+    }
+
+    var body: some View {
+        Text(styled)
+            .font(.system(size: 13, weight: .medium))
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+}
+
+/// `:3000`, `+N` when the Run listens on more; it never compresses, so the
+/// command truncates first.
+private struct PortPill: View {
+    let ports: [UInt16]
+
+    var body: some View {
+        if let first = ports.first {
+            Text(verbatim: ports.count > 1 ? ":\(first) +\(ports.count - 1)" : ":\(first)")
+                .font(.system(size: 10.5).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .frame(height: 16)
+                .background(.quinary, in: RoundedRectangle(cornerRadius: 4))
+                .fixedSize()
+                .help(ports.map { ":\($0)" }.joined(separator: " "))
+        }
+    }
+}
+
+/// The button at the end of a Service row: Start or Stop. A busy Run has
+/// none (design-handoff §2.2, §5.1).
 private struct RowAction: View {
     let status: RunStatus
     /// A stuck Run gets its Stop button back, which force-kills.
@@ -352,32 +379,27 @@ private struct RowAction: View {
     private var showsStop: Bool { status == .running || isNotResponding }
 
     var body: some View {
-        Group {
-            if status.isBusy && !isNotResponding {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.7)
-                    .frame(width: 28, height: 26)
-            } else {
-                Button(action: action) {
-                    Group {
-                        if showsStop {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.primary)
-                                .frame(width: 10, height: 10)
-                        } else {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(Color.accentColor)
-                        }
+        if status.isBusy && !isNotResponding {
+            Color.clear.frame(width: 28, height: 28)
+        } else {
+            Button(action: action) {
+                Group {
+                    if showsStop {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.primary)
+                            .frame(width: 10, height: 10)
+                    } else {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.accentColor)
                     }
-                    .frame(width: 28, height: 26)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
-                .help(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
-                .accessibilityLabel(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.borderless)
+            .help(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
+            .accessibilityLabel(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
         }
     }
 }
@@ -396,7 +418,7 @@ struct RowNoticeView: View {
             switch model.rowNotice {
             case .missingFolder(_, let projectID)?:
                 if let project = model.project(projectID) {
-                    InlineNotice(text: String(localized: "\(project.path.abbreviatingWithTilde) is missing.")) {
+                    InlineNotice(text: String(localized: "\(project.path.abbreviatingWithTilde) is missing."), verticalPadding: 8) {
                         Button("Cancel") { model.dismissNotice() }
                             .buttonStyle(.borderless)
                         Button("Locate…") { locate(project) }
@@ -407,7 +429,8 @@ struct RowNoticeView: View {
             case .portConflict(let serviceID, let port, let owner, let suggestion)?:
                 InlineNotice(
                     text: conflictText(port: port, owner: owner),
-                    detail: suggestion.map { String(localized: "Sets PORT=\(String($0)) for this Run. Tools that ignore PORT need their own flag.") }
+                    detail: suggestion.map { String(localized: "Sets PORT=\(String($0)) for this Run. Tools that ignore PORT need their own flag.") },
+                    verticalPadding: 8
                 ) {
                     Button("Cancel") { model.dismissNotice() }
                         .buttonStyle(.borderless)
@@ -460,76 +483,20 @@ struct RowNoticeView: View {
     }
 }
 
-/// A read-only row for a Discovered Process running in the Project's folder
-/// (design-handoff §2.2, C5). No Start or Stop: Bunode didn't start it.
-struct ExternalRow: View {
-    let process: DiscoveredProcess
-    let open: () -> Void
-
-    var body: some View {
-        Button(action: open) {
-            HStack(spacing: 6) {
-                Image(systemName: "memorychip")
-                    .font(.system(size: 12))
-                Text("External · \(process.command)")
-                    .font(.callout)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 4)
-                if let port = process.ports.first {
-                    Text(verbatim: ":\(port)")
-                        .font(.caption.monospaced())
-                }
-            }
-            .foregroundStyle(.secondary)
-            .padding(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 8))
-            .frame(height: 28)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .hoverHighlight()
-        .help(process.command)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint("Shows it in Other processes")
-    }
-
-    private var accessibilityLabel: String {
-        var label = String(localized: "External, \(process.command), from \(process.source)")
-        if let port = process.ports.first {
-            label += String(localized: ", port \(String(port))")
-        }
-        return label
-    }
-}
-
 extension ServiceState {
-    /// The port a row shows (design-handoff §2.2): the one the live Run
-    /// listens on, else the configured one, else none.
-    func shownPort(status: RunStatus) -> (port: UInt16, isLive: Bool)? {
-        if status.isLive, let live = livePorts.first {
-            return (live, true)
+    /// A command split for the row's first line (design-handoff §2.2): the
+    /// package manager part, drawn in the secondary color, and the rest.
+    static func commandParts(_ command: String) -> (prefix: String?, rest: String) {
+        guard let match = command.wholeMatch(of: /(bun run|npm run|pnpm run|yarn run|pnpm --filter|pnpm|yarn|bun|npm)\s+(.+)/) else {
+            return (nil, command)
         }
-        return port.map { ($0, false) }
+        return (String(match.1), String(match.2))
+    }
+
+    /// The ports a row shows (design-handoff §2.2, §11): only what a
+    /// running Run listens on; the configured Port is on the Service view.
+    func shownPorts(status: RunStatus) -> [UInt16] {
+        status == .running ? livePorts : []
     }
 }
 
-/// `:3000` in the accent color while the Run listens on it, gray for the
-/// configured port, `+1` when the Run listens on more.
-struct PortLabel: View {
-    let service: ServiceState
-    let status: RunStatus
-
-    var body: some View {
-        if let shown = service.shownPort(status: status) {
-            HStack(spacing: 2) {
-                Text(verbatim: ":\(shown.port)")
-                if shown.isLive, service.livePorts.count > 1 {
-                    Text(verbatim: "+\(service.livePorts.count - 1)")
-                }
-            }
-            .font(.caption.monospaced())
-            .foregroundStyle(shown.isLive ? Color.accentColor : Color.secondary)
-            .help(service.livePorts.map { ":\($0)" }.joined(separator: " "))
-        }
-    }
-}

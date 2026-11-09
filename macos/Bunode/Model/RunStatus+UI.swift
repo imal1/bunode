@@ -38,13 +38,4 @@ extension RunStatus {
         case .failed: String(localized: "Failed")
         }
     }
-
-    /// The note on a Home row; only Crashed and Failed have one.
-    var rowNote: String? {
-        switch self {
-        case .crashed: String(localized: "Crashed")
-        case .failed: String(localized: "Failed")
-        default: nil
-        }
-    }
 }
