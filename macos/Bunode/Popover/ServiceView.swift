@@ -271,7 +271,7 @@ struct StatusLine: View {
             StatusDot(style: status.dotStyle, size: 6)
             Text(isNotResponding ? String(localized: "Not responding") : status.label)
                 .fixedSize()
-            if status.isLive, let port = service.livePorts.first {
+            if let port = service.shownPorts(status: status).first {
                 // Opens the server in the browser (requirements §3.5).
                 Button {
                     if let url = URL(string: "http://localhost:\(port)") {

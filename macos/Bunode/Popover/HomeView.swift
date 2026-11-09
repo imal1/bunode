@@ -256,6 +256,9 @@ struct ServiceRow: View {
     /// A stuck Run offers Stop too, which force-kills.
     private var offersStop: Bool { status == .running || isNotResponding }
 
+    /// A busy Run has nothing to press unless it is stuck.
+    private var hasAction: Bool { offersStop || !status.isBusy }
+
     private func startOrStop() {
         if offersStop {
             model.stop(service.id)
@@ -283,7 +286,7 @@ struct ServiceRow: View {
             .onTapGesture(perform: open)
 
             RowAction(
-                hasButton: offersStop || !status.isBusy,
+                hasButton: hasAction,
                 offersStop: offersStop,
                 isRevealed: isHovered || isFocused,
                 displayName: displayName,
@@ -298,7 +301,11 @@ struct ServiceRow: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, open)
-        .accessibilityAction(named: offersStop ? Text("Stop") : Text("Start"), startOrStop)
+        .accessibilityActions {
+            if hasAction {
+                Button(action: startOrStop) { offersStop ? Text("Stop") : Text("Start") }
+            }
+        }
         .contextMenu {
             if status == .running {
                 Button("Restart") { model.restart(service.id) }
@@ -528,8 +535,9 @@ extension ServiceState {
         return (String(match.1), String(match.2))
     }
 
-    /// The ports a row shows (design-handoff §2.2, §11): only what a
-    /// running Run listens on; the configured Port is on the Service view.
+    /// The ports shown for a Service (design-handoff §2.2, §5.1, §11): only
+    /// what a running Run listens on, on the row and in the Service view's
+    /// status line. The configured Port is a field of the Service view.
     func shownPorts(status: RunStatus) -> [UInt16] {
         status == .running ? livePorts : []
     }
