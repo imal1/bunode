@@ -299,27 +299,28 @@ struct FlowLayout: Layout {
 }
 
 extension View {
-    /// The hover background of popover rows (`fill-hover`, 100 ms).
-    func hoverHighlight(cornerRadius: CGFloat = 8) -> some View {
-        modifier(HoverHighlight(cornerRadius: cornerRadius))
+    /// The hover background of popover rows (`fill-hover`, 100 ms), also
+    /// shown while `isActive`.
+    func hoverHighlight(cornerRadius: CGFloat = 8, isActive: Bool = false) -> some View {
+        modifier(HoverHighlight(cornerRadius: cornerRadius, isActive: isActive))
     }
 }
 
 private struct HoverHighlight: ViewModifier {
     let cornerRadius: CGFloat
+    let isActive: Bool
     @State private var isHovered = false
+
+    private var isHighlighted: Bool { isHovered || isActive }
 
     func body(content: Content) -> some View {
         content
-            .background(
-                isHovered ? Color(nsColor: .quaternarySystemFill) : .clear,
-                in: RoundedRectangle(cornerRadius: cornerRadius)
-            )
-            .onHover { hovering in
-                withAnimation(.easeOut(duration: 0.1)) {
-                    isHovered = hovering
-                }
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(isHighlighted ? Color(nsColor: .quaternarySystemFill) : .clear)
+                    .animation(.easeOut(duration: 0.1), value: isHighlighted)
             }
+            .onHover { isHovered = $0 }
     }
 }
 

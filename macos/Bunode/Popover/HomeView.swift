@@ -9,6 +9,9 @@ struct HomeView: View {
 
     /// The Service row with keyboard focus.
     @FocusState private var focusedService: UInt64?
+    /// The list itself: it takes the keyboard when the popover opens, so no
+    /// row wears a focus ring until an arrow key picks one (design-handoff §9).
+    @FocusState private var listFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -42,9 +45,10 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(model.snapshot.projects, id: \.id) { project in
                             ForEach(project.services, id: \.id) { service in
-                                ServiceRow(model: model, project: project, service: service) {
+                                ServiceRow(model: model, project: project, service: service, isFocused: focusedService == service.id) {
                                     router.push(.service(service.id))
                                 }
+                                .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 9))
                                 .focusable()
                                 .focused($focusedService, equals: service.id)
                                 if model.rowNotice?.serviceID == service.id {
@@ -55,6 +59,14 @@ struct HomeView: View {
                             }
                         }
                     }
+                }
+                .background {
+                    // Beside the rows, not around them: a disabled focus
+                    // effect reaches everything inside the view it is on.
+                    Color.clear
+                        .focusable()
+                        .focusEffectDisabled()
+                        .focused($listFocused)
                 }
                 .onKeyPress(.upArrow) { move(by: -1) }
                 .onKeyPress(.downArrow) { move(by: 1) }
@@ -81,9 +93,8 @@ struct HomeView: View {
                 router.push(.processes(focus: nil))
             }
         }
-        // Opening the popover puts the focus on the first Service row.
-        .onAppear(perform: focusFirstRow)
-        .onChange(of: router.openCount, focusFirstRow)
+        .onAppear(perform: focusList)
+        .onChange(of: router.openCount, focusList)
     }
 
     /// Service rows in the order Home shows them.
@@ -91,8 +102,9 @@ struct HomeView: View {
         model.snapshot.projects.flatMap { $0.services.map(\.id) }
     }
 
-    private func focusFirstRow() {
-        focusedService = rowOrder.first
+    private func focusList() {
+        focusedService = nil
+        listFocused = true
     }
 
     private func move(by step: Int) -> KeyPress.Result {
@@ -215,8 +227,12 @@ struct ServiceRow: View {
     let model: AppModel
     let project: ProjectState
     let service: ServiceState
+    /// The list's keyboard selection is on this row.
+    let isFocused: Bool
     /// Opens the Service view.
     let open: () -> Void
+
+    @State private var isHovered = false
 
     private var status: RunStatus { model.status(of: service) }
     private var isNotResponding: Bool { model.notResponding.contains(service.id) }
@@ -237,6 +253,17 @@ struct ServiceRow: View {
         isFolderMissing || isNotResponding || status.dotStyle == .failed
     }
 
+    /// A stuck Run offers Stop too, which force-kills.
+    private var offersStop: Bool { status == .running || isNotResponding }
+
+    private func startOrStop() {
+        if offersStop {
+            model.stop(service.id)
+        } else if !status.isBusy {
+            model.start(service.id)
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -255,28 +282,23 @@ struct ServiceRow: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: open)
 
-            RowAction(status: status, isNotResponding: isNotResponding, displayName: displayName) {
-                if status == .running || isNotResponding {
-                    model.stop(service.id)
-                } else {
-                    model.start(service.id)
-                }
-            }
+            RowAction(
+                hasButton: offersStop || !status.isBusy,
+                offersStop: offersStop,
+                isRevealed: isHovered || isFocused,
+                displayName: displayName,
+                action: startOrStop
+            )
             .padding(.trailing, 6)
         }
-        .hoverHighlight(cornerRadius: 9)
+        .hoverHighlight(cornerRadius: 9, isActive: isFocused)
+        .onHover { isHovered = $0 }
         .help(tooltip)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, open)
-        .accessibilityAction(named: status == .running ? Text("Stop") : Text("Start")) {
-            if status == .running {
-                model.stop(service.id)
-            } else if !status.isBusy {
-                model.start(service.id)
-            }
-        }
+        .accessibilityAction(named: offersStop ? Text("Stop") : Text("Start"), startOrStop)
         .contextMenu {
             if status == .running {
                 Button("Restart") { model.restart(service.id) }
@@ -367,40 +389,53 @@ private struct PortPill: View {
     }
 }
 
-/// The button at the end of a Service row: Start or Stop. A busy Run has
-/// none (design-handoff §2.2, §5.1).
+/// The end of a Service row (design-handoff §2.2, §5.1): an arrow at rest,
+/// Start or Stop on hover or keyboard focus. Stacked, so the row keeps its
+/// width. A busy Run has no button and keeps the arrow.
 private struct RowAction: View {
-    let status: RunStatus
-    /// A stuck Run gets its Stop button back, which force-kills.
-    let isNotResponding: Bool
+    let hasButton: Bool
+    let offersStop: Bool
+    let isRevealed: Bool
     let displayName: String
     let action: () -> Void
 
-    private var showsStop: Bool { status == .running || isNotResponding }
+    /// Tab can land on the button itself.
+    @FocusState private var isFocused: Bool
+
+    private var showsButton: Bool { hasButton && (isRevealed || isFocused) }
 
     var body: some View {
-        if status.isBusy && !isNotResponding {
-            Color.clear.frame(width: 28, height: 28)
-        } else {
-            Button(action: action) {
-                Group {
-                    if showsStop {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.primary)
-                            .frame(width: 10, height: 10)
-                    } else {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.accentColor)
+        ZStack {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.tertiary)
+                .opacity(showsButton ? 0 : 1)
+            if hasButton {
+                Button(action: action) {
+                    Group {
+                        if offersStop {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.primary)
+                                .frame(width: 10, height: 10)
+                        } else {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.accentColor)
+                        }
                     }
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .hoverHighlight(cornerRadius: 7)
                 }
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+                .buttonStyle(.borderless)
+                .focused($isFocused)
+                .opacity(showsButton ? 1 : 0)
+                .help(offersStop ? "Stop \(displayName)" : "Start \(displayName)")
+                .accessibilityLabel(offersStop ? "Stop \(displayName)" : "Start \(displayName)")
             }
-            .buttonStyle(.borderless)
-            .help(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
-            .accessibilityLabel(showsStop ? "Stop \(displayName)" : "Start \(displayName)")
         }
+        .frame(width: 28, height: 28)
+        .animation(.easeInOut(duration: 0.1), value: showsButton)
     }
 }
 

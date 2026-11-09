@@ -13,6 +13,7 @@ struct PopoverView: View {
     /// Closes the popover.
     let close: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var quitPhase = QuitPhase.idle
 
     enum QuitPhase { case idle, confirming, stopping }
@@ -22,7 +23,7 @@ struct PopoverView: View {
             ZStack(alignment: .top) {
                 screen
                     .id(router.screen)
-                    .transition(.push(from: router.isForward ? .trailing : .leading))
+                    .transition(reduceMotion ? .opacity : .push(from: router.isForward ? .trailing : .leading))
             }
             .clipped()
             Divider()
