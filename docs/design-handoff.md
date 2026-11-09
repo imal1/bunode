@@ -493,7 +493,7 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 
 | 字段 | 限制 |
 |---|---|
-| Service Name | 1–40 字符，Project 内唯一。本版不再手填：自动取名超过 40 字符时截断；已被占用时 `Add` disabled，Command 框下 11 pt 红字 `Name already used in acme`〔设计未画〕 |
+| Service Name | 1–40 字符，同一 Project 的同一目录内唯一（不分大小写）。本版不再手填：自动取名超过 40 字符时截断；已被占用时 `Add` disabled，Command 框下 11 pt 红字 `Name already used in acme`〔设计未画〕 |
 | Command | 非空，不限长度，单行输入框横向滚动 |
 | Port | 1–65535 |
 

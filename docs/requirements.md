@@ -168,7 +168,7 @@ Bunode 不解析、不注入 `.env`，交由 Vite、Next、Bun 等工具自行�
 
 |字段|说明|
 |---|---|
-|Name|Service 名称。新建时自动取脚本名或命令最后一个词，不手填；Project 内唯一|
+|Name|Service 名称。新建时自动取脚本名或命令最后一个词，不手填；同一 Project 的同一目录内唯一（monorepo 的多个包可以都有 `dev`）|
 |Working Directory|Project 目录或其子目录|
 |Source|package script / 自定义命令|
 |Runtime|Auto / Node / Bun|
