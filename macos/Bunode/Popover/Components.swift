@@ -148,11 +148,11 @@ struct PopoverScroll<Content: View>: View {
     @ViewBuilder var content: Content
     @State private var contentHeight: CGFloat = 0
 
-    /// Screen height minus 40 pt (design-handoff §2.2), minus room for the
-    /// header and the bottom menu.
+    /// Screen height minus 40 pt, minus the 156 pt of fixed areas
+    /// (design-handoff §2.2).
     static var maxHeight: CGFloat {
         let screen = NSScreen.main?.visibleFrame.height ?? 900
-        return max(200, screen - 40 - 120)
+        return max(200, screen - 40 - 156)
     }
 
     var body: some View {

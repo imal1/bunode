@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// The popover's root view (design-handoff §2.2): the current view of the
-/// stack, then the fixed bottom menu.
+/// stack, then the fixed footer.
 struct PopoverView: View {
     let model: AppModel
     let router: PopoverRouter
@@ -27,14 +27,13 @@ struct PopoverView: View {
             .clipped()
             Divider()
                 .padding(.horizontal, 8)
-                .padding(.top, 6)
-                .padding(.bottom, 4)
+                .padding(.vertical, 4)
             quitConfirmation
-            MenuRow(title: "Settings…", key: ",", action: { openSettings(nil, false) })
-            MenuRow(title: "Quit Bunode", key: "q", action: askToQuit)
+            footer
         }
         .padding(6)
         .frame(width: 340)
+        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
         .toasts(toaster, maxWidth: 380)
         // Esc (design-handoff §9): an open confirmation's Cancel takes it
         // first (it is the cancel action); then the warning bar, then one
@@ -97,8 +96,8 @@ struct PopoverView: View {
                 .controlSize(.small)
             }
             .padding(10)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
-            .padding(EdgeInsets(top: 0, leading: 2, bottom: 6, trailing: 2))
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 9))
+            .padding(EdgeInsets(top: 2, leading: 2, bottom: 4, trailing: 2))
             .onAppear {
                 NSAccessibility.post(
                     element: NSApp as Any,
@@ -115,6 +114,39 @@ struct PopoverView: View {
             }
             .padding(EdgeInsets(top: 4, leading: 10, bottom: 8, trailing: 10))
         }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Text(verbatim: versionText)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                Button("Settings") { openSettings(nil, false) }
+                    .keyboardShortcut(",", modifiers: .command)
+                Button("Quit", action: askToQuit)
+                    .keyboardShortcut("q", modifiers: .command)
+            }
+            .buttonStyle(FooterButtonStyle())
+            .fixedSize()
+        }
+        .padding(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 4))
+        .frame(minHeight: 28)
+    }
+
+    /// `0.1.0 · Bun 1.2.4 · Node 22.11.0`, leaving out what isn't known
+    /// (design-handoff §6.5).
+    private var versionText: String {
+        func runtime(_ name: String, _ tool: Tool) -> String? {
+            model.snapshot.environment.tools.first { $0.tool == tool }?.version.map { "\(name) \($0)" }
+        }
+        let app = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        return [app, runtime("Bun", .bun), runtime("Node", .node)]
+            .compactMap(\.self)
+            .joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -134,39 +166,17 @@ struct PopoverView: View {
     }
 }
 
-/// A row of the popover's bottom menu: the title on the left, its ⌘
-/// shortcut on the right.
-private struct MenuRow: View {
-    let title: LocalizedStringKey
-    let key: Character
-    let action: () -> Void
+/// `Settings` and `Quit` (design-handoff §2.2): 22 pt tall with a hairline.
+private struct FooterButtonStyle: ButtonStyle {
+    private let shape = RoundedRectangle(cornerRadius: 6)
 
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(verbatim: "⌘" + String(key).uppercased())
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 10)
-            .frame(minHeight: 28)
-            .contentShape(Rectangle())
-            .background(
-                isHovered ? Color(nsColor: .quaternarySystemFill) : .clear,
-                in: RoundedRectangle(cornerRadius: 7)
-            )
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(KeyEquivalent(key), modifiers: .command)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.1)) {
-                isHovered = hovering
-            }
-        }
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11.5))
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(configuration.isPressed ? Color.primary.opacity(0.08) : .clear, in: shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.16)))
+            .contentShape(shape)
     }
 }

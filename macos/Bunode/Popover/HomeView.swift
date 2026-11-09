@@ -25,6 +25,9 @@ struct HomeView: View {
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
                 }
+            Divider()
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
             if model.snapshot.projects.isEmpty {
                 emptyState
             } else {
@@ -52,6 +55,12 @@ struct HomeView: View {
                     }
                     return .handled
                 }
+            }
+            Divider()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+            OtherProcessesRow(count: model.snapshot.discovered.count) {
+                router.push(.processes(focus: nil))
             }
         }
         // Opening the popover puts the focus on the first Service row.
@@ -83,41 +92,31 @@ struct HomeView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Text("Bunode")
-                .font(.body.weight(.semibold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
-            Text("\(model.statusSummary.running) running")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Button {
-                router.push(.processes(focus: nil))
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "memorychip")
-                        .font(.system(size: 14))
-                    Text(verbatim: "\(model.snapshot.discovered.count)")
-                        .font(.callout)
+        let summary = model.statusSummary
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("Bunode")
+                        .font(.system(size: 14, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Circle()
+                        .fill(Color(nsColor: summary.aggregate.color))
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
                 }
-                .padding(.horizontal, 6)
-                .frame(height: 28)
-                .contentShape(Rectangle())
+                Text(verbatim: "\(String(localized: "\(summary.running) running")) · \(String(localized: "\(model.services.count) Services"))")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .help("Other Node and Bun processes, \(model.snapshot.discovered.count)")
-            .accessibilityLabel("Other Node and Bun processes, \(model.snapshot.discovered.count)")
+            Spacer(minLength: 0)
             if let first = model.snapshot.projects.first {
-                Button("Add Service") {
+                AddServiceLink {
                     router.push(.addService(projectID: first.id))
                 }
-                .buttonStyle(.link)
-                .font(.system(size: 12.5))
             }
         }
-        .frame(minHeight: 28)
-        .padding(EdgeInsets(top: 4, leading: 10, bottom: 6, trailing: 2))
+        .padding(EdgeInsets(top: 4, leading: 10, bottom: 8, trailing: 8))
     }
 
     private var emptyState: some View {
@@ -132,6 +131,63 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 30)
+    }
+}
+
+/// `Add Service` in the Home header: a text link, underlined on hover.
+private struct AddServiceLink: View {
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text("Add Service")
+                .font(.system(size: 12.5))
+                .underline(isHovered)
+                .foregroundStyle(Color.accentColor)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+}
+
+/// The fixed row under the Service list (design-handoff §2.2): shown even
+/// when nothing runs outside Bunode.
+private struct OtherProcessesRow: View {
+    let count: Int
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Other processes")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(count == 0 ? "None right now" : "\(count) started outside Bunode")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 28, height: 28)
+                    .accessibilityHidden(true)
+            }
+            .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 6))
+            .frame(height: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverHighlight(cornerRadius: 9)
     }
 }
 
