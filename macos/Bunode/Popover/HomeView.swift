@@ -108,6 +108,13 @@ struct HomeView: View {
             .foregroundStyle(.secondary)
             .help("Other Node and Bun processes, \(model.snapshot.discovered.count)")
             .accessibilityLabel("Other Node and Bun processes, \(model.snapshot.discovered.count)")
+            if let first = model.snapshot.projects.first {
+                Button("Add Service") {
+                    router.push(.addService(projectID: first.id))
+                }
+                .buttonStyle(.link)
+                .font(.system(size: 12.5))
+            }
         }
         .frame(minHeight: 28)
         .padding(EdgeInsets(top: 4, leading: 10, bottom: 6, trailing: 2))

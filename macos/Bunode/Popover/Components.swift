@@ -3,6 +3,14 @@ import SwiftUI
 
 // Building blocks shared by the popover's views (design-handoff §3, §4).
 
+extension ProjectState {
+    /// The folder a Service runs in: the Project's, or `folder` inside it.
+    func runPath(folder: String?) -> String {
+        guard let folder else { return path }
+        return URL(filePath: path).appending(path: folder).path(percentEncoded: false)
+    }
+}
+
 /// How a status dot looks. Color is never the only signal: Stopped is a
 /// hollow ring, Crashed and Failed a solid gray dot with a note, busy
 /// states pulse next to a spinner (design-handoff §9).

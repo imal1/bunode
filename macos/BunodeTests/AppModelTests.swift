@@ -43,6 +43,24 @@ struct AddServiceTests {
     let data = TemporaryDirectory()
     let code = TemporaryDirectory()
 
+    @Test func namesAServiceAfterItsScript() {
+        #expect(AddServiceView.serviceName(script: "storybook", command: "pnpm storybook") == "storybook")
+    }
+
+    @Test func namesAHandTypedCommandAfterItsLastWord() {
+        #expect(AddServiceView.serviceName(script: nil, command: "  bun run  worker ") == "worker")
+        #expect(AddServiceView.serviceName(script: nil, command: "   ").isEmpty)
+    }
+
+    /// The Supervisor counts Unicode scalars, so a flag emoji counts as two.
+    @Test func cutsALongNameToWhatTheSupervisorAccepts() {
+        let forty = String(repeating: "a", count: 40)
+        #expect(AddServiceView.serviceName(script: forty + "bc", command: "x") == forty)
+        #expect(AddServiceView.serviceName(script: nil, command: "bun run \(forty)bc") == forty)
+        let flags = String(repeating: "🇨🇳", count: 21)
+        #expect(AddServiceView.serviceName(script: flags, command: "x").unicodeScalars.count == 40)
+    }
+
     @Test func offersScriptsAndAddsAService() async throws {
         let model = AppModel(dataDirectory: data.url)
         let acme = code.folder("acme", files: [

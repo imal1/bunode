@@ -123,8 +123,7 @@ struct ServiceView: View {
     // MARK: - Folder
 
     private func folderPath(_ service: ServiceState, _ project: ProjectState) -> String {
-        guard let folder = service.folder else { return project.path }
-        return URL(filePath: project.path).appending(path: folder).path(percentEncoded: false)
+        project.runPath(folder: service.folder)
     }
 
     private func folderLabel(_ service: ServiceState, _ project: ProjectState) -> String {

@@ -1,22 +1,27 @@
 import SwiftUI
 
-/// New Service (design-handoff §2.2, §5.2): pick a `package.json` script or
-/// type a command, name it, and add it to the Project. Nothing starts.
+/// New Service (design-handoff §2.2, §5.2): pick a Project, then a
+/// `package.json` script or type a command. The name follows from it.
+/// Nothing starts.
 struct AddServiceView: View {
     let model: AppModel
-    let projectID: UInt64
     let router: PopoverRouter
     let toaster: Toaster
 
+    @State private var projectID: UInt64
     @State private var scripts: ProjectScripts?
     @State private var selection: ScriptKey?
     @State private var command = ""
-    @State private var name = ""
     @State private var error: String?
     @State private var isAdding = false
-    @FocusState private var focus: Field?
+    @FocusState private var commandFocused: Bool
 
-    private enum Field { case command, name }
+    init(model: AppModel, projectID: UInt64, router: PopoverRouter, toaster: Toaster) {
+        self.model = model
+        self.router = router
+        self.toaster = toaster
+        _projectID = State(initialValue: projectID)
+    }
 
     /// A script is identified by its folder and its name.
     struct ScriptKey: Hashable {
@@ -30,21 +35,20 @@ struct AddServiceView: View {
         VStack(alignment: .leading, spacing: 0) {
             if let project {
                 TopBar(title: String(localized: "New Service"), onBack: router.back) {
-                    Text("in \(project.name) · runs from \(Text(project.path.abbreviatingWithTilde).monospaced())")
+                    Text("Runs from \(Text(project.runPath(folder: folder).abbreviatingWithTilde).monospaced())")
+                        .font(.system(size: 11))
                         .truncationMode(.middle)
                 }
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 10) {
-                        if let scripts, scripts.hasPackageJson, !allScripts.isEmpty {
-                            scriptsCard(scripts)
-                        }
+                        pickerCard
                         fieldsCard(project)
                     }
                 }
                 buttons(project)
             }
         }
-        .task { await load() }
+        .task(id: projectID) { await load() }
         .onChange(of: command) { _, newValue in
             // Editing the command by hand unselects the script.
             if let option = selectedOption, option.command != newValue {
@@ -52,46 +56,72 @@ struct AddServiceView: View {
             }
             error = nil
         }
-        .onChange(of: name) { error = nil }
     }
 
     // MARK: - Cards
 
-    private func scriptsCard(_ scripts: ProjectScripts) -> some View {
+    private var pickerCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Scripts in package.json")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            ForEach(scripts.groups.filter { !$0.scripts.isEmpty }, id: \.folder) { group in
-                if let package = group.packageName {
-                    // A workspace package: its name, and where its scripts run.
-                    HStack(spacing: 4) {
-                        Text(package)
-                            .font(.caption.weight(.semibold))
-                        if let folder = group.folder {
-                            Text(folder)
-                                .font(.caption.monospaced())
-                        }
+            pickerLabel("Project")
+            FlowLayout(spacing: 6) {
+                ForEach(model.snapshot.projects, id: \.id) { project in
+                    Chip(title: project.name, font: .system(size: 12), isSelected: project.id == projectID) {
+                        projectID = project.id
                     }
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                }
+            }
+            if let scripts, scripts.hasPackageJson, !allScripts.isEmpty {
+                pickerLabel("Scripts in package.json")
                     .padding(.top, 2)
-                }
-                FlowLayout(spacing: 6) {
-                    ForEach(group.scripts, id: \.name) { option in
-                        let key = ScriptKey(folder: group.folder, name: option.name)
-                        ScriptChip(option: option, isSelected: selection == key) {
-                            select(option, key: key)
-                        }
-                    }
-                }
+                scriptGroups(scripts)
             }
         }
         .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 2)
+    }
+
+    private func pickerLabel(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private func scriptGroups(_ scripts: ProjectScripts) -> some View {
+        ForEach(scripts.groups.filter { !$0.scripts.isEmpty }, id: \.folder) { group in
+            if let package = group.packageName {
+                // A workspace package: its name, and where its scripts run.
+                HStack(spacing: 4) {
+                    Text(package)
+                        .font(.caption.weight(.semibold))
+                    if let folder = group.folder {
+                        Text(folder)
+                            .font(.caption.monospaced())
+                    }
+                }
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.top, 2)
+            }
+            FlowLayout(spacing: 6) {
+                ForEach(group.scripts, id: \.name) { option in
+                    let key = ScriptKey(folder: group.folder, name: option.name)
+                    Chip(
+                        title: option.name,
+                        font: .system(size: 11, design: .monospaced),
+                        isSelected: selection == key
+                    ) {
+                        select(option, key: key)
+                    }
+                    .disabled(option.used)
+                    .opacity(option.used ? 0.4 : 1)
+                    .help(option.used ? String(localized: "Already a Service: \(option.command)") : option.command)
+                }
+            }
+        }
     }
 
     private func fieldsCard(_ project: ProjectState) -> some View {
@@ -101,20 +131,14 @@ struct AddServiceView: View {
                     TextField("Command", text: $command, prompt: Text(verbatim: "bun run dev"))
                         .labelsHidden()
                         .font(.callout.monospaced())
-                        .frame(width: 180)
-                        .focused($focus, equals: .command)
-                }
-                CardRow(title: "Name") {
-                    TextField("Name", text: $name, prompt: Text(verbatim: "dev"))
-                        .labelsHidden()
-                        .frame(width: 180)
-                        .focused($focus, equals: .name)
+                        .frame(width: 200)
+                        .focused($commandFocused)
                 }
             }
             .controlSize(.small)
             if let message = nameProblem(in: project) ?? error {
                 Text(message)
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(Color(nsColor: .systemRed))
                     .padding(.horizontal, 14)
             }
@@ -137,6 +161,19 @@ struct AddServiceView: View {
 
     // MARK: - Logic
 
+    /// The name a new Service gets (design-handoff §6.2): its script's, or
+    /// the last word of a hand-typed command, cut to the 40 characters the
+    /// Supervisor accepts. It counts Unicode scalars, so this does too.
+    static func serviceName(script: String?, command: String) -> String {
+        let name = script ?? command.split(whereSeparator: \.isWhitespace).last.map(String.init) ?? ""
+        return String(String.UnicodeScalarView(name.unicodeScalars.prefix(40)))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var name: String {
+        Self.serviceName(script: selectedOption?.name, command: command)
+    }
+
     private var allScripts: [(key: ScriptKey, option: ScriptOption)] {
         (scripts?.groups ?? []).flatMap { group in
             group.scripts.map { (ScriptKey(folder: group.folder, name: $0.name), $0) }
@@ -149,18 +186,21 @@ struct AddServiceView: View {
 
     private func load() async {
         let loaded = await model.projectScripts(projectID)
+        // Switched Project in the meantime.
+        guard !Task.isCancelled else { return }
         scripts = loaded
+        selection = nil
+        command = ""
         if let first = allScripts.first(where: { !$0.option.used }) {
             select(first.option, key: first.key)
         } else {
-            focus = .command
+            commandFocused = true
         }
     }
 
     private func select(_ option: ScriptOption, key: ScriptKey) {
         selection = key
         command = option.command
-        name = option.name
     }
 
     /// The folder the new Service runs in: the selected script's package.
@@ -168,26 +208,17 @@ struct AddServiceView: View {
         selectedOption == nil ? nil : selection?.folder
     }
 
-    /// Why the name can't be used, shown under the fields. Names are unique
-    /// among the Services of the same folder.
+    /// Names are unique among the Services of the same folder.
     private func nameProblem(in project: ProjectState) -> String? {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        if trimmed.count > 40 {
-            return String(localized: "Use at most 40 characters.")
-        }
         let taken = project.services.contains {
-            $0.folder == folder && $0.name.lowercased() == trimmed.lowercased()
+            $0.folder == folder && $0.name.lowercased() == name.lowercased()
         }
-        if !trimmed.isEmpty, taken {
-            return String(localized: "Name already used in \(project.name)")
-        }
-        return nil
+        return taken ? String(localized: "Name already used in \(project.name)") : nil
     }
 
     private func canAdd(to project: ProjectState) -> Bool {
         !isAdding
-            && !command.trimmingCharacters(in: .whitespaces).isEmpty
-            && !name.trimmingCharacters(in: .whitespaces).isEmpty
+            && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && nameProblem(in: project) == nil
     }
 
@@ -209,16 +240,17 @@ struct AddServiceView: View {
     }
 }
 
-/// A `package.json` script as a pill (design-handoff §2.2, ScriptChip).
-private struct ScriptChip: View {
-    let option: ScriptOption
+/// A pill for a Project or a `package.json` script (design-handoff §2.2).
+private struct Chip: View {
+    let title: String
+    let font: Font
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(option.name)
-                .font(.caption.monospaced())
+            Text(title)
+                .font(font)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .padding(.horizontal, 9)
@@ -226,15 +258,12 @@ private struct ScriptChip: View {
                 .frame(maxWidth: 290)
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
                 .background(
-                    isSelected ? Color.accentColor : Color(nsColor: .quinarySystemFill),
+                    isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor),
                     in: Capsule()
                 )
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(option.used)
-        .opacity(option.used ? 0.4 : 1)
-        .help(option.used ? String(localized: "Already a Service: \(option.command)") : option.command)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
