@@ -595,7 +595,7 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 | Return | Home 行 | 打开 Service 视图 |
 | Space | Home 行 | 启动 / 停止，busy 时无效 |
 | ⌘R | Home 行 | 运行中为 Restart |
-| Esc | 子视图 | 依次关闭内联确认、警告条，再返回上一级；Home 时关闭 Popover |
+| Esc | Popover | 有内联确认时先取消确认。否则看键盘焦点：有焦点时（输入框、Home 清单）先关警告条，再返回上一级，Home 上关闭 Popover；没有焦点时（如刚进 Service 视图）直接关闭 Popover（2026-11-09 定） |
 | ⌘F | Logs | 聚焦搜索框 |
 | ⌘K | Logs | Clear |
 | ⌘, / ⌘Q | 任意 | Settings / Quit |
