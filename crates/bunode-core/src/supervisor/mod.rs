@@ -60,7 +60,7 @@ pub struct SupervisorOptions {
     pub data_dir: PathBuf,
     /// The `bunode-runner` executable, normally inside the app bundle.
     pub runner_path: PathBuf,
-    /// The login shell whose environment Runs get; `$SHELL` by default.
+    /// The login shell whose environment Runs get; the account's by default.
     /// `None` keeps Bunode's own environment (tests).
     pub login_shell: Option<PathBuf>,
     /// How long the login shell gets to print its environment.

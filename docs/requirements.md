@@ -374,7 +374,7 @@ Popover 与 Settings 窗口共用同一状态来源（Supervisor），避免状�
 
 ### 3.9 运行环境解析（P0）
 
-从 Finder 或登录项启动的 GUI 应用不继承终端的 PATH（fnm、nvm 等）。Bunode 启动时执行一次登录 shell（`$SHELL -l -i -c env`）抓取环境变量并缓存，Settings 中提供“重新加载环境”。每个 Service 可覆盖 node / bun 可执行文件路径。
+从 Finder 或登录项启动的 GUI 应用不继承终端的 PATH（fnm、nvm 等）。Bunode 启动时执行一次登录 shell（`<shell> -l -i -c env`，取账户记录里的 shell，读不到时用 `$SHELL`）抓取环境变量并缓存，Settings 中提供“重新加载环境”。每个 Service 可覆盖 node / bun 可执行文件路径。
 
 Bunode 不负责 Node/Bun 版本切换。
 

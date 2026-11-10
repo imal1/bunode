@@ -3,7 +3,7 @@
 //! the user's login shell once (requirements §3.9).
 
 use std::ffi::{OsStr, OsString};
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use nix::sys::signal::{Signal, killpg};
-use nix::unistd::Pid;
+use nix::unistd::{Pid, Uid, User};
 use tokio::process::Command;
 
 /// Printed before `env`, so whatever the shell's startup files print is
@@ -142,11 +142,21 @@ pub async fn version(path: &Path, spawn_lock: &Mutex<()>) -> Option<String> {
     (!first.is_empty()).then(|| first.trim_start_matches('v').to_owned())
 }
 
-/// The user's login shell: `$SHELL`, else zsh.
+/// The user's login shell. Asks the account first: `$SHELL` is inherited
+/// from whatever opened Bunode, which may be a different shell.
 pub fn default_shell() -> PathBuf {
-    std::env::var_os("SHELL")
-        .filter(|s| !s.as_bytes().is_empty())
-        .map(PathBuf::from)
+    let account = User::from_uid(Uid::current())
+        .ok()
+        .flatten()
+        .map(|user| user.shell);
+    pick_shell(account, std::env::var_os("SHELL").map(PathBuf::from))
+}
+
+fn pick_shell(account: Option<PathBuf>, inherited: Option<PathBuf>) -> PathBuf {
+    account
+        .into_iter()
+        .chain(inherited)
+        .find(|shell| !shell.as_os_str().is_empty())
         .unwrap_or_else(|| PathBuf::from("/bin/zsh"))
 }
 
@@ -164,6 +174,24 @@ pub(crate) fn write_test_executable(path: &Path, contents: &str) {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn the_account_shell_wins_over_the_inherited_one() {
+        let pick = |account: Option<&str>, inherited: Option<&str>| {
+            pick_shell(account.map(PathBuf::from), inherited.map(PathBuf::from))
+        };
+        let fish = PathBuf::from("/opt/homebrew/bin/fish");
+        let bash = PathBuf::from("/bin/bash");
+        let zsh = PathBuf::from("/bin/zsh");
+        assert_eq!(
+            pick(Some("/opt/homebrew/bin/fish"), Some("/bin/bash")),
+            fish
+        );
+        assert_eq!(pick(None, Some("/bin/bash")), bash);
+        assert_eq!(pick(Some(""), Some("/bin/bash")), bash);
+        assert_eq!(pick(None, Some("")), zsh);
+        assert_eq!(pick(None, None), zsh);
+    }
 
     #[test]
     fn parses_nul_separated_variables_after_the_marker() {
