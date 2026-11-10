@@ -115,7 +115,7 @@ struct HomeView: View {
 
     /// The Projects that get a heading: those with a row to show.
     static func groups(_ projects: [ProjectState]) -> [ProjectState] {
-        projects.filter { !$0.services.isEmpty }
+        projects.filter { !$0.services.isEmpty || !$0.agentServers.isEmpty }
     }
 
     /// A Project's rows, each with its warning bar if it has one.

@@ -187,6 +187,15 @@ struct KeyboardTests {
         #expect(HomeView.focus(after: .service(1), in: HomeView.rowOrder(projects), step: 1) == .agentServer(40))
     }
 
+    @Test func aProjectWithOnlyAgentServersGetsAHeading() {
+        let projects = [
+            project(id: 1, services: [], agentServers: []),
+            project(id: 2, services: [], agentServers: [agentServer(pid: 50)]),
+            project(id: 3, services: [service()], agentServers: []),
+        ]
+        #expect(HomeView.groups(projects).map(\.id) == [2, 3])
+    }
+
     @Test func openingThePopoverStartsAtHome() {
         let router = PopoverRouter()
         router.push(.logs(3))
