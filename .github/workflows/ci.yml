@@ -23,7 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # The integration tests start real node, bun, npm and pnpm processes.
+      # The integration tests start real node, bun, npm, pnpm and python3
+      # processes (python3 comes with the runner).
       - uses: actions/setup-node@v5
         with:
           node-version: 22

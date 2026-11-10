@@ -34,14 +34,15 @@ pub struct DiscoveredProcess {
 /// Process names that are JavaScript runtimes or their launchers.
 const LAUNCHERS: &[&str] = &["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg", "bunx"];
 
+/// Whether an executable named `name` is node, bun or one of their launchers.
+pub(crate) fn is_runtime_or_launcher(name: &str) -> bool {
+    name == "node" || name == "bun" || LAUNCHERS.contains(&name)
+}
+
 fn is_javascript(info: &ProcessInfo, args: Option<&[String]>) -> bool {
-    let name = info.name.as_str();
-    if name == "node" || name == "bun" {
-        return true;
-    }
     // Node rewrites its title, e.g. to "npm run dev".
-    let first = name.split_whitespace().next().unwrap_or("");
-    if LAUNCHERS.contains(&first) {
+    let first = info.name.split_whitespace().next().unwrap_or("");
+    if is_runtime_or_launcher(first) {
         return true;
     }
     args.and_then(|a| a.first())
@@ -410,6 +411,19 @@ mod tests {
             start: 1,
             name: name.into(),
         }
+    }
+
+    #[test]
+    fn only_node_and_bun_processes_are_discovered() {
+        assert!(is_javascript(&info(1, "node"), None));
+        assert!(is_javascript(&info(1, "npm run dev"), None));
+        let node = args(&["/opt/node/bin/node", "server.js"]);
+        assert!(is_javascript(&info(1, "MainThread"), Some(&node)));
+        // Services may run these (ADR-0005), but they are never Discovered Processes.
+        let qq = args(&["/Applications/QQ.app/Contents/MacOS/QQ", "--no-sandbox"]);
+        assert!(!is_javascript(&info(1, "QQ"), Some(&qq)));
+        let python = args(&["python3", "-m", "http.server"]);
+        assert!(!is_javascript(&info(1, "Python"), Some(&python)));
     }
 
     #[test]

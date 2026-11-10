@@ -1,7 +1,8 @@
 # Fixtures
 
-Small Node.js and Bun programs that the Rust integration tests start for
-real (requirements §8.2). Each folder can be registered as a Project.
+Small Node.js and Bun programs, and one plain executable, that the Rust
+integration tests start for real (requirements §8.2). Each folder can be
+registered as a Project.
 
 | Folder | What it does |
 |---|---|
@@ -12,3 +13,4 @@ real (requirements §8.2). Each folder can be registered as a Project.
 | `flood/` | `flood.js [N]` prints N lines (default: forever) as fast as it can, every 10th to stderr, every 7th colored |
 | `monorepo-npm/`, `monorepo-yarn/`, `monorepo-pnpm/`, `monorepo-bun/` | The same monorepo declared each package manager's way: `apps/web` (script `where` prints its folder) and `packages/ui` |
 | `multi-port/` | `server.js` listens on `$PORT` and on a second free port, and prints both |
+| `plain-tool/` | No `package.json`. `my tools/serve` is a shell script, not Node or Bun: prints `plain tool started` and its arguments, then serves HTTP on a free port with `python3` |
