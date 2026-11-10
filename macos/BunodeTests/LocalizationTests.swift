@@ -10,4 +10,16 @@ struct LocalizationTests {
         #expect(String(localized: "\(2) Services") == "2 Services")
         #expect(String(localized: "\(0) Services") == "0 Services")
     }
+
+    @Test func restartTextIsPluralized() {
+        #expect(String(localized: "Stop \(1) Services and Restart") == "Stop 1 Service and Restart")
+        #expect(String(localized: "\(2) Services are running. Bunode stops every Run before it restarts.") == "2 Services are running. Bunode stops every Run before it restarts.")
+    }
+
+    @Test func simplifiedChineseEntriesAreShipped() throws {
+        let path = try #require(Bundle.main.path(forResource: "zh-Hans", ofType: "lproj"))
+        let chinese = try #require(Bundle(path: path))
+        #expect(chinese.localizedString(forKey: "Restart Now", value: nil, table: nil) == "立即重启")
+        #expect(chinese.localizedString(forKey: "General", value: nil, table: nil) == "通用")
+    }
 }

@@ -121,10 +121,52 @@ struct GeneralPane: View {
                     Text("Next to the menu bar icon.")
                 }
             }
+            Section("Display") {
+                LanguageRow()
+            }
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
         .controlSize(.small)
+    }
+}
+
+/// Settings › General › Language (design-handoff §2.3, ADR-0006): the
+/// choice applies after Bunode restarts.
+private struct LanguageRow: View {
+    private let preference: LanguagePreference
+    @State private var choice: AppLanguage
+
+    init(preference: LanguagePreference = LanguagePreference()) {
+        self.preference = preference
+        _choice = State(initialValue: preference.choice)
+    }
+
+    var body: some View {
+        let needsRestart = preference.needsRestart(for: choice)
+        LabeledContent {
+            HStack(spacing: 8) {
+                if needsRestart {
+                    Button("Restart Now") {
+                        NSApp.sendAction(#selector(AppDelegate.restart(_:)), to: nil, from: nil)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Picker("Language", selection: $choice) {
+                    Text("System").tag(AppLanguage.system)
+                    // Each language is always written in itself.
+                    Text(verbatim: "English").tag(AppLanguage.english)
+                    Text(verbatim: "简体中文").tag(AppLanguage.simplifiedChinese)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
+        } label: {
+            Text("Language")
+            Text(needsRestart ? "Restart Bunode to apply." : "Applies after Bunode restarts.")
+        }
+        .onChange(of: choice) { _, choice in preference.choice = choice }
     }
 }
 

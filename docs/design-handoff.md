@@ -268,7 +268,7 @@ agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launc
 - `English` 和 `简体中文` 两项永远用各自的语言写，不翻译；`System` 跟当前界面语言（中文 `跟随系统`）。
 - 选择后写入本 App 的 `AppleLanguages`（`System` 删除这个键），界面不立即变。
 - 选中的语言和当前界面语言不同时，帮助文字换成 `Restart Bunode to apply.`，行右侧控件前多一个 `Restart Now` 按钮（`.bordered`，`.controlSize(.small)`）。选回当前语言时恢复原样。
-- `Restart Now`：没有 Run 时直接退出并重新打开。有 Run 时先弹 §2.4 的重启确认，所有 Run 停止后再退出（ADR-0003）。重新打开由退出前派生的 `/bin/sh -c 'sleep 1; open -b <bundle id>'` 完成，它不是 Run，不受 lifeline 约束。
+- `Restart Now`：没有 Run 时直接退出并重新打开。有 Run 时先弹 §2.4 的重启确认，所有 Run 停止后再退出（ADR-0003）。重新打开由退出前派生的 `/bin/sh -c` 完成：约一秒后等 Bunode 进程消失，再 `open` 本 App 的路径（不用 bundle id，免得打开另一份拷贝）。它不是 Run，不受 lifeline 约束。
 
 **Projects**
 

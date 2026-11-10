@@ -1,6 +1,6 @@
 # The language setting applies after a restart
 
-Bunode ships English and Simplified Chinese. Settings › General › Language offers System, English and 简体中文. Choosing one writes the app's own `AppleLanguages` default, or removes it for System. The change takes effect the next time Bunode launches, and the setting row offers Restart Now. Restarting quits through the usual confirmation, because quitting stops every Run (ADR-0003); a short-lived `sh -c 'sleep 1; open -b …'` reopens the app. All UI text lives in the String Catalog. The Rust core produces no UI text: it returns typed errors (an enum with parameters) that Swift localizes. Logs, commands and paths are never translated.
+Bunode ships English and Simplified Chinese. Settings › General › Language offers System, English and 简体中文. Choosing one writes the app's own `AppleLanguages` default, or removes it for System. The change takes effect the next time Bunode launches, and the setting row offers Restart Now. Restarting quits through the usual confirmation, because quitting stops every Run (ADR-0003); a short-lived `sh -c` reopens the app: it waits about a second until Bunode's process is gone, then runs `open` with the app's own path, not its bundle id, which could pick another copy. All UI text lives in the String Catalog. The Rust core produces no UI text: it returns typed errors (an enum with parameters) that Swift localizes. Logs, commands and paths are never translated.
 
 ## Considered Options
 

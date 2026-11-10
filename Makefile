@@ -34,9 +34,10 @@ test: test-rust test-app
 test-rust:
 	cargo test --workspace
 
-# Not -quiet, so the log shows which tests ran.
+# Not -quiet, so the log shows which tests ran. The tests expect English
+# whatever the Mac's language.
 test-app: project
-	$(XCODEBUILD) -configuration Debug -destination 'platform=macOS,arch=$(shell uname -m)' test
+	$(XCODEBUILD) -configuration Debug -destination 'platform=macOS,arch=$(shell uname -m)' -testLanguage en -testRegion US test
 
 ## soak: the long stability tests (docs/stability.md); BUNODE_SOAK_SECS sets their length
 soak:

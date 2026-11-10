@@ -11,75 +11,6 @@
     "%@ was written by a newer Bunode (format %@). Bunode started with no Projects.": {},
     "%@ was written by a newer Bunode (format %@). It was moved to %@ and Bunode started with no Projects.": {},
     "%@ wasn't found in PATH.": {},
-    "%lld Services": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld Service"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld Services"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "%lld Services are running. Bunode stops every Run before it quits, so it never leaves processes behind.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld Service is running. Bunode stops every Run before it quits, so it never leaves processes behind."
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld Services are running. Bunode stops every Run before it quits, so it never leaves processes behind."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "%lld Services are running. Quitting stops every Run.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld Service is running. Quitting stops every Run."
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld Services are running. Quitting stops every Run."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "%lld lines": {
       "extractionState": "manual",
       "localizations": {
@@ -149,6 +80,157 @@
         }
       }
     },
+    "%lld Services": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Service"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Services"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个服务"
+          }
+        }
+      }
+    },
+    "%lld Services are running. Bunode stops every Run before it quits, so it never leaves processes behind.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Service is running. Bunode stops every Run before it quits, so it never leaves processes behind."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Services are running. Bunode stops every Run before it quits, so it never leaves processes behind."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个服务正在运行。Bunode 退出前会停止所有运行，不会留下进程。"
+          }
+        }
+      }
+    },
+    "%lld Services are running. Bunode stops every Run before it restarts.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Service is running. Bunode stops every Run before it restarts."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Services are running. Bunode stops every Run before it restarts."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个服务正在运行。Bunode 重启前会停止所有运行。"
+          }
+        }
+      }
+    },
+    "%lld Services are running. Quitting stops every Run.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Service is running. Quitting stops every Run."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Services are running. Quitting stops every Run."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Advanced": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高级"
+          }
+        }
+      }
+    },
+    "App": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用"
+          }
+        }
+      }
+    },
+    "Applies after Bunode restarts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启 Bunode 后生效。"
+          }
+        }
+      }
+    },
+    "bunode-runner exited unexpectedly (%@).": {},
+    "Cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        }
+      }
+    },
     "Choose the Project's folder or a folder inside it.": {},
     "Couldn't export to %@: %@": {},
     "Couldn't read the environment (%@ printed no environment). Runs get Bunode's own.": {},
@@ -159,12 +241,32 @@
     "Couldn't send SIGTERM to PID %@: %@": {},
     "Couldn't start %@: %@": {},
     "Couldn't start bunode-runner: %@": {},
+    "Display": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示"
+          }
+        }
+      }
+    },
     "Ended by %@": {},
     "Enter a command.": {},
     "Enter a name.": {},
     "Exited": {},
     "Exited with code %@": {},
     "Force stop after must be one of %@ seconds.": {},
+    "General": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通用"
+          }
+        }
+      }
+    },
     "Its %lld Services leave Bunode.": {
       "extractionState": "manual",
       "localizations": {
@@ -188,10 +290,90 @@
         }
       }
     },
+    "Language": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        }
+      }
+    },
     "Log lines kept must be one of %@.": {},
     "Lost track of bunode-runner: %@": {},
     "Name already used in %@": {},
+    "Next to the menu bar icon.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示在菜单栏图标旁。"
+          }
+        }
+      }
+    },
     "PID %@ has already exited.": {},
+    "Projects": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目"
+          }
+        }
+      }
+    },
+    "Quit Bunode?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出 Bunode？"
+          }
+        }
+      }
+    },
+    "Restart Bunode to apply.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启 Bunode 后生效。"
+          }
+        }
+      }
+    },
+    "Restart Bunode?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启 Bunode？"
+          }
+        }
+      }
+    },
+    "Restart Now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即重启"
+          }
+        }
+      }
+    },
+    "Show running count": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示运行数量"
+          }
+        }
+      }
+    },
     "Stop %lld Services and Quit": {
       "extractionState": "manual",
       "localizations": {
@@ -212,19 +394,63 @@
               }
             }
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止 %lld 个服务并退出"
+          }
         }
       }
     },
-    "The Run ended for an unknown reason.": {},
+    "Stop %lld Services and Restart": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Stop %lld Service and Restart"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Stop %lld Services and Restart"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止 %lld 个服务并重启"
+          }
+        }
+      }
+    },
+    "System": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随系统"
+          }
+        }
+      }
+    },
     "The command has an unmatched quote.": {},
     "The command is empty.": {},
+    "The Run ended for an unknown reason.": {},
     "This Project is no longer in Bunode.": {},
     "This Service has no Runs yet.": {},
     "This Service is no longer in Bunode.": {},
     "Unknown": {},
     "Use a port from 1 to 65535.": {},
-    "Use at most %lld characters.": {},
-    "bunode-runner exited unexpectedly (%@).": {}
+    "Use at most %lld characters.": {}
   },
   "version": "1.0"
 }

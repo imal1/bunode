@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var readyToQuit = false
     /// The Mac is shutting down or the user is logging out.
     private var isPoweringOff = false
+    /// Bunode opens again after it quits (Settings › Language, ADR-0006).
+    private var relaunching = false
 
     /// Unit tests run inside the app; they build their own models.
     private static var isRunningTests: Bool {
@@ -58,13 +60,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if !isPoweringOff {
             let count = model.liveCount
+            let (title, text, confirm) = relaunching
+                ? (String(localized: "Restart Bunode?"),
+                   String(localized: "\(count) Services are running. Bunode stops every Run before it restarts."),
+                   String(localized: "Stop \(count) Services and Restart"))
+                : (String(localized: "Quit Bunode?"),
+                   String(localized: "\(count) Services are running. Bunode stops every Run before it quits, so it never leaves processes behind."),
+                   String(localized: "Stop \(count) Services and Quit"))
             let alert = NSAlert()
-            alert.messageText = String(localized: "Quit Bunode?")
-            alert.informativeText = String(localized: "\(count) Services are running. Bunode stops every Run before it quits, so it never leaves processes behind.")
-            alert.addButton(withTitle: String(localized: "Stop \(count) Services and Quit"))
+            alert.messageText = title
+            alert.informativeText = text
+            alert.addButton(withTitle: confirm)
             alert.addButton(withTitle: String(localized: "Cancel"))
             NSApp.activate()
             guard alert.runModal() == .alertFirstButtonReturn else {
+                relaunching = false
                 return .terminateCancel
             }
         }
@@ -75,6 +85,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    /// Settings › Language's Restart Now: quits through the usual
+    /// confirmation, then opens again.
+    @objc func restart(_ sender: Any?) {
+        relaunching = true
+        NSApp.terminate(sender)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // A shutdown or logout that came after Restart Now wins.
+        guard relaunching, !isPoweringOff else { return }
+        // Not a Run, so no lifeline: it outlives Bunode, waits until this
+        // process is gone (`open` would only bring a quitting Bunode to the
+        // front), and opens this copy of the app by path; a bundle id could
+        // pick another copy.
+        let reopen = Process()
+        reopen.executableURL = URL(fileURLWithPath: "/bin/sh")
+        reopen.arguments = [
+            "-c", "sleep 1; while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; open \"$0\"",
+            Bundle.main.bundlePath, String(ProcessInfo.processInfo.processIdentifier),
+        ]
+        try? reopen.run()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
