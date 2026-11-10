@@ -1,16 +1,136 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "%@ couldn't be read (%@). Bunode started with no Projects.": {},
-    "%@ couldn't be read (%@). It was moved to %@ and Bunode started with no Projects.": {},
-    "%@ doesn't exist.": {},
-    "%@ is already a Project.": {},
-    "%@ is missing.": {},
-    "%@ is not a folder.": {},
-    "%@ is not an executable file.": {},
-    "%@ was written by a newer Bunode (format %@). Bunode started with no Projects.": {},
-    "%@ was written by a newer Bunode (format %@). It was moved to %@ and Bunode started with no Projects.": {},
-    "%@ wasn't found in PATH.": {},
+    "%@ couldn't be read (%@). Bunode started with no Projects.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 %@（%@）。Bunode 已在没有项目的情况下启动。"
+          }
+        }
+      }
+    },
+    "%@ couldn't be read (%@). It was moved to %@ and Bunode started with no Projects.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 %@（%@）。它已移至 %@，Bunode 已在没有项目的情况下启动。"
+          }
+        }
+      }
+    },
+    "%@ doesn't exist.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不存在。"
+          }
+        }
+      }
+    },
+    "%@ is already a Project.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已是项目。"
+          }
+        }
+      }
+    },
+    "%@ is already added": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已添加"
+          }
+        }
+      }
+    },
+    "%@ is missing.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不存在。"
+          }
+        }
+      }
+    },
+    "%@ is not a folder.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不是目录。"
+          }
+        }
+      }
+    },
+    "%@ is not an executable file.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不是可执行文件。"
+          }
+        }
+      }
+    },
+    "%@ was written by a newer Bunode (format %@). Bunode started with no Projects.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 由更新版本的 Bunode 写入（格式 %@）。Bunode 已在没有项目的情况下启动。"
+          }
+        }
+      }
+    },
+    "%@ was written by a newer Bunode (format %@). It was moved to %@ and Bunode started with no Projects.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 由更新版本的 Bunode 写入（格式 %@）。它已移至 %@，Bunode 已在没有项目的情况下启动。"
+          }
+        }
+      }
+    },
+    "%@ wasn't found in PATH.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 PATH 中找不到 %@。"
+          }
+        }
+      }
+    },
+    "%lld crashed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个已崩溃"
+          }
+        }
+      }
+    },
+    "%lld dropped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已丢弃 %lld 行"
+          }
+        }
+      }
+    },
     "%lld lines": {
       "extractionState": "manual",
       "localizations": {
@@ -30,6 +150,12 @@
                 }
               }
             }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 行"
           }
         }
       }
@@ -54,6 +180,22 @@
               }
             }
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个匹配"
+          }
+        }
+      }
+    },
+    "%lld running": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个运行中"
+          }
         }
       }
     },
@@ -76,6 +218,12 @@
                 }
               }
             }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会先停止 %lld 个正在运行的服务。"
           }
         }
       }
@@ -187,6 +335,70 @@
               }
             }
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个服务正在运行。退出会停止所有运行。"
+          }
+        }
+      }
+    },
+    "%lld started outside Bunode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个在 Bunode 外启动"
+          }
+        }
+      }
+    },
+    "%lld variables from %@ · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个变量，来自 %@ · %@"
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld variable from %@ · %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld variables from %@ · %@"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%u s": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%u 秒"
+          }
+        }
+      }
+    },
+    ", port %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "，端口 %@"
+          }
         }
       }
     },
@@ -200,12 +412,82 @@
         }
       }
     },
+    "Add": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加"
+          }
+        }
+      }
+    },
+    "Add Project": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加项目"
+          }
+        }
+      }
+    },
+    "Add Project…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加项目…"
+          }
+        }
+      }
+    },
+    "Add Service": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加服务"
+          }
+        }
+      }
+    },
+    "Added %@ (%@). Add its Services from the menu bar.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加 %@（%@）。可从菜单栏添加它的服务。"
+          }
+        }
+      }
+    },
+    "Added %@ › %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加 %@ › %@"
+          }
+        }
+      }
+    },
     "Advanced": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "高级"
+          }
+        }
+      }
+    },
+    "Already a Service: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已是服务：%@"
           }
         }
       }
@@ -230,7 +512,86 @@
         }
       }
     },
-    "bunode-runner exited unexpectedly (%@).": {},
+    "Auto (%@)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动（%@）"
+          }
+        }
+      }
+    },
+    "Back": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回"
+          }
+        }
+      }
+    },
+    "Back to %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回 %@"
+          }
+        }
+      }
+    },
+    "Back to Home": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回主页"
+          }
+        }
+      }
+    },
+    "Bunode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bunode"
+          }
+        }
+      }
+    },
+    "Bunode didn’t start this process. It did not exit 5 s after SIGTERM. Force killing it may lose unsaved work.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个进程不是 Bunode 启动的，收到 SIGTERM 5 秒后仍未退出。强制结束可能会丢失未保存的工作。"
+          }
+        }
+      }
+    },
+    "Bunode Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bunode 设置"
+          }
+        }
+      }
+    },
+    "bunode-runner exited unexpectedly (%@).": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bunode-runner 意外退出（%@）。"
+          }
+        }
+      }
+    },
     "By Project": {
       "localizations": {
         "zh-Hans": {
@@ -251,22 +612,272 @@
         }
       }
     },
-    "Choose the Project's folder or a folder inside it.": {},
-    "Couldn't export to %@: %@": {},
-    "Couldn't read the environment (%@ printed no environment). Runs get Bunode's own.": {},
-    "Couldn't read the environment (%@ took longer than %@ s). Runs get Bunode's own.": {},
-    "Couldn't read the environment (%@). Runs get Bunode's own.": {},
-    "Couldn't read the environment (couldn't start %@: %@). Runs get Bunode's own.": {},
-    "Couldn't save %@: %@": {},
-    "Couldn't send SIGTERM to PID %@: %@": {},
-    "Couldn't start %@: %@": {},
-    "Couldn't start bunode-runner: %@": {},
+    "Change…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更改…"
+          }
+        }
+      }
+    },
+    "Checked before each start": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次启动前检查"
+          }
+        }
+      }
+    },
+    "Choose": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择"
+          }
+        }
+      }
+    },
+    "Choose the %@ executable.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择 %@ 可执行文件。"
+          }
+        }
+      }
+    },
+    "Choose the Project's folder or a folder inside it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择项目目录或其中的子目录。"
+          }
+        }
+      }
+    },
+    "Clear": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除"
+          }
+        }
+      }
+    },
+    "Clear search": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除搜索"
+          }
+        }
+      }
+    },
+    "Click to rename": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按以重命名"
+          }
+        }
+      }
+    },
+    "Close": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        }
+      }
+    },
+    "Command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令"
+          }
+        }
+      }
+    },
+    "Copy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝"
+          }
+        }
+      }
+    },
+    "Couldn't export to %@: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法导出到 %@：%@"
+          }
+        }
+      }
+    },
+    "Couldn't read the environment (%@ printed no environment). Runs get Bunode's own.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取环境（%@ 没有输出环境变量）。运行将使用 Bunode 自身的环境。"
+          }
+        }
+      }
+    },
+    "Couldn't read the environment (%@ took longer than %@ s). Runs get Bunode's own.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取环境（%@ 超过 %@ 秒未完成）。运行将使用 Bunode 自身的环境。"
+          }
+        }
+      }
+    },
+    "Couldn't read the environment (%@). Runs get Bunode's own.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取环境（%@）。运行将使用 Bunode 自身的环境。"
+          }
+        }
+      }
+    },
+    "Couldn't read the environment (couldn't start %@: %@). Runs get Bunode's own.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取环境（无法启动 %@：%@）。运行将使用 Bunode 自身的环境。"
+          }
+        }
+      }
+    },
+    "Couldn't save %@: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存 %@：%@"
+          }
+        }
+      }
+    },
+    "Couldn't send SIGTERM to PID %@: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法向 PID %@ 发送 SIGTERM：%@"
+          }
+        }
+      }
+    },
+    "Couldn't start %@: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动 %@：%@"
+          }
+        }
+      }
+    },
+    "Couldn't start bunode-runner: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动 bunode-runner：%@"
+          }
+        }
+      }
+    },
     "Couldn’t stop %@.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "无法停止 %@。"
+          }
+        }
+      }
+    },
+    "Crashed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已崩溃"
+          }
+        }
+      }
+    },
+    "Cut": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剪切"
+          }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        }
+      }
+    },
+    "Delete Service…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除服务…"
+          }
+        }
+      }
+    },
+    "Deleted %@ › %@. Files in %@ are untouched.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除 %@ › %@。%@ 中的文件未改动。"
+          }
+        }
+      }
+    },
+    "Diagnostics": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "诊断"
           }
         }
       }
@@ -281,11 +892,136 @@
         }
       }
     },
-    "Ended by %@": {},
-    "Enter a command.": {},
-    "Enter a name.": {},
-    "Exited": {},
-    "Exited with code %@": {},
+    "Done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成"
+          }
+        }
+      }
+    },
+    "Edit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑"
+          }
+        }
+      }
+    },
+    "Ended by %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被 %@ 结束"
+          }
+        }
+      }
+    },
+    "Enter a command.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入命令。"
+          }
+        }
+      }
+    },
+    "Enter a name.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入名称。"
+          }
+        }
+      }
+    },
+    "Env": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "环境"
+          }
+        }
+      }
+    },
+    "Environment reloaded. New Runs get it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "环境已重新读取，新的运行会使用它。"
+          }
+        }
+      }
+    },
+    "Exited": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已退出"
+          }
+        }
+      }
+    },
+    "Exited with code %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已退出，代码 %@"
+          }
+        }
+      }
+    },
+    "Exiting…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在退出…"
+          }
+        }
+      }
+    },
+    "Export…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出…"
+          }
+        }
+      }
+    },
+    "Failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败"
+          }
+        }
+      }
+    },
+    "Files in %@ stay on disk.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 中的文件会保留在磁盘上。"
+          }
+        }
+      }
+    },
     "Flat": {
       "localizations": {
         "zh-Hans": {
@@ -296,7 +1032,76 @@
         }
       }
     },
-    "Force stop after must be one of %@ seconds.": {},
+    "Folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目录"
+          }
+        }
+      }
+    },
+    "Folder missing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目录不存在"
+          }
+        }
+      }
+    },
+    "For pipes, && and globs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于管道、&& 和通配符"
+          }
+        }
+      }
+    },
+    "Force Kill": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强制结束"
+          }
+        }
+      }
+    },
+    "Force kill %@ (PID %@)?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强制结束 %@（PID %@）？"
+          }
+        }
+      }
+    },
+    "Force stop after": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强制结束前等待"
+          }
+        }
+      }
+    },
+    "Force stop after must be one of %@ seconds.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强制结束前等待时间必须是 %@ 中的值（单位：秒）。"
+          }
+        }
+      }
+    },
     "General": {
       "localizations": {
         "zh-Hans": {
@@ -313,6 +1118,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "菜单栏列表的排列方式。"
+          }
+        }
+      }
+    },
+    "It is running and will be stopped first. Only the Service is removed; files in %@ stay.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它正在运行，会先被停止。只移除服务，%@ 中的文件保留。"
           }
         }
       }
@@ -337,6 +1152,32 @@
               }
             }
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它的 %lld 个服务会从 Bunode 中移除。"
+          }
+        }
+      }
+    },
+    "just now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚刚"
+          }
+        }
+      }
+    },
+    "Keep Running": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续运行"
+          }
         }
       }
     },
@@ -360,15 +1201,252 @@
         }
       }
     },
-    "Log lines kept must be one of %@.": {},
-    "Lost track of bunode-runner: %@": {},
-    "Name already used in %@": {},
+    "Locate": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定位"
+          }
+        }
+      }
+    },
+    "Locate…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定位…"
+          }
+        }
+      }
+    },
+    "Log lines kept": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留日志行数"
+          }
+        }
+      }
+    },
+    "Log lines kept must be one of %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留日志行数必须是 %@ 中的值。"
+          }
+        }
+      }
+    },
+    "Logs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日志"
+          }
+        }
+      }
+    },
+    "Logs of %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的日志"
+          }
+        }
+      }
+    },
+    "Logs · No Runs yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日志 · 尚无运行"
+          }
+        }
+      }
+    },
+    "Logs · Run #%@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日志 · 运行 #%@"
+          }
+        }
+      }
+    },
+    "Lost track of bunode-runner: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与 bunode-runner 失去联系：%@"
+          }
+        }
+      }
+    },
+    "Minimize": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最小化"
+          }
+        }
+      }
+    },
+    "Name already used in %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称已在 %@ 中使用"
+          }
+        }
+      }
+    },
+    "New Service": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建服务"
+          }
+        }
+      }
+    },
     "Next to the menu bar icon.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "显示在菜单栏图标旁。"
+          }
+        }
+      }
+    },
+    "No commands yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有命令。"
+          }
+        }
+      }
+    },
+    "No lines match.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有匹配的行。"
+          }
+        }
+      }
+    },
+    "No other Node or Bun processes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有其他 Node 或 Bun 进程。"
+          }
+        }
+      }
+    },
+    "No output yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有输出。"
+          }
+        }
+      }
+    },
+    "No Projects yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有项目。"
+          }
+        }
+      }
+    },
+    "none": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无"
+          }
+        }
+      }
+    },
+    "None right now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无"
+          }
+        }
+      }
+    },
+    "Not found": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到"
+          }
+        }
+      }
+    },
+    "Not responding": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无响应"
+          }
+        }
+      }
+    },
+    "Only the Service is removed; files in %@ stay.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只移除服务，%@ 中的文件保留。"
+          }
+        }
+      }
+    },
+    "Open": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开"
+          }
+        }
+      }
+    },
+    "Open :%@ in browser": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在浏览器中打开 :%@"
           }
         }
       }
@@ -383,7 +1461,116 @@
         }
       }
     },
-    "PID %@ has already exited.": {},
+    "Other processes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他进程"
+          }
+        }
+      }
+    },
+    "Package manager": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包管理器"
+          }
+        }
+      }
+    },
+    "Paste": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴"
+          }
+        }
+      }
+    },
+    "Per Service. Export saves the full log.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按服务计。导出会保存完整日志。"
+          }
+        }
+      }
+    },
+    "PID %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PID %@"
+          }
+        }
+      }
+    },
+    "PID %@ has already exited.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PID %@ 已经退出。"
+          }
+        }
+      }
+    },
+    "Port": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口"
+          }
+        }
+      }
+    },
+    "Port %@ is used by another program. Bunode won’t stop it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口 %@ 正被其他程序占用。Bunode 不会停止它。"
+          }
+        }
+      }
+    },
+    "Port %@ is used by “%@” from %@. Bunode won’t stop it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口 %@ 正被“%@”（来自 %@）占用。Bunode 不会停止它。"
+          }
+        }
+      }
+    },
+    "Project": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目"
+          }
+        }
+      }
+    },
+    "Project name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目名称"
+          }
+        }
+      }
+    },
     "Projects": {
       "localizations": {
         "zh-Hans": {
@@ -394,12 +1581,122 @@
         }
       }
     },
+    "Quit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出"
+          }
+        }
+      }
+    },
+    "Quit Bunode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出 Bunode"
+          }
+        }
+      }
+    },
     "Quit Bunode?": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "退出 Bunode？"
+          }
+        }
+      }
+    },
+    "Reading from %@…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在从 %@ 读取…"
+          }
+        }
+      }
+    },
+    "Redo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重做"
+          }
+        }
+      }
+    },
+    "Reload": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新读取"
+          }
+        }
+      }
+    },
+    "Reloading": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重新读取"
+          }
+        }
+      }
+    },
+    "Remove": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
+          }
+        }
+      }
+    },
+    "Remove “%@”?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除“%@”？"
+          }
+        }
+      }
+    },
+    "Removed %@. Files untouched.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除 %@。文件未改动。"
+          }
+        }
+      }
+    },
+    "Remove…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除…"
+          }
+        }
+      }
+    },
+    "Restart": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启"
           }
         }
       }
@@ -434,6 +1731,56 @@
         }
       }
     },
+    "Restart now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即重启"
+          }
+        }
+      }
+    },
+    "Restarting…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重启…"
+          }
+        }
+      }
+    },
+    "Run": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行"
+          }
+        }
+      }
+    },
+    "Run %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 %@"
+          }
+        }
+      }
+    },
+    "Run through shell": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过 shell 运行"
+          }
+        }
+      }
+    },
     "Running": {
       "localizations": {
         "zh-Hans": {
@@ -444,12 +1791,162 @@
         }
       }
     },
+    "Running…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中…"
+          }
+        }
+      }
+    },
+    "Runs from %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %@ 中运行"
+          }
+        }
+      }
+    },
+    "Saved %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存 %@"
+          }
+        }
+      }
+    },
+    "Saved. Applies on the next Run.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存，下次运行时生效。"
+          }
+        }
+      }
+    },
+    "Scripts in package.json": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "package.json 中的脚本"
+          }
+        }
+      }
+    },
+    "Search": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索"
+          }
+        }
+      }
+    },
+    "Select All": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全选"
+          }
+        }
+      }
+    },
+    "Send SIGTERM": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送 SIGTERM"
+          }
+        }
+      }
+    },
+    "Send SIGTERM to PID %@? Bunode didn’t start it and can’t bring it back.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向 PID %@ 发送 SIGTERM？它不是 Bunode 启动的，结束后 Bunode 无法恢复它。"
+          }
+        }
+      }
+    },
     "Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "由 Claude 等 agent 按其启动配置在项目目录中运行的服务，可在此停止。"
+          }
+        }
+      }
+    },
+    "Services are added and set up from the menu bar.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务在菜单栏中添加和设置。"
+          }
+        }
+      }
+    },
+    "Sets PORT=%@ for this Run. Tools that ignore PORT need their own flag.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为本次运行设置 PORT=%@。不读取 PORT 的工具需要用自己的参数指定端口。"
+          }
+        }
+      }
+    },
+    "Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置"
+          }
+        }
+      }
+    },
+    "Settings…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置…"
+          }
+        }
+      }
+    },
+    "Several lockfiles found. Pick a package manager.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找到多个 lockfile，请选择包管理器。"
+          }
+        }
+      }
+    },
+    "Shell environment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shell 环境"
           }
         }
       }
@@ -469,7 +1966,17 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 Finder 中显示"
+            "value": "在访达中显示"
+          }
+        }
+      }
+    },
+    "Show Process": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示进程"
           }
         }
       }
@@ -484,12 +1991,112 @@
         }
       }
     },
+    "SIGTERM sent to PID %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已向 PID %@ 发送 SIGTERM"
+          }
+        }
+      }
+    },
+    "Source code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源代码"
+          }
+        }
+      }
+    },
+    "Start": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动"
+          }
+        }
+      }
+    },
+    "Start %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动 %@"
+          }
+        }
+      }
+    },
     "Started by %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "由 %@ 启动"
+          }
+        }
+      }
+    },
+    "started from %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 %@ 启动"
+          }
+        }
+      }
+    },
+    "Started outside Bunode · watch only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Bunode 外启动 · 仅查看"
+          }
+        }
+      }
+    },
+    "Starting…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在启动…"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        }
+      }
+    },
+    "Stop %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止 %@"
+          }
+        }
+      }
+    },
+    "Stop %lld and Remove": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止 %lld 个服务并移除"
           }
         }
       }
@@ -552,12 +2159,72 @@
         }
       }
     },
+    "Stop and Delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止并删除"
+          }
+        }
+      }
+    },
+    "Stop asks nicely first, then force-quits.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止时先请求进程退出，超时后再强制结束。"
+          }
+        }
+      }
+    },
+    "Stopped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
+          }
+        }
+      }
+    },
+    "Stopping all Runs…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在停止所有运行…"
+          }
+        }
+      }
+    },
     "Stopping…": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在停止…"
+          }
+        }
+      }
+    },
+    "Stop…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止…"
+          }
+        }
+      }
+    },
+    "Supervisor and runner logs.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bunode 自身和 runner 的日志。"
           }
         }
       }
@@ -572,15 +2239,156 @@
         }
       }
     },
-    "The command has an unmatched quote.": {},
-    "The command is empty.": {},
-    "The Run ended for an unknown reason.": {},
-    "This Project is no longer in Bunode.": {},
-    "This Service has no Runs yet.": {},
-    "This Service is no longer in Bunode.": {},
-    "Unknown": {},
-    "Use a port from 1 to 65535.": {},
-    "Use at most %lld characters.": {}
+    "The command has an unmatched quote.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令中的引号不成对。"
+          }
+        }
+      }
+    },
+    "The command is empty.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令为空。"
+          }
+        }
+      }
+    },
+    "The Run ended for an unknown reason.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行因未知原因结束。"
+          }
+        }
+      }
+    },
+    "This Project is no longer in Bunode.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个项目已不在 Bunode 中。"
+          }
+        }
+      }
+    },
+    "This Service has no Runs yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个服务还没有运行过。"
+          }
+        }
+      }
+    },
+    "This Service is no longer in Bunode.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个服务已不在 Bunode 中。"
+          }
+        }
+      }
+    },
+    "today %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天 %@"
+          }
+        }
+      }
+    },
+    "Undo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销"
+          }
+        }
+      }
+    },
+    "Unknown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知"
+          }
+        }
+      }
+    },
+    "Use": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用"
+          }
+        }
+      }
+    },
+    "Use :%@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改用 :%@"
+          }
+        }
+      }
+    },
+    "Use a port from 1 to 65535.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用 1 到 65535 之间的端口。"
+          }
+        }
+      }
+    },
+    "Use at most %lld characters.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "Use PATH": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 PATH"
+          }
+        }
+      }
+    },
+    "Window": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口"
+          }
+        }
+      }
+    }
   },
   "version": "1.0"
 }
