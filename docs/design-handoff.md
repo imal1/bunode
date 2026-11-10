@@ -31,6 +31,10 @@
 | D4 | Start / Stop 只在悬停或键盘聚焦时出现 | 静止时每行右侧只有浅色箭头，清单更轻。键盘和读屏路径见 §9 |
 | D5 | Settings 严格只到 Project 层级，Service 设置只能从 Popover 进入 | 全局设置保持极简 |
 | D6 | 新建 Service 的入口是 Popover 顶栏的 `Add Service` 文字链 | Project 标题行和它的 `+` 没了 |
+| D7 | Home 可在 Settings 里切成按 Project 分组：每组一个只写名字的小标题，组内行标题去掉 Project 名。默认仍是平铺（2026-11-10 定） | 同一个 Project 的命令多时，分组更好找；平铺适合命令少、跨 Project 扫一眼 |
+| D8 | agent 启动的开发服务（Agent Server，需求 §3.10）显示成普通行，跟所属 Project 放在一起，可以 Stop，不能 Start。没有徽标，只在 tooltip 写 `Started by Claude` | 用户只关心 agent 里的服务在不在跑、能不能停。这个概念不需要出现在界面上 |
+| D9 | 界面英文和简体中文，Settings › General › Language 切换，重启后生效（[ADR-0006](adr/0006-language-switch-needs-restart.md)） | |
+| D10 | Service 的命令可以是任意可执行文件（需求 §1.1）。界面不区分 Node/Bun 命令和其他命令 | napcat 这类命令也要一键启停、看日志 |
 
 ### 0.2 相对现有代码要改什么
 
@@ -50,6 +54,11 @@
 | 底部 | 两行菜单，带 ⌘ 提示 | 版本信息 + `Settings` `Quit` 两个小按钮。⌘, 和 ⌘Q 继续生效 | `PopoverView.MenuRow` |
 | 打开时焦点 | 第一行有焦点框 | 打开时不显示焦点框，见 §9 | `HomeView.focusFirstRow` |
 | 滚动上限 | 屏幕可见高度 − 40 − 120 | 120 改为约 156，见 §2.2 | `PopoverScroll.maxHeight` |
+| 分组模式 | 无 | General › `List` 为 `By Project` 时插入 Project 小标题，组内行标题去掉 Project 名（§2.2） | `HomeView.swift`、`RunStatus+UI.swift` `title(projectName:)` |
+| Agent Server 行 | 无 | 新增，见 §2.2。从 Other processes 里去掉这些进程 | `HomeView.swift`、`OtherProcessesView.swift`、`bunode-core` 新模块（识别、读 `.claude/launch.json`、停止） |
+| Settings › General | 4 个开关 | 加 `List`、`Language` 两行（§2.3） | `SettingsView.swift` |
+| Settings › Projects | 无 | 卡片下方加 agent 开关（§2.3） | `ProjectsPane.swift` |
+| 文案 | 英文写死在视图里，部分错误文字来自 Rust | 全部进 String Catalog，加简体中文。Rust 只返回类型化错误（枚举 + 参数），Swift 本地化 | `Localizable.xcstrings`、`bunode-core` `error.rs` |
 
 ---
 
@@ -77,7 +86,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 |---|---|
 | 图标 | 15×15 pt 六边形描边（1.5 pt）+ 中心 2 pt 半径实心点。做成 template image（描边跟随菜单栏颜色），中心点单独着色 |
 | 中心点颜色 | 任一 Service `crashed`/`failed` → `status-error`；否则任一 `running` → `status-running`；否则 `status-idle`。Popover 顶栏的 7 pt 点用同一规则 |
-| 计数 | 图标右侧 5 pt 间距，12 pt semibold，显示 **running** 数量（不含 starting/stopping，也不含短时 Service，§5.1）。General › `Show running count` 关闭时隐藏；数量为 0 时也隐藏数字（画布显示 0，以本文为准） |
+| 计数 | 图标右侧 5 pt 间距，12 pt semibold，显示 **running** 数量（不含 starting/stopping，也不含短时 Service（§5.1）和 Agent Server（§2.2））。General › `Show running count` 关闭时隐藏；数量为 0 时也隐藏数字（画布显示 0，以本文为准） |
 | 按下态 | 用系统 `NSStatusBarButton` 高亮，不要自绘（画布模拟值：高 22，圆角 5，黑 12%） |
 | VoiceOver | `"Bunode, 2 running"`；有崩溃时 `"Bunode, 2 running, 1 crashed"` |
 
@@ -149,7 +158,45 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 - **第二行**：11.5 pt `label-secondary`，`{path}` 接 ` · {状态}`。`{path}` 是 Service 运行的目录（Project 路径，有 `folder` 时含子目录），`~` 缩写。Stopped 不显示状态词，短时 Service 的 Done 要显示（§5.1）。
 - **行尾** 28×28：`rest` 箭头（10 pt，stroke 2.2，`label-tertiary`）和启停按钮（28×28，圆角 7，图标 10 pt，悬停黑 8%）叠放，用 opacity 切换，避免行宽跳动。
 - **端口冲突条**挂在该行下方：外边距 2/8/6/50，左缘 50 对齐文字列（`row-text-inset`），让人看出它属于上面那行。padding 8/10，圆角 8，见 §5.3。
-- 列表顺序：Project 登记顺序 + Service 创建顺序，同 Project 相邻。
+- 列表顺序：Project 登记顺序 + Service 创建顺序，同 Project 相邻。Agent Server 行排在所属 Project 的 Service 之后，按 `launch.json` 里的配置顺序。
+
+**分组模式**（General › `List` 选 `By Project`，2026-11-10 定，参考 Llama app 的小标题）
+
+```
+│  Bunode ●                      Add Service │
+│  2 running · 3 Services                    │
+│ ─────────────────────────────────────────  │
+│  api                                       │  Project 小标题: 高 24
+│ [▣] dev  :3000                          ›  │  组内不写 Project 名
+│     ~/code/api · Running                   │
+│ [▣] bun run worker                      ›  │
+│     ~/code/api                             │
+│ ─────────────────────────────────────────  │  组间分隔线
+│  acme                                      │
+│ [▣] web  :3001                             │  Agent Server 行（launch.json 的 name）
+│     ~/code/acme · Running                  │
+```
+
+- 小标题：高 24，padding 上 6 下 2，左缘 8（与色块左缘对齐），11 pt semibold，`label-secondary`，单行尾部省略。只写 Project 名（有别名用别名），不带数量和按钮。
+- 组间 1 pt `separator`，左右缩进 8，上下边距 4。第一组上方不加（顶栏下已有分隔线）。
+- 组不能折叠。没有任何行的 Project 不显示小标题。没有批量启停。
+- 组内行标题去掉 Project 名：常用脚本只写脚本名（`dev`，不是 `api dev`），其余命令本来就整条显示，不变。tooltip、VoiceOver、第二行不变。
+- 小标题和行一起在列表区滚动，不吸顶。滚动上限的公式不变。
+- 平铺模式与原来相同。切换后 Popover 立即重排，不重开。
+
+**Agent Server 行**（需求 §3.10，2026-11-10 定）
+
+agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launch.json` 启动的开发服务。只在运行时出现，外观与 Service 行相同，区别只在下面几条：
+
+- 色块：运行中 `tile-running` + 终端提示符；Stop 后到退出前 `tile-busy` + spinner，第二行 `{path} · Stopping…`。进程退出后这一行消失。
+- 第一行：配置的 `name`，两种模式都不加 Project 名。端口胶囊取该进程组实际监听的端口，规则同 Service 行。
+- 第二行：`{path} · Running`，`{path}` 是 Project 根目录。
+- 行尾：静止时为空（没有可进入的视图，不放箭头）。悬停或键盘聚焦时出现 Stop。
+- 主按钮点击无动作，悬停底色照常（让 Stop 可发现）。
+- tooltip：`name`、完整命令（`runtimeExecutable` + `runtimeArgs`）、目录，最后一行 `Started by Claude`（写具体的 agent 名）。没有徽标。
+- 不计入顶栏的 running 和 Services 数量、菜单栏计数和退出确认。退出 Bunode 不停止它们。
+- 不出现在 Other processes。
+- Settings › Projects 的 agent 开关关闭时，这些行全部消失。
 
 **Service 视图**（点 Service 行进入）
 
@@ -213,6 +260,15 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 | App | Show running count · `Next to the menu bar icon.` | Switch | On |
 | Runs | Restart Services that crash · `Up to 3 times a minute, then it waits for you.` | Switch | On（C3：只作新 Service 的默认值） |
 | Runs | Notify on crash · `One notification per crash.` | Switch | On |
+| Display | List · `How the menu bar list is arranged.` | `Picker(.segmented)`：`Flat` / `By Project` | Flat |
+| Display | Language · `Applies after Bunode restarts.` | `Picker(.menu)`：`System` / `English` / `简体中文` | System |
+
+`Language`（2026-11-10 定，[ADR-0006](adr/0006-language-switch-needs-restart.md)）：
+
+- `English` 和 `简体中文` 两项永远用各自的语言写，不翻译；`System` 跟当前界面语言（中文 `跟随系统`）。
+- 选择后写入本 App 的 `AppleLanguages`（`System` 删除这个键），界面不立即变。
+- 选中的语言和当前界面语言不同时，帮助文字换成 `Restart Bunode to apply.`，行右侧控件前多一个 `Restart Now` 按钮（`.bordered`，`.controlSize(.small)`）。选回当前语言时恢复原样。
+- `Restart Now`：没有 Run 时直接退出并重新打开。有 Run 时先弹 §2.4 的重启确认，所有 Run 停止后再退出（ADR-0003）。重新打开由退出前派生的 `/bin/sh -c 'sleep 1; open -b <bundle id>'` 完成，它不是 Run，不受 lifeline 约束。
 
 **Projects**
 
@@ -220,6 +276,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 - 名字默认是文件夹名。点击变成输入框（`.roundedBorder`，`.controlSize(.small)`，最宽 220），可填别名，占位符是文件夹名；回车或失焦保存，Esc 放弃，留空回到文件夹名。别名替换所有显示 Project 名的地方。
 - 包管理器（C6，待拍板，§11）：默认只在检测到多个锁文件时显示弹出菜单（`Auto (Bun)` / `npm` / `pnpm` / `yarn` / `Bun`，`.controlSize(.small)`）和 `exclamationmark.triangle`（`systemOrange`）图标，tooltip / VoiceOver：`Several lockfiles found. Pick a package manager.`。改包管理器只影响之后新建的 Service 生成的命令和下一次 Run。
 - 卡片下方：左侧说明 `Services are added and set up from the menu bar.`（11 pt）+ 右侧 `Add Project…`（打开 `NSOpenPanel`，只能选文件夹）。
+- 再下方一张单行卡片：`Show dev servers started by agents` + Switch，默认 On。帮助文字 `Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here.` 较长，这一行的帮助允许换成两行，不省略。中文见 §6.6。关闭后不再读 agent 配置，Home 里的 Agent Server 行全部消失，这些进程如果是 Node/Bun，回到 Other processes。
 - 空态：卡片内居中 `No Projects yet.`。
 
 **Advanced**
@@ -242,6 +299,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 | 对话框 | 标题 | 正文 | 主按钮 | 次按钮 |
 |---|---|---|---|---|
 | 退出（有 Run） | `Quit Bunode?` | `2 Services are running. Bunode stops every Run before it quits, so it never leaves processes behind.` | `Stop 2 Services and Quit`（默认，Return） | `Cancel`（Esc） |
+| 切换语言后重启（有 Run） | `Restart Bunode?` | `2 Services are running. Bunode stops every Run before it restarts.` | `Stop 2 Services and Restart`（默认，Return） | `Cancel`（Esc） |
 | 删除 Project（有运行中的 Service） | `Remove “api”?` | `Its 2 Services leave Bunode. Files in ~/code/api stay on disk. 1 running Service will be stopped first.` | `Stop 1 and Remove`（destructive） | `Cancel`（默认） |
 | 强制结束外部进程 | `Force kill node (PID 51207)?` | `Bunode didn’t start this process. It did not exit 5 s after SIGTERM. Force killing it may lose unsaved work.` + mono 信息框 `next dev -p 3001 · ~/code/landing · started from VS Code` | `Force Kill`（destructive） | `Keep Running`（默认） |
 
@@ -371,6 +429,10 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 | `LogView`（AppKit） | — | `runId`, `query` | 虚拟化，按可见范围从 Rust 拉取 |
 | `Toast` | — | `message` | 见 §6.4 |
 | `ScriptChip` | default / selected / used(disabled) | `script`, `selected`, `used` | 已有同命令 Service 的脚本 disabled，灰字 `#8A8A8E` |
+| `ProjectHeader`（新） | — | `title` | 分组模式的小标题，§2.2。`accessibilityAddTraits(.isHeader)` |
+| `AgentServerRow`（新） | running / stopping | `server`, `project` | §2.2。复用 `StatusTile`、`PortLabel`，行尾只有 Stop |
+
+Agent Server 的状态单独一组（`AgentServerState`：`project_id`、`agent`、`name`、`command`、`pid`、`pgid`、`live_ports`、`stopping`），不混进 `ServiceState`。
 
 UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`name`、`display_name`、`command`、`folder`、`port`、`run_through_shell`、`status`、`run_number`、`pid`、`last_exit`、`log_*`、`has_pending_config`、`ended_by`、`live_ports`）。
 
@@ -420,6 +482,13 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 | Service 行 | 键盘聚焦 | 同 Hover，不画焦点环，启停按钮可见 |
 | Service 行 | 点击 | 进入 Service 视图 |
 | Service 行 | 右键 | Running：Restart、Stop、Open。Stopped、Crashed：Start、Open。busy：Open |
+| Agent Server 行 | Hover / 键盘聚焦 | 同 Service 行，行尾出现 Stop |
+| Agent Server 行 | 点击 | 无动作 |
+| Agent Server 行 | 右键 | `Stop` · `Open in Browser`（有端口时，打开 `http://localhost:<port>`）· `Show in Finder`（Project 根目录）。stopping 时只有后两项 |
+| Agent Server 的 Stop | 点击 | 不确认。向启动器进程组发 SIGTERM，色块转 busy；超过 Force stop 时长仍未退出则自动 SIGKILL。退出后行消失。SIGKILL 后 1 s 仍存活：行回到 Running，Toast `Couldn’t stop web.` |
+| General › `List` | 切换 | Popover 立即按新模式重排 |
+| General › `Language` | 选择 | 见 §2.3 |
+| Projects › agent 开关 | 切换 | 立即生效 |
 | Start / Stop 图标 | 点击 | 直接启停，不确认，不触发行点击 |
 | `Add Service` | 点击 | 进入 Add Service，默认第一个 Project 和它第一个“未被使用”的脚本，命令按包管理器生成：Bun `bun run x`、pnpm `pnpm x`、npm `npm run x`、yarn `yarn x` |
 | Project 胶囊 | 点击 | 切换 Project，脚本和命令按新 Project 重新生成 |
@@ -447,6 +516,7 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 - 按钮：`Use :4322`（主，没有可用建议时不显示）· `Show Process`（白底次要，跳 Other processes，占用者是另一个 Service 时不显示）· `Cancel`（透明）。
 - `Use :N` 的 N = 从配置端口 +1 起第一个空闲端口（画布只是 +1）。
 - 端口传递：只为本次 Run 设置环境变量 `PORT=4322`，不改写命令参数（需求 §3.5）。条内正文下方加一行 11 pt：`Sets PORT=4322 for this Run. Tools that ignore PORT need their own flag.` Service 的 Port 配置不变，下一次 Run 仍先检查原端口。
+- 占用者是 Agent Server 时：`Port 3001 is used by “web” from Claude. Bunode won’t stop it.`，不显示 `Show Process`（它不在 Other processes），用户可以在它自己的行上 Stop。
 - 同一时间只显示一个冲突条；点其他 Service 的 Start 会替换它。
 - 绝不结束占用进程（需求 §3.5）。
 
@@ -470,6 +540,8 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 - 其他入口的 ⌘Q（Settings 窗口在前时、Dock 菜单、系统注销）：用 §2.4 的 `NSAlert`。
 - 两种确认都保留：Popover 打开时用内联，其余入口用 alert，按钮文案统一为 `Stop N Services and Quit`。
 - 系统关机 / 注销（`applicationShouldTerminate` 来自 `NSWorkspace` power-off）：不弹确认，直接停止所有 Run（需求 §3.8 区分 OS 重启）。
+- 切换语言后的 `Restart Now` 走同一套流程，文案换成 Restart（§2.3、§2.4）。
+- 退出时 Agent Server 不停止，也不计入 N。
 
 ### 5.7 Settings 交互
 
@@ -537,11 +609,43 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 
 ---
 
+### 6.6 简体中文（2026-11-10 定）
+
+- 固定译名以 `GLOSSARY.md` 为准：Project 项目、Service 服务、Run 运行、Other processes 其他进程、短时 Service 一次性服务。日志内容、命令、路径、端口、PID 不翻译。
+- 中文与英文、数字之间加半角空格（`3 个服务`、`Bun 1.2.4`）。用全角标点，命令和路径里的标点照原样。
+- 中文普遍比英文短，布局按英文定。按钮仍然不截断。
+
+主要文案：
+
+| English | 简体中文 |
+|---|---|
+| `%d running · %d Services` | `%d 个运行中 · %d 个服务` |
+| `Add Service` · `Settings` · `Quit` | `添加服务` · `设置` · `退出` |
+| `Start` · `Stop` · `Restart` · `Run` | `启动` · `停止` · `重启` · `运行` |
+| `Running` · `Starting…` · `Stopping…` · `Restarting…` · `Stopped` | `运行中` · `正在启动…` · `正在停止…` · `正在重启…` · `已停止` |
+| `Crashed` · `Failed` · `Not responding` · `Folder missing` | `已崩溃` · `失败` · `无响应` · `目录不存在` |
+| `Running…` · `Done`（一次性服务） | `运行中…` · `已完成` |
+| `Other processes` · `%d started outside Bunode` · `None right now` | `其他进程` · `%d 个在 Bunode 外启动` · `暂无` |
+| `Started by %@` | `由 %@ 启动` |
+| `Open in Browser` · `Show in Finder` | `在浏览器中打开` · `在访达中显示` |
+| `General` · `Projects` · `Advanced` | `通用` · `项目` · `高级` |
+| `List` · `How the menu bar list is arranged.` · `Flat` · `By Project` | `列表` · `菜单栏列表的排列方式。` · `平铺` · `按项目` |
+| `Language` · `Applies after Bunode restarts.` · `System` | `语言` · `重启 Bunode 后生效。` · `跟随系统` |
+| `Restart Bunode to apply.` · `Restart Now` | `重启 Bunode 后生效。` · `立即重启` |
+| `Show dev servers started by agents` | `显示 agent 启动的开发服务` |
+| `Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here.` | `由 Claude 等 agent 按其启动配置在项目目录中运行的服务，可在此停止。` |
+| `Restart Bunode?` · `Stop %d Services and Restart` | `重启 Bunode？` · `停止 %d 个服务并重启` |
+| `Quit Bunode?` · `Stop %d Services and Quit` | `退出 Bunode？` · `停止 %d 个服务并退出` |
+
+其余文案在 String Catalog 里按本节规则翻译。
+
+---
+
 ## 7. 边界情况
 
 - **30+ Service**：列表滚动；Popover 不超过屏幕高。打开时总在顶部，不自动滚到崩溃的行；Crashed / Failed 行不置顶，顺序不变。崩溃的提醒靠菜单栏图标红点和 `Notify on crash` 通知。
 - **长命令 / monorepo**：`pnpm --filter storybook-docs-preview dev` 这类命令在 238 pt 文字列下必然截断，tooltip 必须有。同一 Project 下相同命令在不同子目录时，靠第二行的完整路径区分。
-- **国际化**：首版英文，预留简体中文（需求 §2.1）。第二行的状态词和按钮是最容易超长的位置。帮助文字截断可接受，但按钮文案（`Stop 2 Services and Quit`）不可截断——允许按钮变宽，alert 按钮纵向堆叠本来就容纳得下。所有带数量的文案用 String Catalog 复数规则，不要字符串拼接。
+- **国际化**：英文和简体中文（需求 §4.1），中文规则见 §6.6。Rust 不产出界面文字，错误以枚举 + 参数传到 Swift 再本地化。第二行的状态词和按钮是最容易超长的位置。帮助文字截断可接受，但按钮文案（`Stop 2 Services and Quit`）不可截断——允许按钮变宽，alert 按钮纵向堆叠本来就容纳得下。所有带数量的文案用 String Catalog 复数规则，不要字符串拼接。
 - **高频日志**：日志区只追加，不全量刷新；用户向上滚动离开底部时暂停自动滚动，回到底部恢复（隐式自动滚动开关，C4）。丢弃行时在底栏计数后显示 ` · 1,204 dropped`。
 - **崩溃循环**：60 s 内崩 3 次后暂停自动重启，日志写系统行 `Crashed 3 times in 60 s. Auto restart paused.`，行显示 Crashed，按钮 Start。
 - **Project 目录被移动 / 删除**（需求 §8.1-16）〔设计未画〕：第二行 `{path} · Folder missing`（`status-error-text`），Start 时 warning 条 `~/code/api is missing.` + `Locate…`。标题行消失后，原来的警告图标需要这个新位置。
@@ -549,6 +653,10 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 - **外部进程在冲突条显示期间退出**：冲突条自动消失（现有逻辑每秒轮询）。
 - **Supervisor 断连**（需求 §5.3）〔设计未画〕：Popover 顶部 warning 条 `Lost connection to the Supervisor.` + `Resync`；所有启停按钮 disabled。
 - **Popover 打开时状态变化**：行原地更新，不重排顺序（顺序 = Project 登记顺序 + Service 创建顺序）。
+- **Agent Server 出现或退出**：在所属 Project 的位置插入或移除这一行，其他行不动。分组模式下 Project 因此变空时，小标题一起消失。
+- **`launch.json` 无法解析**：当作没有配置，不识别这个 Project 的 Agent Server，诊断日志记一行。不在界面报错（这个文件归 agent 管）。
+- **同一配置被 agent 启动两次**：两行都显示，名字相同，靠 tooltip 里的 PID 区分〔设计未画〕。
+- **任意可执行文件**（需求 §1.1）：行和 Service 视图与 Node/Bun 命令完全相同。这类命令没有常用脚本的预设，整条显示，也不会被判成一次性服务。
 
 ---
 
@@ -594,6 +702,8 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 
 - **状态不只靠颜色**：Running 和 Stopped 的色块图标相同，只差颜色，所以第二行的状态词不能去掉。VoiceOver label 包含状态。
 - **Service 行**：画布是“一个大按钮 + 一个图标按钮”。落地为一个 accessibility 元素：label `"{displayName}, {状态}, port {N}"`，默认动作 = 打开设置，`accessibilityAction(named: "Start"/"Stop")` 暴露启停，避免读两遍。用 displayName 是因为 monorepo 的命令读出来难区分。
+- **Agent Server 行**：一个 accessibility 元素，label `"{name}, Running, port {N}, started by Claude"`，没有默认动作，`accessibilityAction(named: "Stop")`。
+- **分组小标题**：header trait，VoiceOver 用转子可以按 Project 跳。键盘 ↑ / ↓ 跳过小标题。
 - **图标按钮都要 label + tooltip**：`Stop api › dev`、`Start api › dev`、`Back` / `Back to api › dev`、`Open :3000 in browser`。色块、箭头 `accessibilityHidden`。
 - **开关**：label = 行标题，value = on/off；帮助文字作为 `accessibilityHint`。
 - **日志区**：`accessibilityRole = .textArea`/log，label `Logs of api › dev`；新行**不**自动播报（会刷屏）。
@@ -605,8 +715,8 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 | 键 | 位置 | 行为 |
 |---|---|---|
 | ↑ / ↓ | Home | 在 Service 行间移动 |
-| Return | Home 行 | 打开 Service 视图 |
-| Space | Home 行 | 启动 / 停止，busy 时无效 |
+| Return | Home 行 | 打开 Service 视图。Agent Server 行无动作 |
+| Space | Home 行 | 启动 / 停止，busy 时无效。Agent Server 行只能停止 |
 | ⌘R | Home 行 | 运行中为 Restart |
 | Esc | Popover | 有内联确认时先取消确认。否则看键盘焦点：有焦点时（输入框、Home 清单）先关警告条，再返回上一级，Home 上关闭 Popover；没有焦点时（如刚进 Service 视图）直接关闭 Popover（2026-11-09 定） |
 | ⌘F | Logs | 聚焦搜索框 |
@@ -643,6 +753,7 @@ Popover
   "Started outside Bunode · watch only" · "Stop…" · "Exiting…"
   "Send SIGTERM to PID %d? Bunode didn’t start it and can’t bring it back." · "Send SIGTERM" · "SIGTERM sent to PID %d"
   "No other Node or Bun processes."
+  "Started by %@" · "Open in Browser" · "Show in Finder" · "Couldn’t stop %@."
   "%d Services are running. Quitting stops every Run." · "Stop %d Services and Quit" · "Stopping all Runs…"
   "%@ is missing." · "Locate…" · "Lost connection to the Supervisor." · "Resync"
 Settings
@@ -657,14 +768,18 @@ Settings
   "Shell environment" · "%d variables from %@ · %@" · "Reload" · "Reloading" · "Environment reloaded. New Runs get it."
   "Node.js" · "Bun" · "Force stop after" · "Stop asks nicely first, then force-quits."
   "Log lines kept" · "Per Service. Export saves the full log." · "Diagnostics" · "Supervisor and runner logs." · "Open"
+  "List" · "How the menu bar list is arranged." · "Flat" · "By Project"
+  "Language" · "Applies after Bunode restarts." · "System" · "English" · "简体中文" · "Restart Bunode to apply." · "Restart Now"
+  "Show dev servers started by agents" · "Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here."
 Dialogs
   "Quit Bunode?" · "%d Services are running. Bunode stops every Run before it quits, so it never leaves processes behind."
   "Stop %d Services and Quit"
   "Force kill %@ (PID %d)?" · "Bunode didn’t start this process. It did not exit %d s after SIGTERM. Force killing it may lose unsaved work."
   "Force Kill" · "Keep Running"
+  "Restart Bunode?" · "%d Services are running. Bunode stops every Run before it restarts." · "Stop %d Services and Restart"
 ```
 
-所有 `%d` 文案走复数规则（`1 Service` / `2 Services`）。
+所有 `%d` 文案走复数规则（`1 Service` / `2 Services`）。`English` 和 `简体中文` 标为不翻译。Rust 错误枚举的文案在实现时逐个补进 String Catalog。中文译文见 §6.6。
 
 ---
 

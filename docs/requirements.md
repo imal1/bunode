@@ -12,6 +12,8 @@ Bunode 是一款专为 macOS 设计的轻量级 Node.js / Bun 原生图形化进
 
 产品**以托管为主**：主界面围绕用户在 Bunode 中配置的 Service；自动发现的外部进程是辅助视图，仅提供查看与安全终止。
 
+**Node/Bun 优先，命令不限**：Service 可以运行任意可执行文件（如 napcat 的 `'/Applications/QQ.app/Contents/MacOS/QQ' --no-sandbox`），启停、日志、端口、自动重启与 Node/Bun 命令一样。脚本识别、进程发现和运行时检测仍只针对 Node/Bun。Bunode 只管自己启动的命令，不认领已经在跑的进程（[ADR-0005](adr/0005-any-command-node-bun-first.md)）。唯一的例外是 agent 启动的开发服务：只显示和停止，不认领（3.10）。
+
 产品定位类似 Quay，但更专注 Node.js / Bun 生态，强调：
 
 - 简洁、美观、符合 macOS 设计规范（原生控件，不使用 WebView）。
@@ -50,7 +52,7 @@ Bunode 是一款专为 macOS 设计的轻量级 Node.js / Bun 原生图形化进
 |UI 框架|SwiftUI（Popover、Settings）+ AppKit（日志视图、菜单栏状态项等性能敏感部分）|
 |UI 状态|Observation（`@Observable`）|
 |图标|SF Symbols|
-|本地化|String Catalog（首版英文，预留简体中文）|
+|本地化|String Catalog，英文与简体中文，Settings 中切换（4.1）|
 |工程生成|XcodeGen（`project.yml`，不提交 `.xcodeproj`）|
 |进程管理核心|Rust（`bunode-core`）|
 |异步运行时|Tokio|
@@ -119,6 +121,8 @@ MVP 阶段 Supervisor 内嵌在 App 进程中；`bunode-core` 保持与 UI 无�
 
 **Project** 是在 Bunode 中登记的工作目录；**Service** 是 Project 下一个命名的运行配置（package script 或自定义命令），是用户启停的单位。
 
+自定义命令不限于 Node/Bun，任意可执行文件都可以（1.1）。Project 不要求有 `package.json`，没有时只能手填命令。
+
 **添加 Project**
 
 - 选择本地项目文件夹。
@@ -171,7 +175,7 @@ Bunode 不解析、不注入 `.env`，交由 Vite、Next、Bun 等工具自行�
 |Name|Service 名称。新建时自动取脚本名或命令最后一个词，不手填；同一 Project 的同一目录内唯一（monorepo 的多个包可以都有 `dev`）|
 |Working Directory|Project 目录或其子目录|
 |Source|package script / 自定义命令|
-|Runtime|Auto / Node / Bun|
+|Runtime|Auto / Node / Bun。其他可执行文件不识别运行时，Runtime Path 不适用|
 |Command / Arguments|启动命令与参数（默认可执行文件 + 参数数组）|
 |Shell Mode|需要 Shell 特性（管道、`&&`、通配符）时显式开启。与 3.9 的登录 shell 环境无关|
 |Runtime Path|可覆盖 node / bun 可执行文件路径|
@@ -271,7 +275,7 @@ Starting
 - Run：由 Bunode 启动，支持完整生命周期操作。
 - Discovered Process：由终端、IDE、Codex 等工具启动，默认提供查看及安全终止功能（仅 SIGTERM；升级为 SIGKILL 需用户确认）。
 
-Discovered Process 统一在 Other processes 中查看并标出端口，位于已登记 Project 目录中的也一样，**永远不被认领为 Service 的 Run**。此时启动对应 Service 会先提示端口或目录冲突。
+Discovered Process 统一在 Other processes 中查看并标出端口，位于已登记 Project 目录中的也一样，**永远不被认领为 Service 的 Run**。此时启动对应 Service 会先提示端口或目录冲突。Agent Server（3.10）不算 Discovered Process，不出现在 Other processes。
 
 外部进程只有在能够可靠恢复工作目录、命令、参数及环境的情况下才能提供重启操作。不能将 Kill + 猜测命令重新启动伪装成可靠的 Restart。
 
@@ -378,6 +382,46 @@ Popover 与 Settings 窗口共用同一状态来源（Supervisor），避免状�
 
 Bunode 不负责 Node/Bun 版本切换。
 
+### 3.10 Agent Server（P1）
+
+Claude 等 agent 会按自己的启动配置在 Project 根目录里跑开发服务。Bunode 在 Popover 里显示这些服务，并可以停止它们，但不启动、不认领：它们既不是 Service，也不是 Run（[ADR-0007](adr/0007-agent-servers-are-watched-not-claimed.md)）。界面上不出现“Agent Server”这个概念。
+
+**识别**：三条都满足才算，不按端口匹配。
+
+1. 进程由已支持 agent 的启动器拉起（见下表）。
+2. 启动器进程的 cwd 与某个已登记 Project 的根目录完全相等。worktree 和子目录不算。
+3. 启动器的 argv 与该 Project 的 agent 配置里某一项匹配。
+
+用户关心的是 agent 内部的服务状态，以及能否在外部停止它。所以占用同一端口、但不是 agent 启动的进程不算 Agent Server。在 Bunode 里启动的同名命令也不算，因为 agent 不监管它。
+
+**Agent 适配表**（首版只有 Claude）
+
+|Agent|启动器进程|配置文件|argv 匹配|
+|---|---|---|---|
+|Claude 桌面 App|`Claude.app/Contents/Helpers/disclaimer`，父进程是 `Claude.app/Contents/MacOS/Claude`，自成进程组。带 `--pgroup` 的是 MCP Server，不算|Project 根目录的 `.claude/launch.json`：`{version, configurations: [{name, runtimeExecutable, runtimeArgs, port?, env?}]}`|`--` 之后第一个参数的文件名等于 `runtimeExecutable` 的文件名，其余参数与 `runtimeArgs` 完全相同|
+
+以后支持新的 agent 只加一行：启动器特征、配置文件的位置和格式、argv 匹配规则。
+
+**读取配置**
+
+- 只读已登记 Project 根目录里的配置文件。Claude 只读 `.claude/launch.json`，不读 `.vscode/launch.json`。
+- 添加 Project 时读一次。之后每次打开 Popover 时比较文件 mtime，变了才重读。
+- Bunode 不修改这些文件，也不提供“转成 Service”。
+
+**显示**
+
+- 只在服务运行时出现，外观与 Service 行相同：标题是配置里的 `name`，第二行 `{path} · Running`，有端口时显示端口胶囊。
+- 没有徽标。tooltip 多一行 `Started by Claude`，写具体的 agent 名。
+- 两种列表模式（4.2）里都跟所属 Project 放在一起。
+
+**操作**
+
+- Stop：向启动器的进程组发 SIGTERM，超过 Advanced 的停止超时后自动 SIGKILL，不需要确认。agent 会看到服务退出（Claude 记录为 exit code 143）。停止后这一行消失。
+- 没有 Start、Restart、日志和自动重启。点击行不进入 Service 视图。右键菜单只有 Stop、在浏览器打开、在 Finder 显示。
+- 退出 Bunode 不停止 Agent Server。退出确认和菜单栏运行数量都不计入它们（ADR-0003 只约束 Run）。
+
+**开关**：Settings › Projects 里一个全局开关，默认开（4.3）。关闭后不读配置、不识别，这些进程如果是 Node/Bun，会按 Discovered Process 出现在 Other processes。
+
 ---
 
 ## 4. UI / UX 设计
@@ -399,13 +443,15 @@ Bunode 不负责 Node/Bun 版本切换。
 - 支持键盘快捷键（Popover 内快捷键见 `design-handoff.md` §9）。
 - 所有常用操作尽量在两次点击内完成。
 - 动画轻量，不影响操作响应。
-- 首版英文界面；界面用词与 `GLOSSARY.md` 一致（Project / Service / Run）。
+- 界面支持英文与简体中文，在 Settings › General › Language 切换：跟随系统 / English / 简体中文。切换后重启 Bunode 生效（[ADR-0006](adr/0006-language-switch-needs-restart.md)）。
+- 界面用词与 `GLOSSARY.md` 一致（Project / Service / Run），中文用其中固定的译名。日志内容、命令和路径不翻译。
+- 所有界面文案都在 String Catalog 里。Rust 核心不产出界面文字，只返回带参数的类型化错误（枚举 + 参数），由 Swift 侧本地化。
 
 ### 4.2 菜单栏 Popover
 
 宽 340 pt 固定，高度随内容，最大不超过屏幕。视图栈：
 
-- **Home**：平铺的 Service 列表，一条命令一行，所属 Project 显示在第二行，同 Project 相邻。每行显示状态和端口，悬停或键盘聚焦时显示启停按钮。另有 `Add Service`、Other processes 入口、Settings 与 Quit。
+- **Home**：平铺的 Service 列表，一条命令一行，所属 Project 显示在第二行，同 Project 相邻。每行显示状态和端口，悬停或键盘聚焦时显示启停按钮。另有 `Add Service`、Other processes 入口、Settings 与 Quit。Settings › General 可切换为按 Project 分组：每个 Project 一个只写名字的小标题，组内行标题去掉 Project 名前缀。Agent Server（3.10）以普通行的样子跟所属 Project 放在一起。
 - **Service**：点 Service 行进入。命令、目录、端口、自动重启、Shell Mode、环境变量；自动保存，运行中修改提示“下次 Run 生效”；删除 Service。
 - **New Service**：点 Home 的 `Add Service` 进入，选择 Project，从 `package.json` 的常用 scripts 选择或手填命令。
 - **Logs**：单个 Service 的实时日志、搜索、清空、复制、导出。
@@ -419,11 +465,14 @@ Bunode 不负责 Node/Bun 版本切换。
 - 是否在菜单栏图标旁显示运行数量。
 - 自动重启的全局默认值（3.1）。
 - 崩溃通知。
+- Popover 列表：平铺 / 按 Project 分组，默认平铺（4.2）。
+- 界面语言：跟随系统 / English / 简体中文，重启后生效（4.1）。
 
 **Projects**
 
 - 登记的 Project 列表：路径、包管理器（可改；多锁文件时警告）、Service 数量。
 - 添加、移除 Project。Service 只在 Popover 中添加和设置。
+- 是否显示 agent 启动的开发服务（3.10），默认开。
 
 **Advanced**
 
@@ -509,7 +558,7 @@ Bunode 不负责 Node/Bun 版本切换。
 ### M1 — MVP 补全
 
 - Project / Service 编辑、删除。
-- Node / Bun 自定义命令启动。
+- 自定义命令启动（任意可执行文件，1.1）。
 - 重启。
 - 自动发现 Node/Bun 进程。
 - 端口检测。
@@ -519,6 +568,9 @@ Bunode 不负责 Node/Bun 版本切换。
 - 日志落盘与滚动归档。
 - 日志搜索、导出与丢弃行数提示。
 - 进程管理并发与异常处理测试。
+- Popover 按 Project 分组显示（4.2）。
+- 简体中文界面与语言切换（4.1）。
+- Agent Server：识别、显示与停止，首版只支持 Claude（3.10）。
 
 ### 第二阶段（增强体验）
 
@@ -532,7 +584,6 @@ Bunode 不负责 Node/Bun 版本切换。
 - 进程树。
 - 日志级别过滤。
 - 配置导入导出。
-- 简体中文界面。
 
 ### 第三阶段（扩展能力）
 
@@ -613,6 +664,7 @@ MVP 必须满足：
 - Docker 容器管理。
 - Homebrew 服务管理。
 - macOS 全系统 launchd 服务浏览器。
+- 全系统进程浏览器。Other processes 只列 Node/Bun 进程。
 - Kubernetes 管理。
 - SSH 远程进程管理。
 - 云端项目托管。
@@ -630,7 +682,7 @@ MVP 必须满足：
 ## 10. 开发原则
 
 1. **稳定性优先于功能数量。**
-2. **专注 Node.js / Bun，不演变为通用系统管理器。**
+2. **Node/Bun 优先，命令不限，但不演变为通用系统管理器。** Service 可以跑任意命令；识别、发现和运行时检测只做 Node/Bun。
 3. **优先复用成熟的 Rust / macOS 系统能力。**
 4. **所有影响进程生命周期的操作必须有可测试的状态转移。**
 5. **UI 不承担进程生命周期的真实状态管理。**
