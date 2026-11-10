@@ -6,17 +6,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::model::Config;
+use crate::snapshot::{ConfigIssue, ConfigProblem};
 
 pub struct ConfigStore {
     path: PathBuf,
-}
-
-/// Why the saved configuration could not be used. Bunode then starts with
-/// an empty configuration and keeps the unreadable file next to it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfigIssue {
-    pub message: String,
-    pub backup: Option<PathBuf>,
 }
 
 impl ConfigStore {
@@ -37,18 +30,17 @@ impl ConfigStore {
         let text = match fs::read_to_string(&self.path) {
             Ok(text) => text,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return (Config::default(), None),
-            Err(e) => return (Config::default(), Some(self.set_aside(&e.to_string()))),
+            Err(e) => return (Config::default(), Some(self.set_aside(unreadable(e)))),
         };
         match serde_json::from_str::<Config>(&text) {
             Ok(config) if config.version <= Config::VERSION => (config, None),
             Ok(config) => {
-                let reason = format!(
-                    "it was written by a newer Bunode (format {})",
-                    config.version
-                );
-                (Config::default(), Some(self.set_aside(&reason)))
+                let problem = ConfigProblem::NewerFormat {
+                    version: config.version,
+                };
+                (Config::default(), Some(self.set_aside(problem)))
             }
-            Err(e) => (Config::default(), Some(self.set_aside(&e.to_string()))),
+            Err(e) => (Config::default(), Some(self.set_aside(unreadable(e)))),
         }
     }
 
@@ -68,7 +60,7 @@ impl ConfigStore {
         fs::rename(&tmp, &self.path)
     }
 
-    fn set_aside(&self, reason: &str) -> ConfigIssue {
+    fn set_aside(&self, problem: ConfigProblem) -> ConfigIssue {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -77,19 +69,17 @@ impl ConfigStore {
             .path
             .with_file_name(format!("config.unreadable-{stamp}.json"));
         let moved = fs::rename(&self.path, &backup).is_ok();
-        let name = self.path.display();
-        let message = if moved {
-            format!(
-                "{name} couldn't be read ({reason}). It was moved to {} and Bunode started with no Projects.",
-                backup.display()
-            )
-        } else {
-            format!("{name} couldn't be read ({reason}). Bunode started with no Projects.")
-        };
         ConfigIssue {
-            message,
-            backup: moved.then_some(backup),
+            path: self.path.display().to_string(),
+            backup: moved.then(|| backup.display().to_string()),
+            problem,
         }
+    }
+}
+
+fn unreadable(error: impl std::fmt::Display) -> ConfigProblem {
+    ConfigProblem::Unreadable {
+        detail: error.to_string(),
     }
 }
 
@@ -141,7 +131,8 @@ mod tests {
             "{ \"version\": 1, \"projects\": [ oops"
         );
         assert!(!store.path().exists());
-        assert!(issue.message.contains("couldn't be read"));
+        assert_eq!(issue.path, store.path().display().to_string());
+        assert!(matches!(issue.problem, ConfigProblem::Unreadable { .. }));
     }
 
     #[test]
@@ -151,6 +142,9 @@ mod tests {
         fs::write(store.path(), r#"{"version": 99, "nextId": 1}"#).unwrap();
         let (config, issue) = store.load();
         assert_eq!(config, Config::default());
-        assert!(issue.unwrap().message.contains("newer Bunode"));
+        assert_eq!(
+            issue.unwrap().problem,
+            ConfigProblem::NewerFormat { version: 99 }
+        );
     }
 }

@@ -9,10 +9,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bunode_core::{
-    AddProjectOutcome, DiscoveredProcess, EnvironmentState, LogColor, LogLine, LogSpan, LogStream,
-    LogStyle, NewService, PackageManager, PortConflictOwner, ProjectScripts, ProjectState, RunEnd,
-    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot,
-    StartOutcome, Tool, ToolState,
+    AddProjectOutcome, ConfigIssue, ConfigProblem, DiscoveredProcess, EnvironmentProblem,
+    EnvironmentState, LogColor, LogLine, LogSpan, LogStream, LogStyle, NewService, PackageManager,
+    PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus, ScriptGroup,
+    ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome, Tool,
+    ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -38,8 +39,21 @@ pub struct Snapshot {
     pub projects: Vec<ProjectState>,
     pub settings: SettingsState,
     pub environment: EnvironmentState,
-    pub config_issue: Option<String>,
+    pub config_issue: Option<ConfigIssue>,
     pub discovered: Vec<DiscoveredProcess>,
+}
+
+#[uniffi::remote(Record)]
+pub struct ConfigIssue {
+    pub path: String,
+    pub backup: Option<String>,
+    pub problem: ConfigProblem,
+}
+
+#[uniffi::remote(Enum)]
+pub enum ConfigProblem {
+    Unreadable { detail: String },
+    NewerFormat { version: u32 },
 }
 
 #[uniffi::remote(Record)]
@@ -48,7 +62,7 @@ pub struct DiscoveredProcess {
     pub start: u64,
     pub command: String,
     pub cwd: Option<String>,
-    pub source: String,
+    pub source: Option<String>,
     pub members: Vec<u32>,
     pub member_starts: Vec<u64>,
     pub ports: Vec<u16>,
@@ -61,8 +75,16 @@ pub struct EnvironmentState {
     pub variable_count: u32,
     pub loaded_at: Option<i64>,
     pub is_loading: bool,
-    pub problem: Option<String>,
+    pub problem: Option<EnvironmentProblem>,
     pub tools: Vec<ToolState>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum EnvironmentProblem {
+    ShellFailed { shell: String, reason: String },
+    NoOutput { shell: String },
+    TimedOut { shell: String, seconds: u32 },
+    ReadFailed { reason: String },
 }
 
 #[uniffi::remote(Enum)]
@@ -107,7 +129,7 @@ pub struct ServiceState {
     pub status: RunStatus,
     pub run_number: Option<u64>,
     pub pid: Option<u32>,
-    pub last_exit: Option<String>,
+    pub last_exit: Option<RunNote>,
     pub log_first: u64,
     pub log_count: u64,
     pub log_dropped: u64,
@@ -117,6 +139,23 @@ pub struct ServiceState {
     pub has_pending_config: bool,
     pub ended_by: Option<RunEnd>,
     pub live_ports: Vec<u16>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum RunNote {
+    Exited,
+    ExitedWithCode { code: i32 },
+    EndedBySignal { signal: String },
+    UnmatchedQuote,
+    EmptyCommand,
+    FolderMissing { path: String },
+    NotInPath { program: String },
+    ProgramMissing { program: String },
+    CouldNotStart { program: String, reason: String },
+    RunnerFailed { reason: String },
+    RunnerExited { status: String },
+    RunnerLost { reason: String },
+    UnknownEnd,
 }
 
 #[uniffi::remote(Enum)]
@@ -240,24 +279,106 @@ pub enum StartOutcome {
 pub struct PortConflictOwner {
     pub pid: u32,
     pub command: String,
-    pub source: String,
+    pub source: Option<String>,
     pub service_id: Option<u64>,
 }
 
 // MARK: - Errors
 
-/// An error with a message written for the user.
+/// `bunode_core::Error` for Swift, which words it (requirements §4.1).
+/// `Display` is the core's English, for logs.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum CoreError {
-    #[error("{message}")]
-    Failed { message: String },
+    #[error("{path} is not a folder.")]
+    NotAFolder { path: String },
+    #[error("{path} doesn't exist.")]
+    Missing { path: String },
+    #[error("{path} is already a Project.")]
+    AlreadyAProject { path: String },
+    #[error("Choose the Project's folder or a folder inside it.")]
+    OutsideProject,
+    #[error("Couldn't save {path}: {reason}")]
+    Save { path: String, reason: String },
+    #[error("This Project is no longer in Bunode.")]
+    UnknownProject,
+    #[error("This Service is no longer in Bunode.")]
+    UnknownService,
+    #[error("Enter a command.")]
+    EmptyCommand,
+    #[error("The command has an unmatched quote.")]
+    UnmatchedQuote,
+    #[error("Use a port from 1 to 65535.")]
+    InvalidPort,
+    #[error("Enter a name.")]
+    EmptyName,
+    #[error("Use at most {max} characters.")]
+    NameTooLong { max: u32 },
+    #[error("Name already used in {project}")]
+    NameTaken { project: String },
+    #[error("{path} is not an executable file.")]
+    NotExecutable { path: String },
+    #[error("Force stop after must be one of {choices:?} seconds.")]
+    InvalidForceStopAfter { choices: Vec<u32> },
+    #[error("Log lines kept must be one of {choices:?}.")]
+    InvalidLogLinesKept { choices: Vec<u32> },
+    #[error("This Service has no Runs yet.")]
+    NoRuns,
+    #[error("Couldn't export to {path}: {reason}")]
+    ExportFailed { path: String, reason: String },
+    #[error("PID {pid} has already exited.")]
+    ProcessExited { pid: u32 },
+    #[error("Couldn't send SIGTERM to PID {pid}: {reason}")]
+    SignalFailed { pid: u32, reason: String },
 }
 
 impl From<bunode_core::Error> for CoreError {
     fn from(error: bunode_core::Error) -> Self {
-        CoreError::Failed {
-            message: error.to_string(),
+        use bunode_core::Error as E;
+        match error {
+            E::NotAFolder { path } => CoreError::NotAFolder { path },
+            E::Missing { path } => CoreError::Missing { path },
+            E::AlreadyAProject { path } => CoreError::AlreadyAProject { path },
+            E::OutsideProject => CoreError::OutsideProject,
+            E::Save { path, source } => CoreError::Save {
+                path,
+                reason: source.to_string(),
+            },
+            E::UnknownProject => CoreError::UnknownProject,
+            E::UnknownService => CoreError::UnknownService,
+            E::EmptyCommand => CoreError::EmptyCommand,
+            E::UnmatchedQuote => CoreError::UnmatchedQuote,
+            E::InvalidPort => CoreError::InvalidPort,
+            E::EmptyName => CoreError::EmptyName,
+            E::NameTooLong { max } => CoreError::NameTooLong { max },
+            E::NameTaken { project } => CoreError::NameTaken { project },
+            E::NotExecutable { path } => CoreError::NotExecutable { path },
+            E::InvalidForceStopAfter { choices } => CoreError::InvalidForceStopAfter { choices },
+            E::InvalidLogLinesKept { choices } => CoreError::InvalidLogLinesKept { choices },
+            E::NoRuns => CoreError::NoRuns,
+            E::ExportFailed { path, reason } => CoreError::ExportFailed { path, reason },
+            E::ProcessExited { pid } => CoreError::ProcessExited { pid },
+            E::SignalFailed { pid, reason } => CoreError::SignalFailed { pid, reason },
         }
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn core_errors_keep_their_facts_and_english() {
+        let error = CoreError::from(bunode_core::Error::Save {
+            path: "/x/config.json".into(),
+            source: std::io::Error::other("disk full"),
+        });
+        assert!(matches!(&error, CoreError::Save { path, reason }
+            if path == "/x/config.json" && reason == "disk full"));
+        assert_eq!(error.to_string(), "Couldn't save /x/config.json: disk full");
+        let error = CoreError::from(bunode_core::Error::NameTaken {
+            project: "acme".into(),
+        });
+        assert_eq!(error.to_string(), "Name already used in acme");
     }
 }
 

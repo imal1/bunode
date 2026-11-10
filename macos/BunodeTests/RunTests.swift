@@ -71,7 +71,7 @@ struct FailureTests {
             model.refresh()
         }
         #expect(model.service(service.id)?.status == .failed)
-        #expect(model.service(service.id)?.lastExit?.contains("bunode-no-such-command") == true)
+        #expect(model.service(service.id)?.lastExit == .notInPath(program: "bunode-no-such-command"))
         #expect(model.statusSummary.aggregate == .error)
         #expect(model.statusSummary.accessibilityLabel == "Bunode, 0 running, 1 crashed")
     }

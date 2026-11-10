@@ -208,7 +208,7 @@ private struct ShellEnvironmentRow: View {
             .disabled(environment.isLoading)
         } label: {
             Text("Shell environment")
-            if let problem = environment.problem {
+            if let problem = environment.problem?.message {
                 Text(problem)
                     .foregroundStyle(Color(nsColor: .systemRed))
                     .help(problem)

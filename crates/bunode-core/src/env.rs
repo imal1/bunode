@@ -14,6 +14,8 @@ use nix::sys::signal::{Signal, killpg};
 use nix::unistd::{Pid, Uid, User};
 use tokio::process::Command;
 
+use crate::snapshot::EnvironmentProblem;
+
 /// Printed before `env`, so whatever the shell's startup files print is
 /// not mistaken for variables.
 const MARKER: &str = "__BUNODE_ENVIRONMENT_FOLLOWS__";
@@ -25,7 +27,8 @@ pub async fn capture(
     shell: &Path,
     timeout: Duration,
     spawn_lock: &Mutex<()>,
-) -> Result<Vec<(OsString, OsString)>, String> {
+) -> Result<Vec<(OsString, OsString)>, EnvironmentProblem> {
+    let shell_name = || shell.display().to_string();
     let mut command = Command::new(shell);
     command
         .args(["-l", "-i", "-c"])
@@ -39,22 +42,27 @@ pub async fn capture(
         let _guard = spawn_lock.lock().unwrap_or_else(|e| e.into_inner());
         command.spawn()
     }
-    .map_err(|e| format!("couldn't start {}: {e}", shell.display()))?;
+    .map_err(|e| EnvironmentProblem::ShellFailed {
+        shell: shell_name(),
+        reason: e.to_string(),
+    })?;
     let group = child.id().map(|pid| Pid::from_raw(pid as i32));
 
     match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(Ok(output)) => parse(&output.stdout)
-            .ok_or_else(|| format!("{} printed no environment", shell.display())),
-        Ok(Err(e)) => Err(e.to_string()),
+        Ok(Ok(output)) => parse(&output.stdout).ok_or_else(|| EnvironmentProblem::NoOutput {
+            shell: shell_name(),
+        }),
+        Ok(Err(e)) => Err(EnvironmentProblem::ReadFailed {
+            reason: e.to_string(),
+        }),
         Err(_) => {
             if let Some(group) = group {
                 let _ = killpg(group, Signal::SIGKILL);
             }
-            Err(format!(
-                "{} took longer than {} s",
-                shell.display(),
-                timeout.as_secs()
-            ))
+            Err(EnvironmentProblem::TimedOut {
+                shell: shell_name(),
+                seconds: timeout.as_secs() as u32,
+            })
         }
     }
 }
@@ -232,7 +240,10 @@ mod tests {
         let error = capture(&shell, Duration::from_millis(300), &Mutex::new(()))
             .await
             .unwrap_err();
-        assert!(error.contains("took longer"), "{error}");
+        assert!(
+            matches!(error, EnvironmentProblem::TimedOut { .. }),
+            "{error}"
+        );
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 

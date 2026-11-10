@@ -75,7 +75,7 @@ struct OtherProcessesView: View {
         let alert = NSAlert()
         alert.messageText = String(localized: "Force kill \(name) (PID \(String(process.pid)))?")
         alert.informativeText = String(localized: "Bunode didn’t start this process. It did not exit 5 s after SIGTERM. Force killing it may lose unsaved work.")
-        let details = [process.command, process.cwd?.abbreviatingWithTilde, String(localized: "started from \(process.source)")]
+        let details = [process.command, process.cwd?.abbreviatingWithTilde, String(localized: "started from \(sourceName(process.source))")]
             .compactMap { $0 }
             .joined(separator: " · ")
         let field = NSTextField(wrappingLabelWithString: details)
@@ -147,7 +147,7 @@ private struct ProcessRow: View {
 
     /// `Terminal · PID 48121 · :4321`
     private var subtitle: String {
-        var parts = [process.source, String(localized: "PID \(String(process.pid))")]
+        var parts = [sourceName(process.source), String(localized: "PID \(String(process.pid))")]
         parts += process.ports.map { ":\($0)" }
         return parts.joined(separator: " · ")
     }

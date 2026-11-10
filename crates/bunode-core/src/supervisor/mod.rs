@@ -26,9 +26,10 @@ use crate::logs::{LogBuffer, LogLine, LogStream};
 use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
-    AddProjectOutcome, EnvironmentState, NewService, PortConflictOwner, ProjectScripts,
-    ProjectState, RunEnd, RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState,
-    SettingsState, Snapshot, StartOutcome, Tool, ToolState,
+    AddProjectOutcome, ConfigIssue, EnvironmentProblem, EnvironmentState, NewService,
+    PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus, ScriptGroup,
+    ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome, Tool,
+    ToolState,
 };
 use crate::store::ConfigStore;
 
@@ -119,7 +120,7 @@ pub(crate) struct Shared {
 struct State {
     config: Config,
     detections: HashMap<ProjectId, Detection>,
-    config_issue: Option<String>,
+    config_issue: Option<ConfigIssue>,
     /// The current or last Run of each Service that has had one.
     runs: HashMap<ServiceId, RunEntry>,
     /// The environment new Runs start from.
@@ -140,7 +141,7 @@ struct State {
 struct EnvironmentInfo {
     loaded_at: Option<SystemTime>,
     loading: bool,
-    problem: Option<String>,
+    problem: Option<EnvironmentProblem>,
     tools: Vec<ToolState>,
     /// Counts tool lookups so that a slow, older one (one that read the
     /// settings before a Change…) can't overwrite a newer result.
@@ -154,7 +155,7 @@ struct RunEntry {
     stop_requested: bool,
     /// How to reach the Run's task while it is live.
     control: Option<async_mpsc::UnboundedSender<Control>>,
-    last_exit: Option<String>,
+    last_exit: Option<RunNote>,
     /// The Run's output in memory; kept after it ends, until the next Run.
     logs: Arc<Mutex<LogBuffer>>,
     /// The Run's log file. Kept after the Run ends, so an export can wait
@@ -233,7 +234,7 @@ impl Supervisor {
                 state: Mutex::new(State {
                     config,
                     detections,
-                    config_issue: issue.map(|i| i.message),
+                    config_issue: issue,
                     runs: HashMap::new(),
                     // Until the login shell answers, Runs get Bunode's own.
                     base_env: std::env::vars_os().collect(),
@@ -293,13 +294,16 @@ impl Supervisor {
     /// Discovered Process, if it is still the same process.
     pub fn stop_discovered(&self, pid: u32, start: u64) -> Result<()> {
         if !crate::sys::is_same_process(pid as i32, start) {
-            return Err(Error::Invalid(format!("PID {pid} has already exited.")));
+            return Err(Error::ProcessExited { pid });
         }
         nix::sys::signal::kill(
             nix::unistd::Pid::from_raw(pid as i32),
             nix::sys::signal::Signal::SIGTERM,
         )
-        .map_err(|e| Error::Invalid(format!("Couldn't send SIGTERM to PID {pid}: {e}")))?;
+        .map_err(|e| Error::SignalFailed {
+            pid,
+            reason: e.to_string(),
+        })?;
         self.shared
             .diagnostics
             .log(&format!("Sent SIGTERM to Discovered Process {pid}"));
@@ -390,9 +394,7 @@ impl Supervisor {
                         state.environment.problem = None;
                     }
                     Err(reason) => {
-                        state.environment.problem = Some(format!(
-                            "Couldn't read the environment ({reason}). Runs get Bunode's own."
-                        ));
+                        state.environment.problem = Some(reason);
                     }
                 }
                 state.environment.loaded_at = Some(SystemTime::now());
@@ -409,10 +411,9 @@ impl Supervisor {
         if let Some(path) = path
             && !env::is_executable(path)
         {
-            return Err(Error::Invalid(format!(
-                "{} is not an executable file.",
-                path.display()
-            )));
+            return Err(Error::NotExecutable {
+                path: path.display().to_string(),
+            });
         }
         let path = path.map(Path::to_path_buf);
         self.update_settings(|settings| match tool {
@@ -574,7 +575,7 @@ impl Supervisor {
             .ok_or(Error::UnknownProject)?;
         let command = new.command.trim();
         if command.is_empty() {
-            return Err(Error::Invalid("Enter a command.".into()));
+            return Err(Error::EmptyCommand);
         }
         let folder = validate_folder(&project.path, new.folder.as_deref())?;
         let name = validate_service_name(project, &new.name, folder.as_deref(), None)?;
@@ -611,9 +612,9 @@ impl Supervisor {
     /// started from now on.
     pub fn set_force_stop_after(&self, seconds: u32) -> Result<()> {
         if !FORCE_STOP_CHOICES.contains(&seconds) {
-            return Err(Error::Invalid(format!(
-                "Force stop after must be one of {FORCE_STOP_CHOICES:?} seconds."
-            )));
+            return Err(Error::InvalidForceStopAfter {
+                choices: FORCE_STOP_CHOICES.to_vec(),
+            });
         }
         self.update_settings(|settings| settings.force_stop_after_secs = seconds)
     }
@@ -741,10 +742,9 @@ impl Supervisor {
             .iter()
             .any(|p| p.id != project_id && p.path == path)
         {
-            return Err(Error::Invalid(format!(
-                "{} is already a Project.",
-                path.display()
-            )));
+            return Err(Error::AlreadyAProject {
+                path: path.display().to_string(),
+            });
         }
         let mut config = state.config.clone();
         let project = config
@@ -766,13 +766,13 @@ impl Supervisor {
         let (project, _) = find_service(&state.config, service_id)?;
         let command = edit.command.trim().to_owned();
         if command.is_empty() {
-            return Err(Error::Invalid("Enter a command.".into()));
+            return Err(Error::EmptyCommand);
         }
         if !edit.run_through_shell {
-            launch::parse_command(&command).map_err(Error::Invalid)?;
+            launch::parse_command(&command)?;
         }
         if edit.port == Some(0) {
-            return Err(Error::Invalid("Use a port from 1 to 65535.".into()));
+            return Err(Error::InvalidPort);
         }
         let folder = validate_folder(&project.path, edit.folder.as_deref())?;
         let project_id = project.id;
@@ -877,7 +877,7 @@ impl Supervisor {
                     PortConflictOwner {
                         pid: run.pid.unwrap_or(0),
                         command: name,
-                        source: "Bunode".into(),
+                        source: Some("Bunode".into()),
                         service_id: Some(*id),
                     }
                 })
@@ -994,10 +994,7 @@ impl Supervisor {
     pub fn export_log(&self, service_id: ServiceId, destination: &Path) -> Result<()> {
         let (run_number, file) = {
             let state = self.shared.lock();
-            let run = state
-                .runs
-                .get(&service_id)
-                .ok_or_else(|| Error::Invalid("This Service has no Runs yet.".into()))?;
+            let run = state.runs.get(&service_id).ok_or(Error::NoRuns)?;
             (run.run_number, run.file.clone())
         };
         if let Some(file) = file {
@@ -1007,8 +1004,9 @@ impl Supervisor {
             .log_files
             .export(service_id, run_number, destination)
             .map(|_| ())
-            .map_err(|e| {
-                Error::Invalid(format!("Couldn't export to {}: {e}", destination.display()))
+            .map_err(|e| Error::ExportFailed {
+                path: destination.display().to_string(),
+                reason: e.to_string(),
             })
     }
 
@@ -1030,9 +1028,9 @@ impl Supervisor {
     /// Runs started from now on.
     pub fn set_log_lines_kept(&self, lines: u32) -> Result<()> {
         if !LOG_LINES_CHOICES.contains(&lines) {
-            return Err(Error::Invalid(format!(
-                "Log lines kept must be one of {LOG_LINES_CHOICES:?}."
-            )));
+            return Err(Error::InvalidLogLinesKept {
+                choices: LOG_LINES_CHOICES.to_vec(),
+            });
         }
         self.update_settings(|settings| settings.log_lines_kept = lines)
     }
@@ -1132,8 +1130,8 @@ impl Shared {
 
         let spec = match spec {
             Ok(spec) => spec,
-            Err(message) => {
-                log.system(&message);
+            Err(note) => {
+                log.system(&note.to_string());
                 state.runs.insert(
                     service_id,
                     RunEntry {
@@ -1142,7 +1140,7 @@ impl Shared {
                         pid: None,
                         stop_requested: false,
                         control: None,
-                        last_exit: Some(message),
+                        last_exit: Some(note),
                         logs,
                         file: Some(log.file.clone()),
                         restart_after: false,
@@ -1327,7 +1325,7 @@ impl Shared {
         let line = match (&note, run.quitting) {
             (None, true) => "Stopped because Bunode quit".to_owned(),
             (None, false) => "Stopped".to_owned(),
-            (Some(note), _) => note.clone(),
+            (Some(note), _) => note.to_string(),
         };
         let time = now_ms();
         if let Some(file) = &run.file {
@@ -1477,15 +1475,16 @@ fn validate_folder(project: &Path, folder: Option<&str>) -> Result<Option<PathBu
     let Some(folder) = folder.map(str::trim).filter(|f| !f.is_empty() && *f != ".") else {
         return Ok(None);
     };
-    let outside = || Error::Invalid("Choose the Project's folder or a folder inside it.".into());
+    let outside = || Error::OutsideProject;
     let root = fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
     let candidate = if Path::new(folder).is_absolute() {
         PathBuf::from(folder)
     } else {
         root.join(folder)
     };
-    let resolved = fs::canonicalize(&candidate)
-        .map_err(|_| Error::Invalid(format!("{} doesn't exist.", candidate.display())))?;
+    let resolved = fs::canonicalize(&candidate).map_err(|_| Error::Missing {
+        path: candidate.display().to_string(),
+    })?;
     let relative = resolved.strip_prefix(&root).map_err(|_| outside())?;
     if relative.as_os_str().is_empty() {
         return Ok(None);
@@ -1509,12 +1508,12 @@ fn validate_service_name(
 ) -> Result<String> {
     let name = name.trim();
     if name.is_empty() {
-        return Err(Error::Invalid("Enter a name.".into()));
+        return Err(Error::EmptyName);
     }
     if name.chars().count() > MAX_SERVICE_NAME_LENGTH {
-        return Err(Error::Invalid(format!(
-            "Use at most {MAX_SERVICE_NAME_LENGTH} characters."
-        )));
+        return Err(Error::NameTooLong {
+            max: MAX_SERVICE_NAME_LENGTH as u32,
+        });
     }
     let taken = project.services.iter().any(|s| {
         Some(s.id) != except
@@ -1522,10 +1521,9 @@ fn validate_service_name(
             && s.name.to_lowercase() == name.to_lowercase()
     });
     if taken {
-        return Err(Error::Invalid(format!(
-            "Name already used in {}",
-            project.display_name()
-        )));
+        return Err(Error::NameTaken {
+            project: project.display_name().to_owned(),
+        });
     }
     Ok(name.to_owned())
 }
@@ -2129,6 +2127,9 @@ mod tests {
         let (supervisor, _) = open(data.path());
         let snapshot = supervisor.snapshot();
         assert!(snapshot.projects.is_empty());
-        assert!(snapshot.config_issue.unwrap().contains("couldn't be read"));
+        assert!(matches!(
+            snapshot.config_issue.unwrap().problem,
+            crate::snapshot::ConfigProblem::Unreadable { .. }
+        ));
     }
 }

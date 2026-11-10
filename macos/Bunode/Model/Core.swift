@@ -35,16 +35,6 @@ extension PackageManager {
     }
 }
 
-extension Error {
-    /// The message to show the user. Core errors carry one already.
-    var userMessage: String {
-        if let error = self as? CoreError, case .Failed(let message) = error {
-            return message
-        }
-        return localizedDescription
-    }
-}
-
 extension String {
     /// `/Users/me/code/api` → `~/code/api`.
     var abbreviatingWithTilde: String {

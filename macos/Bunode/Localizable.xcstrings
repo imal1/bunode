@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ couldn't be read (%@). Bunode started with no Projects.": {},
+    "%@ couldn't be read (%@). It was moved to %@ and Bunode started with no Projects.": {},
+    "%@ doesn't exist.": {},
+    "%@ is already a Project.": {},
+    "%@ is missing.": {},
+    "%@ is not a folder.": {},
+    "%@ is not an executable file.": {},
+    "%@ was written by a newer Bunode (format %@). Bunode started with no Projects.": {},
+    "%@ was written by a newer Bunode (format %@). It was moved to %@ and Bunode started with no Projects.": {},
+    "%@ wasn't found in PATH.": {},
     "%lld Services": {
       "extractionState": "manual",
       "localizations": {
@@ -139,6 +149,22 @@
         }
       }
     },
+    "Choose the Project's folder or a folder inside it.": {},
+    "Couldn't export to %@: %@": {},
+    "Couldn't read the environment (%@ printed no environment). Runs get Bunode's own.": {},
+    "Couldn't read the environment (%@ took longer than %@ s). Runs get Bunode's own.": {},
+    "Couldn't read the environment (%@). Runs get Bunode's own.": {},
+    "Couldn't read the environment (couldn't start %@: %@). Runs get Bunode's own.": {},
+    "Couldn't save %@: %@": {},
+    "Couldn't send SIGTERM to PID %@: %@": {},
+    "Couldn't start %@: %@": {},
+    "Couldn't start bunode-runner: %@": {},
+    "Ended by %@": {},
+    "Enter a command.": {},
+    "Enter a name.": {},
+    "Exited": {},
+    "Exited with code %@": {},
+    "Force stop after must be one of %@ seconds.": {},
     "Its %lld Services leave Bunode.": {
       "extractionState": "manual",
       "localizations": {
@@ -162,6 +188,10 @@
         }
       }
     },
+    "Log lines kept must be one of %@.": {},
+    "Lost track of bunode-runner: %@": {},
+    "Name already used in %@": {},
+    "PID %@ has already exited.": {},
     "Stop %lld Services and Quit": {
       "extractionState": "manual",
       "localizations": {
@@ -184,7 +214,17 @@
           }
         }
       }
-    }
+    },
+    "The Run ended for an unknown reason.": {},
+    "The command has an unmatched quote.": {},
+    "The command is empty.": {},
+    "This Project is no longer in Bunode.": {},
+    "This Service has no Runs yet.": {},
+    "This Service is no longer in Bunode.": {},
+    "Unknown": {},
+    "Use a port from 1 to 65535.": {},
+    "Use at most %lld characters.": {},
+    "bunode-runner exited unexpectedly (%@).": {}
   },
   "version": "1.0"
 }

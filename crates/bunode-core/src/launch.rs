@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::model::{Project, Service, Settings};
+use crate::snapshot::RunNote;
 
 /// Everything needed to start one Run.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,14 +18,13 @@ pub struct LaunchSpec {
 }
 
 /// Builds the launch spec of `service`. `base_env` is the environment Runs
-/// start from. Fails with a message for the user when the command can't be
-/// run.
+/// start from. Fails when the command can't be run.
 pub fn launch_spec(
     project: &Project,
     service: &Service,
     settings: &Settings,
     base_env: &[(OsString, OsString)],
-) -> Result<LaunchSpec, String> {
+) -> Result<LaunchSpec, RunNote> {
     let mut env: Vec<(OsString, OsString)> = base_env
         .iter()
         // Injected libraries of a debugged Bunode must not leak into Runs.
@@ -63,7 +63,11 @@ pub fn launch_spec(
             .unwrap_or_else(|| "/bin/zsh".into());
         (shell, vec!["-c".to_owned(), service.command.clone()])
     } else {
-        let mut words = parse_command(&service.command)?;
+        let mut words = parse_command(&service.command).map_err(|e| match e {
+            crate::Error::UnmatchedQuote => RunNote::UnmatchedQuote,
+            crate::Error::EmptyCommand => RunNote::EmptyCommand,
+            other => unreachable!("parse_command doesn't return {other:?}"),
+        })?;
         let program = words.remove(0);
         (program, words)
     };
@@ -84,11 +88,10 @@ pub fn launch_spec(
 
 /// Splits a command into the executable and its arguments, with shell-like
 /// quoting but no shell features (pipes, `&&`, globs, variables).
-pub fn parse_command(command: &str) -> Result<Vec<String>, String> {
-    let words = shell_words::split(command)
-        .map_err(|_| "The command has an unmatched quote.".to_owned())?;
+pub fn parse_command(command: &str) -> crate::Result<Vec<String>> {
+    let words = shell_words::split(command).map_err(|_| crate::Error::UnmatchedQuote)?;
     if words.is_empty() {
-        return Err("The command is empty.".into());
+        return Err(crate::Error::EmptyCommand);
     }
     Ok(words)
 }
@@ -175,8 +178,14 @@ mod tests {
     #[test]
     fn rejects_unparsable_commands() {
         let settings = Settings::default();
-        assert!(launch_spec(&project(), &service("node 'oops"), &settings, &[]).is_err());
-        assert!(launch_spec(&project(), &service("   "), &settings, &[]).is_err());
+        assert_eq!(
+            launch_spec(&project(), &service("node 'oops"), &settings, &[]),
+            Err(RunNote::UnmatchedQuote)
+        );
+        assert_eq!(
+            launch_spec(&project(), &service("   "), &settings, &[]),
+            Err(RunNote::EmptyCommand)
+        );
     }
 
     #[test]

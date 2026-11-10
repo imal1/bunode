@@ -10,7 +10,7 @@ pub struct Snapshot {
     pub settings: SettingsState,
     pub environment: EnvironmentState,
     /// Set when the saved configuration could not be read at launch.
-    pub config_issue: Option<String>,
+    pub config_issue: Option<ConfigIssue>,
     /// Node and Bun processes Bunode did not start, oldest first.
     pub discovered: Vec<crate::discovery::DiscoveredProcess>,
 }
@@ -26,9 +26,78 @@ pub struct EnvironmentState {
     pub is_loading: bool,
     /// Why the shell's environment could not be read; Runs then get
     /// Bunode's own environment.
-    pub problem: Option<String>,
+    pub problem: Option<EnvironmentProblem>,
     /// Node.js, then Bun.
     pub tools: Vec<ToolState>,
+}
+
+/// Why the saved configuration could not be used. Bunode then starts with
+/// an empty configuration and keeps the unreadable file next to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigIssue {
+    /// The configuration file.
+    pub path: String,
+    /// Where the unreadable file was moved; `None` if it couldn't be.
+    pub backup: Option<String>,
+    pub problem: ConfigProblem,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigProblem {
+    /// It couldn't be read or parsed; `detail` is the system's or the
+    /// parser's English message.
+    Unreadable { detail: String },
+    /// A newer Bunode wrote it, in this format version.
+    NewerFormat { version: u32 },
+}
+
+/// Why the login shell's environment couldn't be read.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EnvironmentProblem {
+    #[error("couldn't start {shell}: {reason}")]
+    ShellFailed { shell: String, reason: String },
+    #[error("{shell} printed no environment")]
+    NoOutput { shell: String },
+    #[error("{shell} took longer than {seconds} s")]
+    TimedOut { shell: String, seconds: u32 },
+    #[error("{reason}")]
+    ReadFailed { reason: String },
+}
+
+/// How a Run ended or why it couldn't start. The app words it; `Display`
+/// is the English line written into the Run's log.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RunNote {
+    #[error("Exited")]
+    Exited,
+    #[error("Exited with code {code}")]
+    ExitedWithCode { code: i32 },
+    /// `signal` is its name, such as "SIGKILL".
+    #[error("Ended by {signal}")]
+    EndedBySignal { signal: String },
+    #[error("The command has an unmatched quote.")]
+    UnmatchedQuote,
+    #[error("The command is empty.")]
+    EmptyCommand,
+    /// The Run's folder is gone.
+    #[error("{path} is missing.")]
+    FolderMissing { path: String },
+    /// A bare program name that no `PATH` folder has.
+    #[error("{program} wasn't found in PATH.")]
+    NotInPath { program: String },
+    /// A program given by path that doesn't exist.
+    #[error("{program} doesn't exist.")]
+    ProgramMissing { program: String },
+    #[error("Couldn't start {program}: {reason}")]
+    CouldNotStart { program: String, reason: String },
+    #[error("Couldn't start bunode-runner: {reason}")]
+    RunnerFailed { reason: String },
+    #[error("bunode-runner exited unexpectedly ({status}).")]
+    RunnerExited { status: String },
+    #[error("Lost track of bunode-runner: {reason}")]
+    RunnerLost { reason: String },
+    #[error("The Run ended for an unknown reason.")]
+    UnknownEnd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,9 +169,8 @@ pub struct ServiceState {
     pub run_number: Option<u64>,
     /// The Run's command process, which leads its process group.
     pub pid: Option<u32>,
-    /// How the last Run ended, for Crashed and Failed:
-    /// "Exited with code 1", "Couldn't start …".
-    pub last_exit: Option<String>,
+    /// How the last Run ended, for Crashed and Failed.
+    pub last_exit: Option<RunNote>,
     /// The log of the current or last Run: `seq` of the first line shown,
     /// how many are shown, and how many were dropped (`LogInfo`).
     pub log_first: u64,
@@ -185,7 +253,8 @@ pub enum StartOutcome {
 pub struct PortConflictOwner {
     pub pid: u32,
     pub command: String,
-    pub source: String,
+    /// The app it was started from; `None` when unknown.
+    pub source: Option<String>,
     /// The owner is another of Bunode's Services.
     pub service_id: Option<u64>,
 }

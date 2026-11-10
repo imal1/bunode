@@ -12,7 +12,7 @@ struct ProjectsPane: View {
         Form {
             if let issue = model.snapshot.configIssue {
                 Section {
-                    Label(issue, systemImage: "exclamationmark.triangle.fill")
+                    Label(issue.message, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .symbolRenderingMode(.multicolor)
                 }

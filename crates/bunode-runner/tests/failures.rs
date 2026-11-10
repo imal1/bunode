@@ -5,7 +5,7 @@ mod support;
 
 use std::time::Duration;
 
-use bunode_core::RunStatus;
+use bunode_core::{RunNote, RunStatus};
 use support::*;
 
 #[test]
@@ -14,8 +14,12 @@ fn a_command_that_does_not_exist_fails() {
     let id = h.service("crash", "bunode-no-such-command --flag");
     h.supervisor.start(id).unwrap();
     let failed = h.wait(id, "Failed", |s| s.status == RunStatus::Failed);
-    let note = failed.last_exit.unwrap();
-    assert!(note.contains("bunode-no-such-command"), "{note}");
+    assert_eq!(
+        failed.last_exit,
+        Some(RunNote::NotInPath {
+            program: "bunode-no-such-command".into()
+        })
+    );
     assert_eq!(failed.pid, None);
 }
 
@@ -25,10 +29,7 @@ fn an_unparsable_command_fails() {
     let id = h.service("crash", "node 'unclosed");
     h.supervisor.start(id).unwrap();
     let failed = h.wait(id, "Failed", |s| s.status == RunStatus::Failed);
-    assert_eq!(
-        failed.last_exit.as_deref(),
-        Some("The command has an unmatched quote.")
-    );
+    assert_eq!(failed.last_exit, Some(RunNote::UnmatchedQuote));
 }
 
 #[test]
@@ -38,7 +39,7 @@ fn exiting_with_an_error_at_once_is_a_crash() {
     let id = h.service("crash", "node immediately.js");
     h.supervisor.start(id).unwrap();
     let crashed = h.wait(id, "Crashed", |s| s.status == RunStatus::Crashed);
-    assert_eq!(crashed.last_exit.as_deref(), Some("Exited with code 1"));
+    assert_eq!(crashed.last_exit, Some(RunNote::ExitedWithCode { code: 1 }));
 }
 
 #[test]
@@ -49,7 +50,10 @@ fn crashing_while_running_is_a_crash() {
     h.supervisor.start(id).unwrap();
     h.wait(id, "Running", |s| s.status == RunStatus::Running);
     let crashed = h.wait(id, "Crashed", |s| s.status == RunStatus::Crashed);
-    assert!(crashed.last_exit.unwrap().starts_with("Exited with code"));
+    assert!(matches!(
+        crashed.last_exit,
+        Some(RunNote::ExitedWithCode { .. })
+    ));
 }
 
 #[test]

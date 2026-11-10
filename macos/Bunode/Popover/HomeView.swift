@@ -353,7 +353,7 @@ struct ServiceRow: View {
     private var tooltip: String {
         var lines = [service.command, project.runPath(folder: service.folder).abbreviatingWithTilde]
         if status.dotStyle == .failed, let lastExit = service.lastExit {
-            lines.append(lastExit)
+            lines.append(lastExit.message)
         }
         return lines.joined(separator: "\n")
     }
@@ -500,7 +500,7 @@ struct RowNoticeView: View {
         guard let owner else {
             return String(localized: "Port \(String(port)) is used by another program. Bunode won’t stop it.")
         }
-        return String(localized: "Port \(String(port)) is used by “\(owner.command)” from \(owner.source). Bunode won’t stop it.")
+        return String(localized: "Port \(String(port)) is used by “\(owner.command)” from \(sourceName(owner.source)). Bunode won’t stop it.")
     }
 
     private func locate(_ project: ProjectState) {

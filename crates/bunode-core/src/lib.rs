@@ -29,9 +29,10 @@ pub use error::{Error, Result};
 pub use logs::{LogLine, LogStream};
 pub use model::PackageManager;
 pub use snapshot::{
-    AddProjectOutcome, EnvironmentState, NewService, PortConflictOwner, ProjectScripts,
-    ProjectState, RunEnd, RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState,
-    SettingsState, Snapshot, StartOutcome, Tool, ToolState,
+    AddProjectOutcome, ConfigIssue, ConfigProblem, EnvironmentProblem, EnvironmentState,
+    NewService, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus,
+    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome,
+    Tool, ToolState,
 };
 pub use supervisor::{
     FORCE_STOP_CHOICES, LOG_LINES_CHOICES, Listener, Supervisor, SupervisorOptions,

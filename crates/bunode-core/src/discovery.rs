@@ -19,7 +19,8 @@ pub struct DiscoveredProcess {
     pub command: String,
     pub cwd: Option<String>,
     /// Where it was started from: "Terminal", "VS Code", "tmux"…
-    pub source: String,
+    /// The app it was started from; `None` when unknown.
+    pub source: Option<String>,
     /// Every process of the tree, the top one first, and their start
     /// times, so a force kill can check each one is still the same.
     pub members: Vec<u32>,
@@ -86,8 +87,9 @@ pub fn display_command(args: &[String]) -> String {
         .join(" ")
 }
 
-/// The app a process tree was started from, by its ancestors' names.
-pub fn source_of(ancestors: &[&ProcessInfo]) -> String {
+/// The app a process tree was started from, by its ancestors' names;
+/// `None` when only shells started it.
+pub fn source_of(ancestors: &[&ProcessInfo]) -> Option<String> {
     const SHELLS: &[&str] = &[
         "zsh", "bash", "sh", "fish", "login", "dash", "nu", "-zsh", "-bash",
     ];
@@ -116,11 +118,11 @@ pub fn source_of(ancestors: &[&ProcessInfo]) -> String {
             continue;
         }
         if let Some((_, label)) = KNOWN.iter().find(|(key, _)| name.contains(key)) {
-            return (*label).to_owned();
+            return Some((*label).to_owned());
         }
-        return ancestor.name.clone();
+        return Some(ancestor.name.clone());
     }
-    "Unknown".into()
+    None
 }
 
 /// What stays the same while a process lives, so it is read once.
@@ -272,7 +274,8 @@ pub struct PortOwner {
     /// "astro dev"
     pub command: String,
     /// "Terminal"
-    pub source: String,
+    /// The app it was started from; `None` when unknown.
+    pub source: Option<String>,
 }
 
 /// The user's process listening on TCP `port`, if any. Reads every process
@@ -433,11 +436,18 @@ mod tests {
         let terminal = info(9, "Terminal");
         let tmux = info(8, "tmux");
         let code = info(7, "Code Helper (Plugin)");
-        assert_eq!(source_of(&[&zsh, &terminal]), "Terminal");
-        assert_eq!(source_of(&[&zsh, &tmux, &terminal]), "tmux");
-        assert_eq!(source_of(&[&code]), "VS Code");
-        assert_eq!(source_of(&[&zsh, &info(1, "launchd")]), "launchd");
-        assert_eq!(source_of(&[&zsh]), "Unknown");
-        assert_eq!(source_of(&[&info(3, "my-runner")]), "my-runner");
+        let source = |a: &[&ProcessInfo]| source_of(a);
+        assert_eq!(source(&[&zsh, &terminal]).as_deref(), Some("Terminal"));
+        assert_eq!(source(&[&zsh, &tmux, &terminal]).as_deref(), Some("tmux"));
+        assert_eq!(source(&[&code]).as_deref(), Some("VS Code"));
+        assert_eq!(
+            source(&[&zsh, &info(1, "launchd")]).as_deref(),
+            Some("launchd")
+        );
+        assert_eq!(source(&[&zsh]), None);
+        assert_eq!(
+            source(&[&info(3, "my-runner")]).as_deref(),
+            Some("my-runner")
+        );
     }
 }
