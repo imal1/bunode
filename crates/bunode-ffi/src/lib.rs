@@ -83,6 +83,7 @@ pub struct ToolState {
 pub struct ProjectState {
     pub id: u64,
     pub name: String,
+    pub folder_name: String,
     pub path: String,
     pub package_manager: PackageManager,
     pub detected_package_manager: PackageManager,
@@ -320,6 +321,11 @@ impl BunodeCore {
         manager: Option<PackageManager>,
     ) -> Result<(), CoreError> {
         Ok(self.supervisor.set_package_manager(project_id, manager)?)
+    }
+
+    /// Settings › Projects: the short name for a Project; blank clears it.
+    pub fn set_project_alias(&self, project_id: u64, alias: String) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_project_alias(project_id, &alias)?)
     }
 
     /// Removes a Project, stopping its Runs first. Returns at once.

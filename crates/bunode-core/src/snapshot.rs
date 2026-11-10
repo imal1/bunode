@@ -60,7 +60,9 @@ pub struct ToolState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProjectState {
     pub id: u64,
+    /// What Bunode calls it: the alias, or else the folder's name.
     pub name: String,
+    pub folder_name: String,
     pub path: String,
     /// The package manager in effect: the user's pick, else the detected one.
     pub package_manager: PackageManager,

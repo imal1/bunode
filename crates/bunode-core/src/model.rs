@@ -35,13 +35,24 @@ impl PackageManager {
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     pub id: ProjectId,
+    /// The folder's name, given when the Project was added.
     pub name: String,
+    /// The short name the user gave it in Settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
     pub path: PathBuf,
     /// The package manager the user picked. `None` means detect it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_manager: Option<PackageManager>,
     #[serde(default)]
     pub services: Vec<Service>,
+}
+
+impl Project {
+    /// What Bunode calls it: the alias, or else the folder's name.
+    pub fn display_name(&self) -> &str {
+        self.alias.as_deref().unwrap_or(&self.name)
+    }
 }
 
 /// A named run configuration of a Project: the unit the user starts and stops.

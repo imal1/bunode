@@ -96,7 +96,7 @@ struct PopoverView: View {
                 .controlSize(.small)
             }
             .padding(10)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 9))
+            .background(.quinary, in: RoundedRectangle(cornerRadius: 9))
             .padding(EdgeInsets(top: 2, leading: 2, bottom: 4, trailing: 2))
             .onAppear {
                 NSAccessibility.post(

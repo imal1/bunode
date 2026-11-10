@@ -159,7 +159,7 @@ struct Card<Content: View>: View {
                 }
             }
         }
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+        .background(.quinary, in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 2)
     }
 }

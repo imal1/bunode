@@ -100,14 +100,14 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 │  Bunode ●                      Add Service │  顶栏: padding 4/8/8/10
 │  2 running · 6 Services                    │
 │ ─────────────────────────────────────────  │
-│ [▣] dev  :3000                          ›  │  Service 行: 高 46
-│     api · Running                          │
+│ [▣] api dev  :3000                      ›  │  Service 行: 高 46
+│     ~/code/api · Running                   │
 │ [▣] bun run worker                      ›  │
-│     api                                    │
+│     ~/code/api                             │
 │ [◌] pnpm --filter web dev               ›  │
-│     acme · Starting…                       │
-│ [!] dev                                 ›  │
-│     mcp-notes · Crashed                    │
+│     ~/code/acme · Starting…                │
+│ [!] mcp-notes dev                       ›  │
+│     ~/code/mcp-notes · Crashed             │
 │ ─────────────────────────────────────────  │
 │ [⌕] Other processes                     ›  │  固定，高 46
 │     3 started outside Bunode               │
@@ -134,26 +134,26 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 ```
 |8|  32  |10|          238（弹性）          |6|  28  |6|
     tile     line 1: command  [:3000]          tail
-             line 2: project · Status
+             line 2: path · Status
 ```
 
 - **主按钮**（`flex:1`，宽 294，高 46，padding 0/6/0/8，间距 10）：色块 → 文字列。主按钮和行尾区是两个独立点击目标。
 - **色块** 32×32，圆角 9，配色和图标见 §5.1。
-- **第一行**：13 pt medium，单行尾部省略，`label`。包管理器跑常用脚本时只写脚本名，其余整条显示，tooltip 始终是完整命令（2026-11-09 定）：
+- **第一行**：13 pt medium，单行尾部省略，`label`。包管理器跑常用脚本时写 `{Project 名} {脚本名}`，其余整条显示、不带 Project 名，tooltip 始终是完整命令（2026-11-09 定）：Project 名是用户起的别名，没有别名时是文件夹名。常用脚本的判定：
 
   `/^(bun|npm|pnpm|yarn)(\s+run)?\s+((dev|start|serve|preview|build|test|lint)([:-]\S+)?)$/`
 
   常用脚本分三类：服务 `dev` `start` `serve` `preview`，构建 `build`，检查 `test` `lint`，带 `:` 或 `-` 后缀的算同类（`build:web`）。其他脚本名、带参数的命令（`bun run dev --port 3000`）和 `pnpm --filter` 没有预设，整条显示。
 
 - **端口胶囊**：距命令 6，高 16，padding 0/5，圆角 4，`tag-bg`，10.5 pt 等宽数字，`label-secondary`（#48484A）。只在 Run 存活且有端口时显示（待拍板，§11）。多端口保留 `+N`，tooltip 列全部端口。胶囊不压缩，命令先省略。
-- **第二行**：11.5 pt `label-secondary`，`{project}` 接 ` · {状态}`。Stopped 不显示状态词，短时 Service 的 Done 要显示（§5.1）。有 `folder` 时写 `{project} › {folder}`（待拍板，§11）。
+- **第二行**：11.5 pt `label-secondary`，`{path}` 接 ` · {状态}`。`{path}` 是 Service 运行的目录（Project 路径，有 `folder` 时含子目录），`~` 缩写。Stopped 不显示状态词，短时 Service 的 Done 要显示（§5.1）。
 - **行尾** 28×28：`rest` 箭头（10 pt，stroke 2.2，`label-tertiary`）和启停按钮（28×28，圆角 7，图标 10 pt，悬停黑 8%）叠放，用 opacity 切换，避免行宽跳动。
 - **端口冲突条**挂在该行下方：外边距 2/8/6/50，左缘 50 对齐文字列（`row-text-inset`），让人看出它属于上面那行。padding 8/10，圆角 8，见 §5.3。
 - 列表顺序：Project 登记顺序 + Service 创建顺序，同 Project 相邻。
 
 **Service 视图**（点 Service 行进入）
 
-- 顶栏（padding 0/2/8/0，间距 6）：Back 图标按钮 28×28 → 标题块（命令，短写规则同 Service 行第一行，mono 12.5 semibold，单行省略；副标题 11 pt，间距 5：Project、6 pt 状态点、状态词、运行时 `:port` 链接）→ `Stop`（次要按钮）或 `Start`（主按钮）。画布去掉了副标题的 `Run #N`，只留在 Logs 视图。
+- 顶栏（padding 0/2/8/0，间距 6）：Back 图标按钮 28×28 → 标题块（命令，规则同 Service 行第一行，mono 12.5 semibold，单行省略；副标题 11 pt，间距 5：`{path}`、6 pt 状态点、状态词、运行时 `:port` 链接）→ `Stop`（次要按钮）或 `Start`（主按钮）。画布去掉了副标题的 `Run #N`，只留在 Logs 视图。
 - 端口冲突提示（如有，外边距 0/2/10，见 §5.3）。
 - 可滚动内容，三张卡片（卡片：左右外边距 2，下 10，圆角 10，背景 `card-bg`；卡片内行：最小高 38，padding 4/12，间距 10，行间 1 pt `separator`）：
   1. `Command`（输入框 180 宽 mono）· `Folder`（路径 11 pt mono 省略 + `Change…`）· `Port`（副标题 `Checked before each start`，输入框 64 宽右对齐，placeholder `none`）
@@ -165,10 +165,10 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 **Add Service 视图**（点顶栏 `Add Service`）
 
 - 顶栏：Back + `New Service`（semibold）/ 副标题 `Runs from ~/code/acme`（路径 mono，11 pt）。
-- 卡片 1（padding 10/12）：`Project`（11 pt）+ Project 胶囊（高 24，左右 9，圆角 12，12 pt，选中 `accent` 底白字，未选白底）；`Scripts in package.json`（11 pt）+ 脚本胶囊（同尺寸，11 pt mono，flex-wrap 间距 6）。
+- 卡片 1（padding 10/12）：`Project`（11 pt）+ Project 胶囊（高 24，左右 9，圆角 12，12 pt，选中 `accent` 底白字，未选 `Color.primary.opacity(0.08)`，不用白底）；`Scripts in package.json`（11 pt）+ 脚本胶囊（同尺寸，11 pt mono，flex-wrap 间距 6）。只列推荐短语 `dev` `start` `serve` `preview` `build` `test` `lint`；`lint:fix`、`start:w` 这类变体和其他脚本不列，手填即可（2026-11-09 定）。一个都没有时这一段不显示。
 - 卡片 2：`Command`（输入框 200 宽 mono，placeholder `bun run dev`）。
 - 底部右对齐，间距 6：`Cancel`（次要）· `Add`（主按钮，命令 trim 后为空时 disabled，opacity .4）。
-- 默认：第一个 Project，它第一个未使用的脚本，命令按 §5.2 生成。新 Service 默认无 Port、`Run through shell` 关、`Restart if it crashes` 取 General 默认（C3）。
+- 默认：第一个 Project，它第一个未使用的推荐脚本，命令按 §5.2 生成。新 Service 默认无 Port、`Run through shell` 关、`Restart if it crashes` 取 General 默认（C3）。
 - Service 名不再手填：取脚本名，手填命令时取最后一个词。冲突处理见 §6.2。
 
 **Logs 视图**（Service 视图里点 Logs）
@@ -217,6 +217,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 **Projects**
 
 - 一张卡片，每行：名字（13 pt）+ 副标题 `~/code/api · Bun · 2 Services`（路径 mono）+ `Remove…`。
+- 名字默认是文件夹名。点击变成输入框（`.roundedBorder`，`.controlSize(.small)`，最宽 220），可填别名，占位符是文件夹名；回车或失焦保存，Esc 放弃，留空回到文件夹名。别名替换所有显示 Project 名的地方。
 - 包管理器（C6，待拍板，§11）：默认只在检测到多个锁文件时显示弹出菜单（`Auto (Bun)` / `npm` / `pnpm` / `yarn` / `Bun`，`.controlSize(.small)`）和 `exclamationmark.triangle`（`systemOrange`）图标，tooltip / VoiceOver：`Several lockfiles found. Pick a package manager.`。改包管理器只影响之后新建的 Service 生成的命令和下一次 Run。
 - 卡片下方：左侧说明 `Services are added and set up from the menu bar.`（11 pt）+ 右侧 `Add Project…`（打开 `NSOpenPanel`，只能选文件夹）。
 - 空态：卡片内居中 `No Projects yet.`。
@@ -276,7 +277,7 @@ Bunode 常驻菜单栏。用户点菜单栏图标打开 Popover，一眼看到�
 | `separator` | `rgba(0,0,0,.07–.08)` | `separatorColor` | 行分隔、Popover 分隔线 |
 | `fill-hover` | `rgba(0,0,0,.05)` | `Color.primary.opacity(0.07)` | 行和按钮悬停、Service 行键盘选中 |
 | `fill-subtle` | `rgba(0,0,0,.05–.06)` | `.quinary` / `controlBackgroundColor` | 搜索框、次要按钮底 |
-| `card-bg` | `rgba(255,255,255,.75)` | `.background.secondary` | Popover 卡片 |
+| `card-bg` | `rgba(0,0,0,.05)` | `.quinary` | Popover 卡片，半透明，不用白底（2026-11-09 定） |
 | `tag-bg` | `rgba(0,0,0,.06)` | `.quinary` | 端口胶囊 |
 | `tile-stopped-bg` / `-fg` | `rgba(0,0,0,.07)` / `#6C6C70` | `.quaternary` / `.secondary` | Stopped 色块 |
 | `tile-running-bg` / `-fg` | `#DDF5E3` / `#1B7F3A` | Asset Color（含深色） | Running 色块 |
@@ -381,13 +382,13 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 
 | 状态 | 色块（bg / fg / 图标） | 第二行 | 端口胶囊 | 悬停行尾 | Service 视图顶栏 | Logs 顶栏 |
 |---|---|---|---|---|---|---|
-| Stopped | `tile-stopped` / 终端提示符 16 pt | `{project}` | 无 | Start | `Stopped` + `Start` | `Start` |
-| Starting | `tile-busy` / spinner 14 pt | `{project} · Starting…` | 无 | 无，箭头保留 | `Starting…`，无按钮 | 无按钮 |
-| Running | `tile-running` / 终端提示符 16 pt | `{project} · Running` | 有端口时显示 | Stop | `Running` + `:port` 链接 + `Stop` | `Restart` |
-| Stopping / Restarting | `tile-busy` / spinner | `{project} · Stopping…` / `Restarting…` | 无 | 无，箭头保留 | `Stopping…` / `Restarting…` | 无按钮 |
-| Crashed | `tile-error` / 感叹号 15 pt | `{project} · Crashed`（`status-error-text`） | 无 | Start | `Crashed` + `Start` | `Start` |
-| Failed | `tile-error` / 感叹号 15 pt | `{project} · Failed`（`status-error-text`）〔设计未画〕 | 无 | Start | `Failed` + `Start` | `Start` |
-| Not responding | `tile-busy` / spinner | `{project} · Not responding`（`status-error-text`）〔设计未画〕 | 无 | Stop，再点触发 Force Kill | `Not responding` + `Stop` | 无按钮 |
+| Stopped | `tile-stopped` / 终端提示符 16 pt | `{path}` | 无 | Start | `Stopped` + `Start` | `Start` |
+| Starting | `tile-busy` / spinner 14 pt | `{path} · Starting…` | 无 | 无，箭头保留 | `Starting…`，无按钮 | 无按钮 |
+| Running | `tile-running` / 终端提示符 16 pt | `{path} · Running` | 有端口时显示 | Stop | `Running` + `:port` 链接 + `Stop` | `Restart` |
+| Stopping / Restarting | `tile-busy` / spinner | `{path} · Stopping…` / `Restarting…` | 无 | 无，箭头保留 | `Stopping…` / `Restarting…` | 无按钮 |
+| Crashed | `tile-error` / 感叹号 15 pt | `{path} · Crashed`（`status-error-text`） | 无 | Start | `Crashed` + `Start` | `Start` |
+| Failed | `tile-error` / 感叹号 15 pt | `{path} · Failed`（`status-error-text`）〔设计未画〕 | 无 | Start | `Failed` + `Start` | `Start` |
+| Not responding | `tile-busy` / spinner | `{path} · Not responding`（`status-error-text`）〔设计未画〕 | 无 | Stop，再点触发 Force Kill | `Not responding` + `Stop` | 无按钮 |
 
 图标路径（16 viewBox）：提示符 `M3.5 4.5 7 8l-3.5 3.5M8.5 12h4.5`（stroke 1.7）；spinner `M8 2a6 6 0 1 0 6 6`（stroke 2）；感叹号 `M8 3v6`（stroke 2）+ circle cx8 cy12.5 r1.2；Stop rect x3 y3 10×10 rx2；Start `M4 2.5v11l9.5-5.5z`。
 
@@ -397,10 +398,10 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 
 | 状态 | 色块（bg / fg / 图标） | 第二行 | Service 视图顶栏 |
 |---|---|---|---|
-| Stopped（还没跑过，或被 Stop） | `tile-stopped` / SF `hammer` 13 pt | `{project}` | `Stopped` + `Run` |
-| Running | `tile-busy` / spinner | `{project} · Running…`，无端口胶囊 | `Running…` + `Stop` |
-| Stopped（自己以 0 退出） | `tile-running` / SF `checkmark` 12 pt | `{project} · Done` | `Done` + `Run` |
-| Crashed | `tile-error` / 感叹号 15 pt | `{project} · Failed`（`status-error-text`） | `Failed` + `Run` |
+| Stopped（还没跑过，或被 Stop） | `tile-stopped` / SF `hammer` 13 pt | `{path}` | `Stopped` + `Run` |
+| Running | `tile-busy` / spinner | `{path} · Running…`，无端口胶囊 | `Running…` + `Stop` |
+| Stopped（自己以 0 退出） | `tile-running` / SF `checkmark` 12 pt | `{path} · Done` | `Done` + `Run` |
+| Crashed | `tile-error` / 感叹号 15 pt | `{path} · Failed`（`status-error-text`） | `Failed` + `Run` |
 
 上表其余状态不变。所有 `Start`（行尾、右键、Service 视图、Logs）都写 `Run`。短时 Service 不计入 running 数量；失败仍计入崩溃数，菜单栏点变红。
 
@@ -478,7 +479,7 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 | 开关 | 立即生效并持久化；150 ms 过渡 |
 | `Remove…`（Project） | 弹 §2.4 alert（画布是窗口内 sheet：340 宽、距顶 120、背景遮罩 `rgba(0,0,0,.16)` —— 用系统 sheet 即可）。无 Run 时按钮 `Remove`，有 Run 时 `Stop N and Remove` |
 | Remove 确认后 | 先停 Run，再删登记 → Toast `Removed api. Files untouched.` |
-| `Add Project…` | `NSOpenPanel` 选文件夹 → 识别包管理器 → 加入列表 → Toast `Added ~/code/invoice-bot (Bun). Add its Services from the menu bar.`；已登记 → Toast `invoice-bot is already added` |
+| `Add Project…` | `NSOpenPanel` 选文件夹 → 识别包管理器 → 加入列表，新行的名字直接进入输入状态 → Toast `Added ~/code/invoice-bot (Bun). Add its Services from the menu bar.`；已登记 → Toast `invoice-bot is already added` |
 | `Source code` | 浏览器打开 `https://github.com/imal1/bunode` |
 
 ---
@@ -490,7 +491,7 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 | 文本 | 规则 |
 |---|---|
 | 行第一行（命令） | 单行尾部省略，tooltip 显示完整命令。端口胶囊优先保留 |
-| 行第二行 | 单行尾部省略。状态词不被挤掉，Project 名先省略 |
+| 行第二行 | 单行中间省略。状态词不被挤掉，路径先省略 |
 | Service 视图标题 / Logs 标题 | 单行尾部省略。全名放进 tooltip（`.help`）与 VoiceOver |
 | 路径（Folder、Projects 行、Node/Bun 路径） | 单行，**中间省略**（`truncationMode(.middle)`），保留末段目录名 —— 画布是尾部省略，换成中间更有用 |
 | 外部进程命令 | 单行尾部省略，tooltip 显示完整命令 |
@@ -539,11 +540,11 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 ## 7. 边界情况
 
 - **30+ Service**：列表滚动；Popover 不超过屏幕高。打开时总在顶部，不自动滚到崩溃的行；Crashed / Failed 行不置顶，顺序不变。崩溃的提醒靠菜单栏图标红点和 `Notify on crash` 通知。
-- **长命令 / monorepo**：`pnpm --filter storybook-docs-preview dev` 这类命令在 238 pt 文字列下必然截断，tooltip 必须有。同一 Project 下相同命令在不同子目录时，第二行写 `{project} › {folder}` 区分〔设计未画，待拍板，§11〕。
+- **长命令 / monorepo**：`pnpm --filter storybook-docs-preview dev` 这类命令在 238 pt 文字列下必然截断，tooltip 必须有。同一 Project 下相同命令在不同子目录时，靠第二行的完整路径区分。
 - **国际化**：首版英文，预留简体中文（需求 §2.1）。第二行的状态词和按钮是最容易超长的位置。帮助文字截断可接受，但按钮文案（`Stop 2 Services and Quit`）不可截断——允许按钮变宽，alert 按钮纵向堆叠本来就容纳得下。所有带数量的文案用 String Catalog 复数规则，不要字符串拼接。
 - **高频日志**：日志区只追加，不全量刷新；用户向上滚动离开底部时暂停自动滚动，回到底部恢复（隐式自动滚动开关，C4）。丢弃行时在底栏计数后显示 ` · 1,204 dropped`。
 - **崩溃循环**：60 s 内崩 3 次后暂停自动重启，日志写系统行 `Crashed 3 times in 60 s. Auto restart paused.`，行显示 Crashed，按钮 Start。
-- **Project 目录被移动 / 删除**（需求 §8.1-16）〔设计未画〕：第二行 `{project} · Folder missing`（`status-error-text`），Start 时 warning 条 `~/code/api is missing.` + `Locate…`。标题行消失后，原来的警告图标需要这个新位置。
+- **Project 目录被移动 / 删除**（需求 §8.1-16）〔设计未画〕：第二行 `{path} · Folder missing`（`status-error-text`），Start 时 warning 条 `~/code/api is missing.` + `Locate…`。标题行消失后，原来的警告图标需要这个新位置。
 - **node / bun 不存在**（需求 §8.1-15）：Run 进入 Failed，日志系统行写明找不到哪个可执行文件，Advanced 的对应行帮助文字变红 `Not found`。
 - **外部进程在冲突条显示期间退出**：冲突条自动消失（现有逻辑每秒轮询）。
 - **Supervisor 断连**（需求 §5.3）〔设计未画〕：Popover 顶部 warning 条 `Lost connection to the Supervisor.` + `Resync`；所有启停按钮 disabled。
@@ -650,7 +651,7 @@ Settings
   "Show running count" · "Next to the menu bar icon."
   "Restart Services that crash" · "Up to 3 times a minute, then it waits for you."
   "Notify on crash" · "One notification per crash."
-  "Remove…" · "Auto (%@)" · "Several lockfiles found. Pick a package manager." · "No Projects yet." · "Services are added and set up from the menu bar." · "Add Project…"
+  "Remove…" · "Auto (%@)" · "Several lockfiles found. Pick a package manager." · "No Projects yet." · "Services are added and set up from the menu bar." · "Add Project…" · "Project name" · "Click to rename"
   "Remove “%@”?" · "Its %d Services leave Bunode. Files in %@ stay on disk." · " %d running Services will be stopped first."
   "Stop %d and Remove" · "Remove" · "Removed %@. Files untouched."
   "Shell environment" · "%d variables from %@ · %@" · "Reload" · "Reloading" · "Environment reloaded. New Runs get it."
@@ -676,7 +677,7 @@ Dialogs
 | 停止时要不要显示端口 | 画布只在运行中显示。提交 `3e60f34` 刚恢复了行上的端口，停止时显示灰色配置端口 | 只在运行时显示，配置端口在 Service 视图能看到 |
 | Service 视图开关文案（C2） | 画布写 `Use login shell`，C2 和代码是 `Run through shell`（`For pipes, && and globs`） | 保留 `Run through shell`，画布是旧文案 |
 | Settings 里能否改包管理器（C6） | 现有 `ProjectsPane` 有 Picker 和多锁文件警告，极简版 Settings 只显示文字 | 仅在检测到多个锁文件时显示 Picker |
-| 同命令条目的第二行 | 画布只显示 Project 名。`pnpm dev` 分布在两个子目录时无法区分 | 有 `folder` 时显示 `{project} › {folder}` |
+| 条目的第二行 | 画布只显示 Project 名。`pnpm dev` 分布在两个子目录时无法区分 | 显示运行目录的路径，Project 名移到第一行脚本名前（2026-11-09 定） |
 | Popover 背景 | 曾定为接近不透明，Llama 参考图是系统半透明材质 | 系统默认材质（2026-11-09 定） |
 | 命令显示 | 画布写完整命令，包管理器前缀灰色 | 常用脚本只写脚本名，其余整条（2026-11-09 定） |
 | 短时 Service | 画布只画常驻服务，构建跑完会显示成 `Stopped` | `build` `test` `lint` 单独显示，不计入 running 数量（§5.1，2026-11-09 定） |

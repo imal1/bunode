@@ -28,13 +28,13 @@ struct ServiceView: View {
             let displayName = "\(project.name) › \(service.displayName)"
             VStack(alignment: .leading, spacing: 0) {
                 TopBar(
-                    title: ServiceState.shortCommand(service.command),
+                    title: service.title(projectName: project.name),
                     fullTitle: displayName,
                     titleFont: .system(size: 12.5, weight: .semibold, design: .monospaced),
                     backLabel: String(localized: "Back to Home"),
                     onBack: router.back
                 ) {
-                    StatusLine(projectName: project.name, service: service, status: status, isNotResponding: model.notResponding.contains(serviceID))
+                    StatusLine(path: project.runPath(folder: service.folder).abbreviatingWithTilde, service: service, status: status, isNotResponding: model.notResponding.contains(serviceID))
                 } trailing: {
                     StartStopButton(model: model, service: service, status: status)
                 }
@@ -210,7 +210,7 @@ struct ServiceView: View {
                 }
             }
             .padding(10)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+            .background(.quinary, in: RoundedRectangle(cornerRadius: 10))
             .padding(EdgeInsets(top: 0, leading: 2, bottom: 6, trailing: 2))
         } else {
             Button("Delete Service…") { confirmingDelete = true }
@@ -256,18 +256,18 @@ private struct PendingConfigBar: View {
     }
 }
 
-/// `{project} ● Running :3000` under the Service view's title. The Project
-/// name gives way first when short of room.
+/// `{path} ● Running :3000` under the Service view's title. The path gives
+/// way first when short of room.
 struct StatusLine: View {
-    let projectName: String
+    let path: String
     let service: ServiceState
     let status: RunStatus
     let isNotResponding: Bool
 
     var body: some View {
         HStack(spacing: 5) {
-            Text(verbatim: projectName)
-                .truncationMode(.tail)
+            Text(verbatim: path)
+                .truncationMode(.middle)
             StatusDot(style: service.dotStyle(status: status), size: 6)
             Text(isNotResponding ? String(localized: "Not responding") : service.statusLabel(status: status))
                 .fixedSize()

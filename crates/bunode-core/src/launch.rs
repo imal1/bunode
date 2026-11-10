@@ -108,6 +108,7 @@ mod tests {
         Project {
             id: 1,
             name: "api".into(),
+            alias: None,
             path: "/code/api".into(),
             package_manager: None,
             services: vec![],

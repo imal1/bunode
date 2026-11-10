@@ -7,7 +7,7 @@ Bunode manages local Node.js and Bun dev processes on macOS: the ones it starts 
 ### Configuration
 
 **Project**:
-A working directory registered in Bunode, usually one containing a `package.json`.
+A working directory registered in Bunode, usually one containing a `package.json`. It goes by its folder's name, or by the alias the user gives it in Settings.
 _Avoid_: App, workspace, repo
 
 **Service**:

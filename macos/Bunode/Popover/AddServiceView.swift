@@ -78,7 +78,7 @@ struct AddServiceView: View {
         }
         .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+        .background(.quinary, in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 2)
     }
 
@@ -170,6 +170,15 @@ struct AddServiceView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Only the recommended scripts. Anything else is typed as a command.
+    static func recommended(_ scripts: ProjectScripts) -> ProjectScripts {
+        var scripts = scripts
+        for index in scripts.groups.indices {
+            scripts.groups[index].scripts.removeAll { !$0.isRecommended }
+        }
+        return scripts
+    }
+
     private var name: String {
         Self.serviceName(script: selectedOption?.name, command: command)
     }
@@ -188,7 +197,7 @@ struct AddServiceView: View {
         let loaded = await model.projectScripts(projectID)
         // Switched Project in the meantime.
         guard !Task.isCancelled else { return }
-        scripts = loaded
+        scripts = loaded.map(Self.recommended)
         selection = nil
         command = ""
         if let first = allScripts.first(where: { !$0.option.used }) {
@@ -258,7 +267,7 @@ private struct Chip: View {
                 .frame(maxWidth: 290)
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
                 .background(
-                    isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor),
+                    isSelected ? Color.accentColor : Color.primary.opacity(0.08),
                     in: Capsule()
                 )
                 .contentShape(Capsule())

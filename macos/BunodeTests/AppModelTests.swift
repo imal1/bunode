@@ -21,6 +21,31 @@ struct AppModelTests {
         #expect(model.snapshot.projects.count == 1)
     }
 
+    @Test func onlyANewProjectWaitsToBeNamed() async {
+        let model = AppModel(dataDirectory: data.url)
+        let api = code.folder("api")
+
+        _ = await model.addProject(at: api)
+        #expect(model.projectAwaitingName == model.snapshot.projects[0].id)
+
+        model.projectAwaitingName = nil
+        _ = await model.addProject(at: api)
+        #expect(model.projectAwaitingName == nil)
+    }
+
+    @Test func anAliasIsWhatTheProjectIsCalled() async {
+        let model = AppModel(dataDirectory: data.url)
+        _ = await model.addProject(at: code.folder("api"))
+        let id = model.snapshot.projects[0].id
+
+        model.setProjectAlias(id, "Shop")
+        #expect(model.snapshot.projects[0].name == "Shop")
+        #expect(model.snapshot.projects[0].folderName == "api")
+
+        model.setProjectAlias(id, "")
+        #expect(model.snapshot.projects[0].name == "api")
+    }
+
     @Test func projectsSurviveARelaunch() async {
         let api = code.folder("api")
         do {

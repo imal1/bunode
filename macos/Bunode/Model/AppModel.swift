@@ -15,6 +15,8 @@ final class AppModel {
     private(set) var notResponding: Set<UInt64> = []
     /// The one warning bar shown under a Service row (design-handoff §5.3, §7).
     private(set) var rowNotice: RowNotice?
+    /// A Project just added, until Settings has opened its name for typing.
+    var projectAwaitingName: UInt64?
 
     enum RowNotice: Equatable {
         /// Start was refused because the Project's folder is gone.
@@ -131,6 +133,7 @@ final class AppModel {
         refresh()
         switch result {
         case .success(.added(let project)):
+            projectAwaitingName = project.id
             return String(localized: "Added \(project.path.abbreviatingWithTilde) (\(project.packageManager.displayName)). Add its Services from the menu bar.")
         case .success(.alreadyAdded(let project)):
             return String(localized: "\(project.name) is already added")
@@ -372,6 +375,12 @@ final class AppModel {
     }
 
     // MARK: - Projects
+
+    /// Settings › Projects: what a Project is called; blank is its folder's name.
+    func setProjectAlias(_ projectID: UInt64, _ alias: String) {
+        try? core.setProjectAlias(projectId: projectID, alias: alias)
+        refresh()
+    }
 
     /// Settings › Projects › package manager; `nil` is Auto.
     func setPackageManager(_ projectID: UInt64, _ manager: PackageManager?) {

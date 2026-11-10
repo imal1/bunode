@@ -40,17 +40,25 @@ extension RunStatus {
     }
 }
 
+extension ScriptOption {
+    /// One of the few scripts New Service offers: a preset's bare name, not
+    /// a variant like `lint:fix`.
+    var isRecommended: Bool {
+        ServiceState.preset("npm \(name)").map { $0.script == $0.category } ?? false
+    }
+}
+
 extension ServiceState {
     /// The script name and category of a preset command (design-handoff §2.2).
-    private static func preset(_ command: String) -> (script: String, category: String)? {
+    fileprivate static func preset(_ command: String) -> (script: String, category: String)? {
         command.wholeMatch(of: /(?:bun|npm|pnpm|yarn)(?:\s+run)?\s+((dev|start|serve|preview|build|test|lint)(?:[:-]\S+)?)/)
             .map { (String($0.1), String($0.2)) }
     }
 
-    /// What a row and the Service view title call a command: the script name
-    /// of a preset, otherwise the whole command.
-    static func shortCommand(_ command: String) -> String {
-        preset(command)?.script ?? command
+    /// A row's and the Service view's title: `{project} {script}` for a
+    /// preset, otherwise the whole command.
+    func title(projectName: String) -> String {
+        Self.preset(command).map { "\(projectName) \($0.script)" } ?? command
     }
 
     /// A build, test or lint script ends by itself, unless it watches.

@@ -281,7 +281,7 @@ struct ServiceRow: View {
                 StatusTile(style: service.dotStyle(status: status))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text(verbatim: ServiceState.shortCommand(service.command))
+                        Text(verbatim: service.title(projectName: project.name))
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -329,12 +329,12 @@ struct ServiceRow: View {
         }
     }
 
-    /// `{project}`, `{project} › {folder}`, then ` · {status}` unless
-    /// Stopped. When short of room the Project name gives way first.
+    /// The folder it runs in, then ` · {status}` unless Stopped. When short
+    /// of room the path gives way first.
     private var secondLine: some View {
         HStack(spacing: 0) {
-            Text(verbatim: service.folder.map { "\(project.name) › \($0)" } ?? project.name)
-                .truncationMode(.tail)
+            Text(verbatim: project.runPath(folder: service.folder).abbreviatingWithTilde)
+                .truncationMode(.middle)
             if status != .stopped || isDone || isFolderMissing {
                 HStack(spacing: 0) {
                     Text(verbatim: " · ")

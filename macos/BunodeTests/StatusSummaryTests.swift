@@ -47,7 +47,7 @@ struct PortDisplayTests {
     }
 }
 
-struct ShortCommandTests {
+struct ServiceTitleTests {
     @Test(arguments: [
         ("bun run start", "start"),
         ("npm run build", "build"),
@@ -59,8 +59,8 @@ struct ShortCommandTests {
         ("bun run preview", "preview"),
         ("bun  run   dev-api", "dev-api"),
     ])
-    func aPresetScriptShowsItsName(command: String, short: String) {
-        #expect(ServiceState.shortCommand(command) == short)
+    func aPresetScriptReadsAsProjectAndScript(command: String, script: String) {
+        #expect(service(command: command).title(projectName: "shop") == "shop \(script)")
     }
 
     @Test(arguments: [
@@ -74,7 +74,22 @@ struct ShortCommandTests {
         "npm",
     ])
     func anythingElseStaysWhole(command: String) {
-        #expect(ServiceState.shortCommand(command) == command)
+        #expect(service(command: command).title(projectName: "shop") == command)
+    }
+}
+
+@MainActor
+struct RecommendedScriptTests {
+    @Test func newServiceOffersOnlyTheBarePresets() {
+        let names = ["analyze", "build", "lint", "lint-staged", "lint-staged:js", "lint:fix", "lint:js", "start", "start:w", "test", "tsc"]
+        let options = names.map { ScriptOption(name: $0, command: "bun run \($0)", used: false) }
+        let scripts = ProjectScripts(hasPackageJson: true, groups: [ScriptGroup(packageName: nil, folder: nil, scripts: options)])
+        #expect(AddServiceView.recommended(scripts).groups.first?.scripts.map(\.name) == ["build", "lint", "start", "test"])
+    }
+
+    @Test(arguments: ["dev", "start", "serve", "preview", "build", "test", "lint"])
+    func everyPresetIsRecommended(name: String) {
+        #expect(ScriptOption(name: name, command: "bun run \(name)", used: false).isRecommended)
     }
 }
 

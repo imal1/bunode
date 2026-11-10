@@ -115,6 +115,7 @@ mod tests {
         config.projects.push(Project {
             id,
             name: "api".into(),
+            alias: None,
             path: "/code/api".into(),
             package_manager: Some(PackageManager::Bun),
             services: vec![],

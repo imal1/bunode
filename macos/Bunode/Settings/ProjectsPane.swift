@@ -60,12 +60,15 @@ private struct ProjectRow: View {
     let project: ProjectState
     let toaster: Toaster
     @State private var isRemoving = false
+    @State private var isNaming = false
+    @State private var nameDraft = ""
+    @FocusState private var isNameFocused: Bool
 
     var body: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Text(project.name)
+                    name
                     if project.severalLockfiles {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
@@ -95,7 +98,7 @@ private struct ProjectRow: View {
                 .foregroundStyle(.secondary)
                 .help(project.path)
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: isNaming ? .contain : .combine)
             Spacer(minLength: 0)
             // A manual choice clears `severalLockfiles`; the Picker stays so
             // it can be changed or set back to Auto.
@@ -120,6 +123,49 @@ private struct ProjectRow: View {
                 .disabled(isRemoving)
         }
         .frame(minHeight: 36)
+        .task(id: model.projectAwaitingName) {
+            guard model.projectAwaitingName == project.id else { return }
+            model.projectAwaitingName = nil
+            startNaming()
+        }
+    }
+
+    /// Click to type a name. Left blank, the folder's name stays.
+    @ViewBuilder
+    private var name: some View {
+        if isNaming {
+            TextField("Project name", text: $nameDraft, prompt: Text(verbatim: project.folderName))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+                .frame(maxWidth: 220)
+                .focused($isNameFocused)
+                .task { isNameFocused = true }
+                .onSubmit(saveName)
+                .onExitCommand { isNaming = false }
+                .onChange(of: isNameFocused) { _, focused in
+                    if !focused { saveName() }
+                }
+                .onDisappear(perform: saveName)
+        } else {
+            Button(action: startNaming) {
+                Text(project.name)
+                    .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .help("Click to rename")
+        }
+    }
+
+    private func startNaming() {
+        nameDraft = project.name == project.folderName ? "" : project.name
+        isNaming = true
+    }
+
+    private func saveName() {
+        guard isNaming else { return }
+        isNaming = false
+        model.setProjectAlias(project.id, nameDraft)
     }
 
     /// The Remove alert (design-handoff §2.4). Cancel is the default button:

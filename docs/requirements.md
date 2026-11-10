@@ -407,7 +407,7 @@ Bunode 不负责 Node/Bun 版本切换。
 
 - **Home**：平铺的 Service 列表，一条命令一行，所属 Project 显示在第二行，同 Project 相邻。每行显示状态和端口，悬停或键盘聚焦时显示启停按钮。另有 `Add Service`、Other processes 入口、Settings 与 Quit。
 - **Service**：点 Service 行进入。命令、目录、端口、自动重启、Shell Mode、环境变量；自动保存，运行中修改提示“下次 Run 生效”；删除 Service。
-- **New Service**：点 Home 的 `Add Service` 进入，选择 Project，从 `package.json` scripts 选择或手填命令。
+- **New Service**：点 Home 的 `Add Service` 进入，选择 Project，从 `package.json` 的常用 scripts 选择或手填命令。
 - **Logs**：单个 Service 的实时日志、搜索、清空、复制、导出。
 - **Other processes**：Discovered Process 列表，仅查看与 SIGTERM。位于已登记 Project 目录中的进程也在这里（3.3）。
 

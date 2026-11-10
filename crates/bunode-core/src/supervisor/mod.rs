@@ -496,6 +496,7 @@ impl Supervisor {
         let project = Project {
             id: config.allocate_id(),
             name,
+            alias: None,
             path,
             package_manager: None,
             services: Vec::new(),
@@ -647,6 +648,28 @@ impl Supervisor {
             return Ok(());
         }
         project.package_manager = manager;
+        self.shared.save(&config)?;
+        state.config = config;
+        drop(state);
+        self.shared.notifier.notify();
+        Ok(())
+    }
+
+    /// Settings › Projects: the short name shown in place of the folder's.
+    /// A blank one goes back to the folder's name.
+    pub fn set_project_alias(&self, project_id: ProjectId, alias: &str) -> Result<()> {
+        let alias = Some(alias.trim())
+            .filter(|alias| !alias.is_empty())
+            .map(str::to_owned);
+        let mut state = self.shared.lock();
+        let mut config = state.config.clone();
+        let project = config
+            .project_mut(project_id)
+            .ok_or(Error::UnknownProject)?;
+        if project.alias == alias {
+            return Ok(());
+        }
+        project.alias = alias;
         self.shared.save(&config)?;
         state.config = config;
         drop(state);
@@ -849,7 +872,7 @@ impl Supervisor {
             state.runs.iter().find_map(|(id, run)| {
                 (run.status.is_live() && run.ports.contains(&port)).then(|| {
                     let name = find_service(&state.config, *id)
-                        .map(|(p, s)| format!("{} › {}", p.name, s.name))
+                        .map(|(p, s)| format!("{} › {}", p.display_name(), s.name))
                         .unwrap_or_default();
                     PortConflictOwner {
                         pid: run.pid.unwrap_or(0),
@@ -1501,7 +1524,7 @@ fn validate_service_name(
     if taken {
         return Err(Error::Invalid(format!(
             "Name already used in {}",
-            project.name
+            project.display_name()
         )));
     }
     Ok(name.to_owned())
@@ -1559,7 +1582,8 @@ fn project_state(project: &Project, state: &State) -> ProjectState {
     let detection = detection_of(project, &state.detections);
     ProjectState {
         id: project.id,
-        name: project.name.clone(),
+        name: project.display_name().to_owned(),
+        folder_name: project.name.clone(),
         path: project.path.display().to_string(),
         package_manager: project.package_manager.unwrap_or(detection.manager),
         detected_package_manager: detection.manager,
@@ -2036,6 +2060,29 @@ mod tests {
 
         supervisor.set_package_manager(project.id, None).unwrap();
         assert!(supervisor.snapshot().projects[0].several_lockfiles);
+    }
+
+    #[test]
+    fn an_alias_replaces_the_folder_name_until_it_is_cleared() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        let folder = code.path().join("api");
+        fs::create_dir(&folder).unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, &folder);
+        assert_eq!(project.name, "api");
+
+        supervisor
+            .set_project_alias(project.id, "  Shop API ")
+            .unwrap();
+        drop(supervisor);
+        let (supervisor, _) = open(data.path());
+        let project = supervisor.snapshot().projects[0].clone();
+        assert_eq!(project.name, "Shop API");
+        assert_eq!(project.folder_name, "api");
+
+        supervisor.set_project_alias(project.id, "   ").unwrap();
+        assert_eq!(supervisor.snapshot().projects[0].name, "api");
     }
 
     #[test]
