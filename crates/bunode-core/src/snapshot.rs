@@ -169,6 +169,8 @@ pub struct AgentServerState {
     pub pgid: u32,
     /// The TCP ports any process of the group listens on.
     pub live_ports: Vec<u16>,
+    /// Bunode is ending its process group.
+    pub stopping: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -279,6 +281,8 @@ pub struct PortConflictOwner {
     pub source: Option<String>,
     /// The owner is another of Bunode's Services.
     pub service_id: Option<u64>,
+    /// The owner is an Agent Server; `command` is its name.
+    pub agent_server: bool,
 }
 
 /// The result of adding a Project folder.

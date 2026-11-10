@@ -46,6 +46,8 @@ extension CoreError {
             String(localized: "PID \(String(pid)) has already exited.")
         case .SignalFailed(let pid, let reason):
             String(localized: "Couldn't send SIGTERM to PID \(String(pid)): \(reason)")
+        case .AgentServerSurvived(let name):
+            String(localized: "Couldn’t stop \(name).")
         }
     }
 

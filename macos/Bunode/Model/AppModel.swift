@@ -379,6 +379,23 @@ final class AppModel {
         }
     }
 
+    /// Stops an Agent Server: SIGTERM to its group, SIGKILL after Force
+    /// stop after. Returns a problem, if any.
+    func stopAgentServer(_ server: AgentServerState) async -> String? {
+        let core = self.core
+        let pid = server.pid
+        let problem = await Task.detached { () -> String? in
+            do {
+                try core.stopAgentServer(pid: pid)
+                return nil
+            } catch {
+                return error.userMessage
+            }
+        }.value
+        refresh()
+        return problem
+    }
+
     func forceKillDiscovered(_ process: DiscoveredProcess) {
         try? core.forceKillDiscovered(pid: process.pid, start: process.start)
         refresh()

@@ -141,6 +141,8 @@ struct State {
     launch_files: LaunchFiles,
     /// Agent Servers, from the last scan.
     agent_servers: Vec<AgentServer>,
+    /// The PIDs of Agent Servers being stopped.
+    stopping_agents: std::collections::HashSet<u32>,
 }
 
 struct EnvironmentInfo {
@@ -257,6 +259,7 @@ impl Supervisor {
                     exiting: Default::default(),
                     launch_files: LaunchFiles::default(),
                     agent_servers: Vec::new(),
+                    stopping_agents: Default::default(),
                 }),
                 notifier: Notifier::new(listener),
                 runner_path: options.runner_path,
@@ -319,6 +322,50 @@ impl Supervisor {
         self.shared.notifier.notify();
         self.rescan();
         Ok(())
+    }
+
+    /// Stops an Agent Server: SIGTERM to its process group, then SIGKILL
+    /// after Force stop after. Blocks until the group is gone, or still
+    /// there a second after SIGKILL; never call it from Bunode's runtime.
+    pub fn stop_agent_server(&self, pid: u32) -> Result<()> {
+        let (server, timeout) = {
+            let state = self.shared.lock();
+            let server = state.agent_servers.iter().find(|s| s.pid == pid).cloned();
+            let timeout = u64::from(state.config.settings.force_stop_after_secs);
+            (server, Duration::from_secs(timeout))
+        };
+        let Some(server) = server.filter(|s| crate::sys::is_same_process(pid as i32, s.start))
+        else {
+            return Err(Error::ProcessExited { pid });
+        };
+        if !self.shared.lock().stopping_agents.insert(pid) {
+            // Already being stopped; that call reports how it went.
+            return Ok(());
+        }
+        self.shared.notifier.notify();
+        self.shared.diagnostics.log(&format!(
+            "Stopping Agent Server {} (PID {pid})",
+            server.name
+        ));
+        let group = nix::unistd::Pid::from_raw(server.pgid as i32);
+        let gone = self.shared.runtime.block_on(run::end_group(group, timeout));
+        {
+            let mut state = self.shared.lock();
+            state.stopping_agents.remove(&pid);
+            if gone {
+                state.agent_servers.retain(|s| s.pid != pid);
+            }
+        }
+        self.shared.notifier.notify();
+        self.rescan();
+        if gone {
+            Ok(())
+        } else {
+            self.shared
+                .diagnostics
+                .log(&format!("Agent Server {} outlived SIGKILL", server.name));
+            Err(Error::AgentServerSurvived { name: server.name })
+        }
     }
 
     /// The Force Kill alert: SIGKILL to every process of a Discovered
@@ -914,19 +961,24 @@ impl Supervisor {
         // One of Bunode's own Runs?
         let own = {
             let state = self.shared.lock();
-            state.runs.iter().find_map(|(id, run)| {
-                (run.status.is_live() && run.ports.contains(&port)).then(|| {
-                    let name = find_service(&state.config, *id)
-                        .map(|(p, s)| format!("{} › {}", p.display_name(), s.name))
-                        .unwrap_or_default();
-                    PortConflictOwner {
-                        pid: run.pid.unwrap_or(0),
-                        command: name,
-                        source: Some("Bunode".into()),
-                        service_id: Some(*id),
-                    }
+            state
+                .runs
+                .iter()
+                .find_map(|(id, run)| {
+                    (run.status.is_live() && run.ports.contains(&port)).then(|| {
+                        let name = find_service(&state.config, *id)
+                            .map(|(p, s)| format!("{} › {}", p.display_name(), s.name))
+                            .unwrap_or_default();
+                        PortConflictOwner {
+                            pid: run.pid.unwrap_or(0),
+                            command: name,
+                            source: Some("Bunode".into()),
+                            service_id: Some(*id),
+                            agent_server: false,
+                        }
+                    })
                 })
-            })
+                .or_else(|| agent_server_owner(&state.agent_servers, port))
         };
         let owner = own.or_else(|| {
             crate::discovery::port_owner(port).map(|o| PortConflictOwner {
@@ -934,6 +986,7 @@ impl Supervisor {
                 command: o.command,
                 source: o.source,
                 service_id: None,
+                agent_server: false,
             })
         });
         if owner.is_none() && !crate::discovery::port_in_use(port) {
@@ -1692,9 +1745,24 @@ fn project_state(project: &Project, state: &State) -> ProjectState {
                 pid: s.pid,
                 pgid: s.pgid,
                 live_ports: s.ports.clone(),
+                stopping: state.stopping_agents.contains(&s.pid),
             })
             .collect(),
     }
+}
+
+/// The Agent Server listening on `port`, as a port conflict's owner.
+fn agent_server_owner(servers: &[AgentServer], port: u16) -> Option<PortConflictOwner> {
+    servers
+        .iter()
+        .find(|s| s.ports.contains(&port))
+        .map(|s| PortConflictOwner {
+            pid: s.pid,
+            command: s.name.clone(),
+            source: Some(s.agent.into()),
+            service_id: None,
+            agent_server: true,
+        })
 }
 
 /// The Discovered Processes whose folder is inside `project`'s, unless a
@@ -1999,6 +2067,37 @@ mod tests {
         assert_eq!(settings.force_stop_after_secs, 10);
         assert_eq!(settings.list_layout, ListLayout::ByProject);
         assert!(!settings.show_agent_servers);
+    }
+
+    #[test]
+    fn stopping_an_unknown_agent_server_fails() {
+        let data = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        assert!(matches!(
+            supervisor.stop_agent_server(999_999),
+            Err(Error::ProcessExited { pid: 999_999 })
+        ));
+    }
+
+    #[test]
+    fn a_port_held_by_an_agent_server_names_it() {
+        let servers = [AgentServer {
+            project_id: 1,
+            agent: "Claude",
+            name: "web".into(),
+            command: "npm run dev".into(),
+            pid: 4242,
+            start: 1,
+            pgid: 4242,
+            ports: vec![3000, 3001],
+        }];
+        let owner = agent_server_owner(&servers, 3001).unwrap();
+        assert_eq!(owner.pid, 4242);
+        assert_eq!(owner.command, "web");
+        assert_eq!(owner.source.as_deref(), Some("Claude"));
+        assert!(owner.agent_server);
+        assert_eq!(owner.service_id, None);
+        assert_eq!(agent_server_owner(&servers, 3002), None);
     }
 
     fn wait_until(what: &str, done: impl Fn() -> bool) {

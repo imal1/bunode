@@ -26,6 +26,8 @@ struct LocalizationTests {
             ("Flat", "平铺"), ("By Project", "按项目"),
             ("Show dev servers started by agents", "显示 agent 启动的开发服务"),
             ("Started by %@", "由 %@ 启动"),
+            ("Open in Browser", "在浏览器中打开"), ("Show in Finder", "在 Finder 中显示"),
+            ("Couldn’t stop %@.", "无法停止 %@。"), ("Stopping…", "正在停止…"),
         ] {
             #expect(chinese.localizedString(forKey: english, value: nil, table: nil) == simplifiedChinese)
         }

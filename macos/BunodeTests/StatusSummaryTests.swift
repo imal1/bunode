@@ -178,6 +178,15 @@ struct KeyboardTests {
         #expect(HomeView.focus(after: 4, in: [], step: 1) == nil)
     }
 
+    @Test func agentServerRowsFollowTheirProjectsServices() {
+        let projects = [
+            project(id: 1, services: [service()], agentServers: [agentServer(pid: 40)]),
+            project(id: 2, services: [], agentServers: [agentServer(pid: 50)]),
+        ]
+        #expect(HomeView.rowOrder(projects) == [.service(1), .agentServer(40), .agentServer(50)])
+        #expect(HomeView.focus(after: .service(1), in: HomeView.rowOrder(projects), step: 1) == .agentServer(40))
+    }
+
     @Test func openingThePopoverStartsAtHome() {
         let router = PopoverRouter()
         router.push(.logs(3))
@@ -186,4 +195,19 @@ struct KeyboardTests {
         #expect(router.screen == .home)
         #expect(router.openCount == before + 1)
     }
+}
+
+private func project(id: UInt64, services: [ServiceState], agentServers: [AgentServerState]) -> ProjectState {
+    ProjectState(
+        id: id, name: "app", folderName: "app", path: "/tmp/app", packageManager: .npm,
+        detectedPackageManager: .npm, packageManagerChoice: nil, severalLockfiles: false,
+        isMissing: false, external: [], services: services, agentServers: agentServers
+    )
+}
+
+private func agentServer(pid: UInt32) -> AgentServerState {
+    AgentServerState(
+        projectId: 1, agent: "Claude", name: "web", command: "npm run dev",
+        pid: pid, pgid: pid, livePorts: [3001], stopping: false
+    )
 }

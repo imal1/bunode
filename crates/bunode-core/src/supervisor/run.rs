@@ -240,7 +240,7 @@ pub(crate) async fn drive(
     // itself, end the group here; a process group's ID is never reused
     // while the group exists, so signalling it is safe.
     if let Some(group) = group {
-        end_group(group, spec.stop_timeout).await;
+        let _ = end_group(group, spec.stop_timeout).await;
     }
     for collector in collectors {
         let _ = tokio::time::timeout(DRAIN_GRACE, collector).await;
@@ -255,12 +255,12 @@ pub(crate) async fn drive(
     })
 }
 
-/// Ends whatever is left of a Run's process group: SIGTERM, then SIGKILL
-/// after `timeout`.
-async fn end_group(group: Pid, timeout: Duration) {
+/// Ends a process group: SIGTERM, then SIGKILL after `timeout`. Returns
+/// whether the group is gone, waiting up to a second after SIGKILL.
+pub(super) async fn end_group(group: Pid, timeout: Duration) -> bool {
     let alive = || killpg(group, None).is_ok();
     if !alive() {
-        return;
+        return true;
     }
     let _ = killpg(group, Signal::SIGTERM);
     let deadline = Instant::now() + timeout;
@@ -269,7 +269,12 @@ async fn end_group(group: Pid, timeout: Duration) {
     }
     if alive() {
         let _ = killpg(group, Signal::SIGKILL);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while alive() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
     }
+    !alive()
 }
 
 /// Spawns the runner with a fresh lifeline on its standard input.
@@ -362,6 +367,7 @@ async fn read_line(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::process::CommandExt;
 
     #[test]
     fn parses_runner_reports() {
@@ -436,5 +442,39 @@ mod tests {
                 reason: "Permission denied".into()
             }
         );
+    }
+
+    #[tokio::test]
+    async fn end_group_ends_a_group_with_sigterm_alone() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("60")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = Pid::from_raw(child.id() as i32);
+        let reaper = std::thread::spawn(move || child.wait());
+
+        let started = std::time::Instant::now();
+        assert!(end_group(group, Duration::from_secs(5)).await);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        reaper.join().unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn end_group_kills_a_group_that_ignores_sigterm() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "trap '' TERM; while :; do sleep 1; done"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = Pid::from_raw(child.id() as i32);
+        let reaper = std::thread::spawn(move || child.wait());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let started = std::time::Instant::now();
+        assert!(end_group(group, Duration::from_millis(300)).await);
+        assert!(started.elapsed() >= Duration::from_millis(300));
+        assert!(killpg(group, None).is_err());
+        reaper.join().unwrap().unwrap();
     }
 }

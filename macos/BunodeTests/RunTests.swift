@@ -69,6 +69,15 @@ struct RunTests {
         #expect(!AppModel(dataDirectory: data.url).snapshot.settings.showAgentServers)
     }
 
+    @Test func stoppingAnAgentServerThatIsGoneSaysSo() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        let server = AgentServerState(
+            projectId: 1, agent: "Claude", name: "web", command: "npm run dev",
+            pid: 999_999, pgid: 999_999, livePorts: [], stopping: false
+        )
+        #expect(await model.stopAgentServer(server) == "PID 999999 has already exited.")
+    }
+
     @Test func runningCountCanBeHidden() async throws {
         let model = AppModel(dataDirectory: data.url)
         #expect(model.statusSummary.showsCount)

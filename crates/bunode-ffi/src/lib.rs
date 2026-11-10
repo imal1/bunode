@@ -132,6 +132,7 @@ pub struct AgentServerState {
     pub pid: u32,
     pub pgid: u32,
     pub live_ports: Vec<u16>,
+    pub stopping: bool,
 }
 
 #[uniffi::remote(Record)]
@@ -301,6 +302,7 @@ pub struct PortConflictOwner {
     pub command: String,
     pub source: Option<String>,
     pub service_id: Option<u64>,
+    pub agent_server: bool,
 }
 
 // MARK: - Errors
@@ -349,6 +351,8 @@ pub enum CoreError {
     ProcessExited { pid: u32 },
     #[error("Couldn't send SIGTERM to PID {pid}: {reason}")]
     SignalFailed { pid: u32, reason: String },
+    #[error("Couldn’t stop {name}.")]
+    AgentServerSurvived { name: String },
 }
 
 impl From<bunode_core::Error> for CoreError {
@@ -378,6 +382,7 @@ impl From<bunode_core::Error> for CoreError {
             E::ExportFailed { path, reason } => CoreError::ExportFailed { path, reason },
             E::ProcessExited { pid } => CoreError::ProcessExited { pid },
             E::SignalFailed { pid, reason } => CoreError::SignalFailed { pid, reason },
+            E::AgentServerSurvived { name } => CoreError::AgentServerSurvived { name },
         }
     }
 }
@@ -529,6 +534,12 @@ impl BunodeCore {
     /// process that started at `start`.
     pub fn stop_discovered(&self, pid: u32, start: u64) -> Result<(), CoreError> {
         Ok(self.supervisor.stop_discovered(pid, start)?)
+    }
+
+    /// Stops an Agent Server: SIGTERM to its group, SIGKILL after Force
+    /// stop after. Blocks until it is gone, so call it off the main thread.
+    pub fn stop_agent_server(&self, pid: u32) -> Result<(), CoreError> {
+        Ok(self.supervisor.stop_agent_server(pid)?)
     }
 
     /// The Force Kill alert: SIGKILL to the process tree, each process

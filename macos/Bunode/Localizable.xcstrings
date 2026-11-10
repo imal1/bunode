@@ -261,6 +261,16 @@
     "Couldn't send SIGTERM to PID %@: %@": {},
     "Couldn't start %@: %@": {},
     "Couldn't start bunode-runner: %@": {},
+    "Couldn’t stop %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法停止 %@。"
+          }
+        }
+      }
+    },
     "Display": {
       "localizations": {
         "zh-Hans": {
@@ -363,6 +373,16 @@
         }
       }
     },
+    "Open in Browser": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在浏览器中打开"
+          }
+        }
+      }
+    },
     "PID %@ has already exited.": {},
     "Projects": {
       "localizations": {
@@ -444,6 +464,16 @@
         }
       }
     },
+    "Show in Finder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Finder 中显示"
+          }
+        }
+      }
+    },
     "Show running count": {
       "localizations": {
         "zh-Hans": {
@@ -518,6 +548,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止 %lld 个服务并重启"
+          }
+        }
+      }
+    },
+    "Stopping…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在停止…"
           }
         }
       }

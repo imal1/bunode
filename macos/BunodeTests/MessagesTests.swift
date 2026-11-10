@@ -27,6 +27,7 @@ struct MessagesTests {
             (.ExportFailed(path: "/l.log", reason: "denied"), "Couldn't export to /l.log: denied"),
             (.ProcessExited(pid: 48121), "PID 48121 has already exited."),
             (.SignalFailed(pid: 48121, reason: "denied"), "Couldn't send SIGTERM to PID 48121: denied"),
+            (.AgentServerSurvived(name: "web"), "Couldn’t stop web."),
         ]
         for (error, text) in cases {
             #expect(error.message == text)

@@ -50,6 +50,9 @@ pub enum Error {
     ProcessExited { pid: u32 },
     #[error("Couldn't send SIGTERM to PID {pid}: {reason}")]
     SignalFailed { pid: u32, reason: String },
+    /// An Agent Server's process group outlived SIGKILL.
+    #[error("Couldn’t stop {name}.")]
+    AgentServerSurvived { name: String },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
