@@ -9,11 +9,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bunode_core::{
-    AddProjectOutcome, ConfigIssue, ConfigProblem, DiscoveredProcess, EnvironmentProblem,
-    EnvironmentState, ListLayout, LogColor, LogLine, LogSpan, LogStream, LogStyle, NewService,
-    PackageManager, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus,
-    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome,
-    Tool, ToolState,
+    AddProjectOutcome, AgentServerState, ConfigIssue, ConfigProblem, DiscoveredProcess,
+    EnvironmentProblem, EnvironmentState, ListLayout, LogColor, LogLine, LogSpan, LogStream,
+    LogStyle, NewService, PackageManager, PortConflictOwner, ProjectScripts, ProjectState, RunEnd,
+    RunNote, RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState,
+    Snapshot, StartOutcome, Tool, ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -120,6 +120,18 @@ pub struct ProjectState {
     pub is_missing: bool,
     pub external: Vec<u32>,
     pub services: Vec<ServiceState>,
+    pub agent_servers: Vec<AgentServerState>,
+}
+
+#[uniffi::remote(Record)]
+pub struct AgentServerState {
+    pub project_id: u64,
+    pub agent: String,
+    pub name: String,
+    pub command: String,
+    pub pid: u32,
+    pub pgid: u32,
+    pub live_ports: Vec<u16>,
 }
 
 #[uniffi::remote(Record)]
@@ -196,6 +208,7 @@ pub enum RunStatus {
 pub struct SettingsState {
     pub show_running_count: bool,
     pub list_layout: ListLayout,
+    pub show_agent_servers: bool,
     pub force_stop_after_secs: u32,
     pub log_lines_kept: u32,
 }
@@ -552,6 +565,16 @@ impl BunodeCore {
     /// General › List.
     pub fn set_list_layout(&self, layout: ListLayout) -> Result<(), CoreError> {
         Ok(self.supervisor.set_list_layout(layout)?)
+    }
+
+    /// Projects › Show dev servers started by agents.
+    pub fn set_show_agent_servers(&self, show: bool) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_show_agent_servers(show)?)
+    }
+
+    /// The popover opened: rereads the agent launch files that changed.
+    pub fn check_launch_files(&self) {
+        self.supervisor.check_launch_files();
     }
 
     /// Reads the login shell's environment again, in the background.

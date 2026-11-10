@@ -149,6 +149,26 @@ pub struct ProjectState {
     pub external: Vec<u32>,
     /// In creation order.
     pub services: Vec<ServiceState>,
+    /// Shown after the Services: in launch-file order, then oldest first.
+    pub agent_servers: Vec<AgentServerState>,
+}
+
+/// A dev server an agent started from its launch settings in the
+/// Project's root (an Agent Server, ADR-0007). Shown, never claimed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AgentServerState {
+    pub project_id: u64,
+    /// The agent that started it: "Claude".
+    pub agent: String,
+    /// The launch configuration's `name`.
+    pub name: String,
+    /// The configuration's `runtimeExecutable` and `runtimeArgs`.
+    pub command: String,
+    /// The agent's launcher, which leads the process group.
+    pub pid: u32,
+    pub pgid: u32,
+    /// The TCP ports any process of the group listens on.
+    pub live_ports: Vec<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -231,6 +251,7 @@ impl RunStatus {
 pub struct SettingsState {
     pub show_running_count: bool,
     pub list_layout: ListLayout,
+    pub show_agent_servers: bool,
     pub force_stop_after_secs: u32,
     pub log_lines_kept: u32,
 }

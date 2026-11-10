@@ -5,6 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use crate::agent::{self, AgentServer, Watched};
 use crate::sys::{self, ProcessInfo};
 
 /// A Discovered Process: a Node or Bun process tree started outside
@@ -127,10 +128,10 @@ pub fn source_of(ancestors: &[&ProcessInfo]) -> Option<String> {
 }
 
 /// What stays the same while a process lives, so it is read once.
-#[derive(Clone)]
-struct Details {
-    args: Option<Vec<String>>,
-    cwd: Option<String>,
+#[derive(Debug, Clone)]
+pub(crate) struct Details {
+    pub(crate) args: Option<Vec<String>>,
+    pub(crate) cwd: Option<String>,
 }
 
 /// Scans the machine for Discovered Processes, remembering what it read.
@@ -142,8 +143,9 @@ pub struct Scanner {
 impl Scanner {
     /// One scan. `ours` are the process groups and runners of Bunode's own
     /// Runs, which are never listed; the ports each of those groups listens
-    /// on are returned alongside.
-    pub fn scan(&mut self, ours: &Ours) -> Scan {
+    /// on are returned alongside. The Agent Servers of `watched` are
+    /// returned too, and their processes aren't Discovered Processes.
+    pub fn scan(&mut self, ours: &Ours, watched: &[Watched]) -> Scan {
         let uid = sys::current_uid();
         let me = std::process::id() as i32;
         let infos: HashMap<i32, ProcessInfo> = sys::all_pids()
@@ -156,13 +158,18 @@ impl Scanner {
         self.details
             .retain(|(pid, start), _| infos.get(pid).is_some_and(|p| p.start == *start));
 
-        let mut javascript: HashSet<i32> = HashSet::new();
-        for info in infos.values().filter(|p| p.uid == uid && p.pid != me) {
-            let details = self.details_of(info);
-            if is_javascript(info, details.args.as_deref()) {
-                javascript.insert(info.pid);
-            }
-        }
+        let details: HashMap<i32, Details> = infos
+            .values()
+            .filter(|p| p.uid == uid && p.pid != me)
+            .map(|info| (info.pid, self.details_of(info)))
+            .collect();
+        let mut agent_servers = agent::detect(&infos, &details, watched);
+        let agent_groups: HashSet<i32> = agent_servers.iter().map(|s| s.pgid as i32).collect();
+        let javascript: HashSet<i32> = details
+            .iter()
+            .filter(|(pid, d)| is_javascript(&infos[pid], d.args.as_deref()))
+            .map(|(&pid, _)| pid)
+            .collect();
 
         let ancestors = |pid: i32| -> Vec<&ProcessInfo> {
             let mut chain = Vec::new();
@@ -182,6 +189,7 @@ impl Scanner {
         };
         let is_ours = |info: &ProcessInfo| {
             ours.groups.contains(&info.pgid)
+                || agent_groups.contains(&info.pgid)
                 || ours.runners.contains(&info.pid)
                 || info.pid == me
                 || ancestors(info.pid)
@@ -212,7 +220,7 @@ impl Scanner {
                 members.retain(|&m| m != root);
                 members.insert(0, root);
                 let info = &infos[&root];
-                let details = self.details_of(info);
+                let details = &details[&root];
                 let command = details
                     .args
                     .as_deref()
@@ -228,7 +236,7 @@ impl Scanner {
                     pid: root as u32,
                     start: info.start,
                     command,
-                    cwd: details.cwd,
+                    cwd: details.cwd.clone(),
                     source: source_of(&ancestors(root)),
                     member_starts: members.iter().map(|m| infos[m].start).collect(),
                     members: members.into_iter().map(|m| m as u32).collect(),
@@ -239,9 +247,13 @@ impl Scanner {
             .collect();
         found.sort_by_key(|p| (p.start, p.pid));
 
-        // The ports of Bunode's own Runs: every process of each group.
+        // The ports of Bunode's own Runs and of the Agent Servers: every
+        // process of each group.
         let mut group_ports: HashMap<i32, Vec<u16>> = HashMap::new();
-        for info in infos.values().filter(|p| ours.groups.contains(&p.pgid)) {
+        for info in infos
+            .values()
+            .filter(|p| ours.groups.contains(&p.pgid) || agent_groups.contains(&p.pgid))
+        {
             group_ports
                 .entry(info.pgid)
                 .or_default()
@@ -251,9 +263,15 @@ impl Scanner {
             ports.sort_unstable();
             ports.dedup();
         }
+        for server in &mut agent_servers {
+            server.ports = group_ports
+                .remove(&(server.pgid as i32))
+                .unwrap_or_default();
+        }
         Scan {
             discovered: found,
             group_ports,
+            agent_servers,
         }
     }
 
@@ -351,6 +369,7 @@ pub struct Scan {
     pub discovered: Vec<DiscoveredProcess>,
     /// The TCP ports each of Bunode's own Run groups listens on.
     pub group_ports: HashMap<i32, Vec<u16>>,
+    pub agent_servers: Vec<AgentServer>,
 }
 
 /// Bunode's own processes, never listed.

@@ -36,6 +36,15 @@ struct ProjectsPane: View {
                     Button("Add Project…", action: addProject)
                 }
             }
+            Section {
+                Toggle(isOn: Binding(
+                    get: { model.snapshot.settings.showAgentServers },
+                    set: { model.setShowAgentServers($0) }
+                )) {
+                    Text("Show dev servers started by agents")
+                    Text("Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here.")
+                }
+            }
         }
         .formStyle(.grouped)
         .task(id: navigation.pendingAddProject) {

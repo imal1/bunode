@@ -98,6 +98,8 @@ pub struct Settings {
     pub show_running_count: bool,
     /// General › List.
     pub list_layout: ListLayout,
+    /// Projects › Show dev servers started by agents (Agent Servers).
+    pub show_agent_servers: bool,
     /// Advanced › Force stop after, in seconds.
     pub force_stop_after_secs: u32,
     /// Advanced › Log lines kept, per Service.
@@ -115,6 +117,7 @@ impl Default for Settings {
         Settings {
             show_running_count: true,
             list_layout: ListLayout::Flat,
+            show_agent_servers: true,
             force_stop_after_secs: 5,
             log_lines_kept: 10_000,
             node_path: None,

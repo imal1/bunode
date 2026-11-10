@@ -24,6 +24,8 @@ struct LocalizationTests {
         for (english, simplifiedChinese) in [
             ("List", "列表"), ("How the menu bar list is arranged.", "菜单栏列表的排列方式。"),
             ("Flat", "平铺"), ("By Project", "按项目"),
+            ("Show dev servers started by agents", "显示 agent 启动的开发服务"),
+            ("Started by %@", "由 %@ 启动"),
         ] {
             #expect(chinese.localizedString(forKey: english, value: nil, table: nil) == simplifiedChinese)
         }

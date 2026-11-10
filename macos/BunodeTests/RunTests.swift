@@ -59,6 +59,16 @@ struct RunTests {
         #expect(AppModel(dataDirectory: data.url).snapshot.settings.listLayout == .byProject)
     }
 
+    @Test func agentServersCanBeHidden() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        #expect(model.snapshot.settings.showAgentServers)
+        _ = await model.addProject(at: code.folder("api"))
+        #expect(model.snapshot.projects.first?.agentServers == [])
+        model.setShowAgentServers(false)
+        #expect(!model.snapshot.settings.showAgentServers)
+        #expect(!AppModel(dataDirectory: data.url).snapshot.settings.showAgentServers)
+    }
+
     @Test func runningCountCanBeHidden() async throws {
         let model = AppModel(dataDirectory: data.url)
         #expect(model.statusSummary.showsCount)

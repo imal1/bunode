@@ -15,6 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::mpsc as async_mpsc;
 
+use crate::agent::{AgentServer, LaunchFiles};
 use crate::diagnostics::Diagnostics;
 use crate::discovery::{DiscoveredProcess, Ours, Scanner};
 use crate::env;
@@ -26,10 +27,10 @@ use crate::logs::{LogBuffer, LogLine, LogStream};
 use crate::model::{Config, ListLayout, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
-    AddProjectOutcome, ConfigIssue, EnvironmentProblem, EnvironmentState, NewService,
-    PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus, ScriptGroup,
-    ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome, Tool,
-    ToolState,
+    AddProjectOutcome, AgentServerState, ConfigIssue, EnvironmentProblem, EnvironmentState,
+    NewService, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus,
+    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome,
+    Tool, ToolState,
 };
 use crate::store::ConfigStore;
 
@@ -136,6 +137,10 @@ struct State {
     discovered: Vec<DiscoveredProcess>,
     /// Discovered Processes sent SIGTERM, by PID and start time.
     exiting: std::collections::HashSet<(u32, u64)>,
+    /// The Projects' agent launch files; empty while Agent Servers are off.
+    launch_files: LaunchFiles,
+    /// Agent Servers, from the last scan.
+    agent_servers: Vec<AgentServer>,
 }
 
 struct EnvironmentInfo {
@@ -250,6 +255,8 @@ impl Supervisor {
                     removing_projects: Default::default(),
                     discovered: Vec::new(),
                     exiting: Default::default(),
+                    launch_files: LaunchFiles::default(),
+                    agent_servers: Vec::new(),
                 }),
                 notifier: Notifier::new(listener),
                 runner_path: options.runner_path,
@@ -266,6 +273,7 @@ impl Supervisor {
             runtime,
         };
         supervisor.reload_environment();
+        supervisor.shared.refresh_launch_files(None);
         let shared = supervisor.shared.clone();
         supervisor.runtime.spawn(discover(shared));
         if !leftover.is_empty() {
@@ -440,6 +448,7 @@ impl Supervisor {
             settings: SettingsState {
                 show_running_count: state.config.settings.show_running_count,
                 list_layout: state.config.settings.list_layout,
+                show_agent_servers: state.config.settings.show_agent_servers,
                 force_stop_after_secs: state.config.settings.force_stop_after_secs,
                 log_lines_kept: state.config.settings.log_lines_kept,
             },
@@ -510,6 +519,9 @@ impl Supervisor {
         state.detections.insert(project.id, detection);
         let added = project_state(&project, &state);
         drop(state);
+        if self.shared.refresh_launch_files(Some(project.id)) {
+            self.rescan();
+        }
         self.shared.notifier.notify();
         Ok(AddProjectOutcome::Added { project: added })
     }
@@ -612,6 +624,30 @@ impl Supervisor {
     /// General › List.
     pub fn set_list_layout(&self, layout: ListLayout) -> Result<()> {
         self.update_settings(|settings| settings.list_layout = layout)
+    }
+
+    /// Projects › Show dev servers started by agents. Off, launch files
+    /// aren't read and Agent Servers are Discovered Processes again.
+    pub fn set_show_agent_servers(&self, show: bool) -> Result<()> {
+        self.update_settings(|settings| settings.show_agent_servers = show)?;
+        if show {
+            self.shared.refresh_launch_files(None);
+        } else {
+            let mut state = self.shared.lock();
+            state.launch_files.clear();
+            state.agent_servers.clear();
+        }
+        self.shared.notifier.notify();
+        self.rescan();
+        Ok(())
+    }
+
+    /// The popover opened: reads the launch files that changed since they
+    /// were last read, and looks for Agent Servers again if any did.
+    pub fn check_launch_files(&self) {
+        if self.shared.refresh_launch_files(None) {
+            self.rescan();
+        }
     }
 
     /// Advanced › Force stop after: 3, 5, 10 or 30 seconds. Applies to Runs
@@ -761,6 +797,9 @@ impl Supervisor {
         state.config = config;
         state.detections.insert(project_id, detection);
         drop(state);
+        if self.shared.refresh_launch_files(Some(project_id)) {
+            self.rescan();
+        }
         self.shared.notifier.notify();
         Ok(())
     }
@@ -1260,7 +1299,37 @@ impl Shared {
         state.config = config;
         state.detections.remove(&project_id);
         state.removing_projects.remove(&project_id);
+        state.launch_files.forget(project_id);
         Ok(())
+    }
+
+    /// Reads the agent launch files of `project` (else of every Project)
+    /// that changed since they were last read, unless Agent Servers are
+    /// off. Whether any did.
+    fn refresh_launch_files(&self, project: Option<ProjectId>) -> bool {
+        let mut state = self.lock();
+        if !state.config.settings.show_agent_servers {
+            return false;
+        }
+        let roots: Vec<(ProjectId, PathBuf)> = state
+            .config
+            .projects
+            .iter()
+            .filter(|p| project.is_none_or(|id| id == p.id))
+            .map(|p| (p.id, p.path.clone()))
+            .collect();
+        let mut changed = false;
+        let mut problems = Vec::new();
+        for (id, root) in roots {
+            let (read, found) = state.launch_files.refresh(id, &root);
+            changed |= read;
+            problems.extend(found);
+        }
+        drop(state);
+        for line in problems {
+            self.diagnostics.log(&line);
+        }
+        changed
     }
 
     /// The runner of a Run was spawned: remember it on disk.
@@ -1368,8 +1437,11 @@ impl Shared {
 async fn discover(shared: Arc<Shared>) {
     let scanner = Arc::new(Mutex::new(Scanner::default()));
     loop {
+        let watched;
         let ours = {
             let state = shared.lock();
+            let order: Vec<ProjectId> = state.config.projects.iter().map(|p| p.id).collect();
+            watched = state.launch_files.watched(&order);
             Ours {
                 groups: state
                     .runs
@@ -1385,7 +1457,7 @@ async fn discover(shared: Arc<Shared>) {
             scanning
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .scan(&ours)
+                .scan(&ours, &watched)
         })
         .await
         else {
@@ -1399,6 +1471,14 @@ async fn discover(shared: Arc<Shared>) {
             state.exiting.retain(|key| alive.contains(key));
             let mut changed = state.discovered != found;
             state.discovered = found;
+            // Switched off during the scan: what it found is stale.
+            let agent_servers = if state.config.settings.show_agent_servers {
+                scan.agent_servers
+            } else {
+                Vec::new()
+            };
+            changed |= state.agent_servers != agent_servers;
+            state.agent_servers = agent_servers;
             for run in state.runs.values_mut() {
                 let ports = match run.pid {
                     Some(pid) if run.status.is_live() => scan
@@ -1599,6 +1679,20 @@ fn project_state(project: &Project, state: &State) -> ProjectState {
             .services
             .iter()
             .map(|s| service_state(project, s, state.runs.get(&s.id)))
+            .collect(),
+        agent_servers: state
+            .agent_servers
+            .iter()
+            .filter(|s| s.project_id == project.id)
+            .map(|s| AgentServerState {
+                project_id: s.project_id,
+                agent: s.agent.to_owned(),
+                name: s.name.clone(),
+                command: s.command.clone(),
+                pid: s.pid,
+                pgid: s.pgid,
+                live_ports: s.ports.clone(),
+            })
             .collect(),
     }
 }
@@ -1892,7 +1986,9 @@ mod tests {
         assert!(settings.show_running_count);
         assert_eq!(settings.force_stop_after_secs, 5);
         assert_eq!(settings.list_layout, ListLayout::Flat);
+        assert!(settings.show_agent_servers);
         supervisor.set_show_running_count(false).unwrap();
+        supervisor.set_show_agent_servers(false).unwrap();
         supervisor.set_list_layout(ListLayout::ByProject).unwrap();
         supervisor.set_force_stop_after(10).unwrap();
         assert!(supervisor.set_force_stop_after(7).is_err());
@@ -1902,6 +1998,7 @@ mod tests {
         assert!(!settings.show_running_count);
         assert_eq!(settings.force_stop_after_secs, 10);
         assert_eq!(settings.list_layout, ListLayout::ByProject);
+        assert!(!settings.show_agent_servers);
     }
 
     fn wait_until(what: &str, done: impl Fn() -> bool) {

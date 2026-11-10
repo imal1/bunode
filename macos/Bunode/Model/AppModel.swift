@@ -259,6 +259,19 @@ final class AppModel {
         refresh()
     }
 
+    /// Settings › Projects › Show dev servers started by agents.
+    func setShowAgentServers(_ show: Bool) {
+        try? core.setShowAgentServers(show: show)
+        refresh()
+    }
+
+    /// Reads the agent launch files that changed since the last look, off
+    /// the main thread.
+    func checkLaunchFiles() {
+        let core = self.core
+        Task.detached { core.checkLaunchFiles() }
+    }
+
     /// Reads the login shell's environment again; new Runs get it.
     func reloadEnvironment() {
         core.reloadEnvironment()

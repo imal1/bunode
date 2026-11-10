@@ -33,7 +33,7 @@ struct HomeView: View {
                 .padding(.bottom, 4)
             if model.snapshot.projects.isEmpty {
                 emptyState
-            } else if rowOrder.isEmpty {
+            } else if rowOrder.isEmpty && model.snapshot.projects.allSatisfy(\.agentServers.isEmpty) {
                 Text("No commands yet.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -126,6 +126,9 @@ struct HomeView: View {
                 RowNoticeView(model: model, router: router)
                     .padding(EdgeInsets(top: 2, leading: 50, bottom: 6, trailing: 8))
             }
+        }
+        ForEach(project.agentServers, id: \.pid) { server in
+            AgentServerRow(project: project, server: server)
         }
     }
 
@@ -417,6 +420,58 @@ struct ServiceRow: View {
             label += String(localized: ", port \(String(port))")
         }
         return label
+    }
+}
+
+/// A dev server an agent started from its launch settings in the Project's
+/// root (an Agent Server, ADR-0007). Bunode only watches it: the row opens
+/// nothing and has no badge.
+private struct AgentServerRow: View {
+    let project: ProjectState
+    let server: AgentServerState
+
+    private var folder: String { project.path.abbreviatingWithTilde }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            StatusTile(style: .running)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(verbatim: server.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    PortPill(ports: server.livePorts)
+                }
+                HStack(spacing: 0) {
+                    Text(verbatim: folder)
+                        .truncationMode(.middle)
+                    HStack(spacing: 0) {
+                        Text(verbatim: " · ")
+                        Text("Running")
+                    }
+                    .fixedSize()
+                }
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 12))
+        .frame(height: 46)
+        .hoverHighlight(cornerRadius: 9)
+        .help([server.name, server.command, folder, String(localized: "Started by \(server.agent)")].joined(separator: "\n"))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        var label = "\(server.name), \(String(localized: "Running"))"
+        if let port = server.livePorts.first {
+            label += String(localized: ", port \(String(port))")
+        }
+        return label + String(localized: ", started by \(server.agent)")
     }
 }
 

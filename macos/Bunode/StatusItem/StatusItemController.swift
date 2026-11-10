@@ -10,6 +10,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let router = PopoverRouter()
     private let toaster = Toaster()
     private let dot = StatusDotView()
+    private let model: AppModel
     /// When the popover last closed; see `togglePopover(_:)`.
     private var lastClosed = Date.distantPast
     /// NSPopover leaves this gap where the hidden arrow was. Raising its
@@ -21,6 +22,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// on a pane and with the Add Project folder picker.
     /// `quit` is called once every Run has stopped.
     init(model: AppModel, openSettings: @escaping (SettingsPane?, Bool) -> Void, quit: @escaping () -> Void) {
+        self.model = model
         super.init()
 
         let content = NSHostingController(
@@ -107,6 +109,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func showPopover() {
         guard let button = statusItem.button else { return }
         router.reset()
+        model.checkLaunchFiles()
         // Make the popover key, so its keyboard shortcuts (⌘, ⌘Q) work.
         NSApp.activate()
         let anchor = button.bounds.offsetBy(dx: 0, dy: button.isFlipped ? -anchorRaise : anchorRaise)

@@ -190,6 +190,16 @@
         }
       }
     },
+    ", started by %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "，由 %@ 启动"
+          }
+        }
+      }
+    },
     "Advanced": {
       "localizations": {
         "zh-Hans": {
@@ -404,12 +414,52 @@
         }
       }
     },
+    "Running": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中"
+          }
+        }
+      }
+    },
+    "Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由 Claude 等 agent 按其启动配置在项目目录中运行的服务，可在此停止。"
+          }
+        }
+      }
+    },
+    "Show dev servers started by agents": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示 agent 启动的开发服务"
+          }
+        }
+      }
+    },
     "Show running count": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "显示运行数量"
+          }
+        }
+      }
+    },
+    "Started by %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由 %@ 启动"
           }
         }
       }
