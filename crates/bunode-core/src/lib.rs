@@ -27,7 +27,7 @@ pub use ansi::{LogColor, LogSpan, LogStyle};
 pub use discovery::DiscoveredProcess;
 pub use error::{Error, Result};
 pub use logs::{LogLine, LogStream};
-pub use model::PackageManager;
+pub use model::{ListLayout, PackageManager};
 pub use snapshot::{
     AddProjectOutcome, ConfigIssue, ConfigProblem, EnvironmentProblem, EnvironmentState,
     NewService, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus,

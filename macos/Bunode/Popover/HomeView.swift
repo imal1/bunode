@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Home (design-handoff §2.2): every Project, in registration order, with
-/// its Services in creation order.
+/// its Services in creation order; flat, or under a heading per Project.
 struct HomeView: View {
     let model: AppModel
     let router: PopoverRouter
@@ -43,19 +43,20 @@ struct HomeView: View {
             } else {
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.snapshot.projects, id: \.id) { project in
-                            ForEach(project.services, id: \.id) { service in
-                                ServiceRow(model: model, project: project, service: service, isFocused: focusedService == service.id) {
-                                    router.push(.service(service.id))
+                        if isGrouped {
+                            let groups = Self.groups(model.snapshot.projects)
+                            ForEach(groups, id: \.id) { project in
+                                if project.id != groups.first?.id {
+                                    Divider()
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
                                 }
-                                .focusable()
-                                .focusEffectDisabled()
-                                .focused($focusedService, equals: service.id)
-                                if model.rowNotice?.serviceID == service.id {
-                                    // Lined up with the row's text column.
-                                    RowNoticeView(model: model, router: router)
-                                        .padding(EdgeInsets(top: 2, leading: 50, bottom: 6, trailing: 8))
-                                }
+                                ProjectHeader(title: project.name)
+                                rows(of: project, showsProjectName: false)
+                            }
+                        } else {
+                            ForEach(model.snapshot.projects, id: \.id) { project in
+                                rows(of: project, showsProjectName: true)
                             }
                         }
                     }
@@ -95,6 +96,37 @@ struct HomeView: View {
         }
         .onAppear(perform: focusList)
         .onChange(of: router.openCount, focusList)
+    }
+
+    private var isGrouped: Bool { model.snapshot.settings.listLayout == .byProject }
+
+    /// The Projects that get a heading: those with a row to show.
+    static func groups(_ projects: [ProjectState]) -> [ProjectState] {
+        projects.filter { !$0.services.isEmpty }
+    }
+
+    /// A Project's rows, each with its warning bar if it has one.
+    @ViewBuilder
+    private func rows(of project: ProjectState, showsProjectName: Bool) -> some View {
+        ForEach(project.services, id: \.id) { service in
+            ServiceRow(
+                model: model,
+                project: project,
+                service: service,
+                showsProjectName: showsProjectName,
+                isFocused: focusedService == service.id
+            ) {
+                router.push(.service(service.id))
+            }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedService, equals: service.id)
+            if model.rowNotice?.serviceID == service.id {
+                // Lined up with the row's text column.
+                RowNoticeView(model: model, router: router)
+                    .padding(EdgeInsets(top: 2, leading: 50, bottom: 6, trailing: 8))
+            }
+        }
     }
 
     /// Service rows in the order Home shows them.
@@ -164,6 +196,25 @@ struct HomeView: View {
     }
 }
 
+/// A Project's name over its rows in the grouped list (design-handoff
+/// §2.2, §4): not focusable, so ↑ / ↓ skip it; VoiceOver reads it as a
+/// heading.
+private struct ProjectHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(verbatim: title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(EdgeInsets(top: 6, leading: 8, bottom: 2, trailing: 8))
+            .frame(maxWidth: .infinity, alignment: .bottomLeading)
+            .frame(height: 24)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
 /// `Add Service` in the Home header: a text link, underlined on hover.
 private struct AddServiceLink: View {
     let action: () -> Void
@@ -227,6 +278,8 @@ struct ServiceRow: View {
     let model: AppModel
     let project: ProjectState
     let service: ServiceState
+    /// Flat list: the title names the Project. Under its heading it doesn't.
+    let showsProjectName: Bool
     /// The list's keyboard selection is on this row.
     let isFocused: Bool
     /// Opens the Service view.
@@ -281,7 +334,7 @@ struct ServiceRow: View {
                 StatusTile(style: service.dotStyle(status: status))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text(verbatim: service.title(projectName: project.name))
+                        Text(verbatim: service.title(projectName: showsProjectName ? project.name : nil))
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                             .truncationMode(.tail)

@@ -30,6 +30,16 @@ impl PackageManager {
     }
 }
 
+/// General › List: how the menu bar list is arranged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ListLayout {
+    /// One row per command, Projects next to each other.
+    Flat,
+    /// A small heading per Project over its rows.
+    ByProject,
+}
+
 /// A working directory registered in Bunode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +96,8 @@ pub struct Service {
 pub struct Settings {
     /// General › Show running count.
     pub show_running_count: bool,
+    /// General › List.
+    pub list_layout: ListLayout,
     /// Advanced › Force stop after, in seconds.
     pub force_stop_after_secs: u32,
     /// Advanced › Log lines kept, per Service.
@@ -102,6 +114,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             show_running_count: true,
+            list_layout: ListLayout::Flat,
             force_stop_after_secs: 5,
             log_lines_kept: 10_000,
             node_path: None,

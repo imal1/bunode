@@ -122,6 +122,21 @@ struct GeneralPane: View {
                 }
             }
             Section("Display") {
+                LabeledContent {
+                    Picker("List", selection: Binding(
+                        get: { model.snapshot.settings.listLayout },
+                        set: { model.setListLayout($0) }
+                    )) {
+                        Text("Flat").tag(ListLayout.flat)
+                        Text("By Project").tag(ListLayout.byProject)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                } label: {
+                    Text("List")
+                    Text("How the menu bar list is arranged.")
+                }
                 LanguageRow()
             }
         }

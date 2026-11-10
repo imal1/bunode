@@ -21,5 +21,11 @@ struct LocalizationTests {
         let chinese = try #require(Bundle(path: path))
         #expect(chinese.localizedString(forKey: "Restart Now", value: nil, table: nil) == "立即重启")
         #expect(chinese.localizedString(forKey: "General", value: nil, table: nil) == "通用")
+        for (english, simplifiedChinese) in [
+            ("List", "列表"), ("How the menu bar list is arranged.", "菜单栏列表的排列方式。"),
+            ("Flat", "平铺"), ("By Project", "按项目"),
+        ] {
+            #expect(chinese.localizedString(forKey: english, value: nil, table: nil) == simplifiedChinese)
+        }
     }
 }

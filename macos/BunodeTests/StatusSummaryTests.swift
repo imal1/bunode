@@ -61,6 +61,8 @@ struct ServiceTitleTests {
     ])
     func aPresetScriptReadsAsProjectAndScript(command: String, script: String) {
         #expect(service(command: command).title(projectName: "shop") == "shop \(script)")
+        // In its Project's group the row leaves the name out.
+        #expect(service(command: command).title(projectName: nil) == script)
     }
 
     @Test(arguments: [
@@ -75,6 +77,7 @@ struct ServiceTitleTests {
     ])
     func anythingElseStaysWhole(command: String) {
         #expect(service(command: command).title(projectName: "shop") == command)
+        #expect(service(command: command).title(projectName: nil) == command)
     }
 }
 

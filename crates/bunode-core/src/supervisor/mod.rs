@@ -23,7 +23,7 @@ use crate::launch;
 use crate::leftovers::{self, RunRecord, RunRecords};
 use crate::logfile::{Limits, LogFiles, RunLogWriter};
 use crate::logs::{LogBuffer, LogLine, LogStream};
-use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
+use crate::model::{Config, ListLayout, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
     AddProjectOutcome, ConfigIssue, EnvironmentProblem, EnvironmentState, NewService,
@@ -439,6 +439,7 @@ impl Supervisor {
                 .collect(),
             settings: SettingsState {
                 show_running_count: state.config.settings.show_running_count,
+                list_layout: state.config.settings.list_layout,
                 force_stop_after_secs: state.config.settings.force_stop_after_secs,
                 log_lines_kept: state.config.settings.log_lines_kept,
             },
@@ -606,6 +607,11 @@ impl Supervisor {
     /// General › Show running count.
     pub fn set_show_running_count(&self, show: bool) -> Result<()> {
         self.update_settings(|settings| settings.show_running_count = show)
+    }
+
+    /// General › List.
+    pub fn set_list_layout(&self, layout: ListLayout) -> Result<()> {
+        self.update_settings(|settings| settings.list_layout = layout)
     }
 
     /// Advanced › Force stop after: 3, 5, 10 or 30 seconds. Applies to Runs
@@ -1885,7 +1891,9 @@ mod tests {
         let settings = supervisor.snapshot().settings;
         assert!(settings.show_running_count);
         assert_eq!(settings.force_stop_after_secs, 5);
+        assert_eq!(settings.list_layout, ListLayout::Flat);
         supervisor.set_show_running_count(false).unwrap();
+        supervisor.set_list_layout(ListLayout::ByProject).unwrap();
         supervisor.set_force_stop_after(10).unwrap();
         assert!(supervisor.set_force_stop_after(7).is_err());
         drop(supervisor);
@@ -1893,6 +1901,7 @@ mod tests {
         let settings = reloaded.snapshot().settings;
         assert!(!settings.show_running_count);
         assert_eq!(settings.force_stop_after_secs, 10);
+        assert_eq!(settings.list_layout, ListLayout::ByProject);
     }
 
     fn wait_until(what: &str, done: impl Fn() -> bool) {

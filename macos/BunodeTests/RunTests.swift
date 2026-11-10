@@ -44,6 +44,21 @@ struct RunTests {
         #expect(model.statusSummary.running == 0)
     }
 
+    @Test func theListCanBeGroupedByProject() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        #expect(model.snapshot.settings.listLayout == .flat)
+        _ = await model.addProject(at: code.folder("api"))
+        _ = await model.addProject(at: code.folder("empty"))
+        let api = try #require(model.snapshot.projects.first)
+        _ = try await model.addService(to: api.id, name: "dev", command: "bun run dev", folder: nil).get()
+        // A Project without rows gets no heading.
+        #expect(HomeView.groups(model.snapshot.projects).map(\.name) == ["api"])
+
+        model.setListLayout(.byProject)
+        #expect(model.snapshot.settings.listLayout == .byProject)
+        #expect(AppModel(dataDirectory: data.url).snapshot.settings.listLayout == .byProject)
+    }
+
     @Test func runningCountCanBeHidden() async throws {
         let model = AppModel(dataDirectory: data.url)
         #expect(model.statusSummary.showsCount)

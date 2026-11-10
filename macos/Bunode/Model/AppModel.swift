@@ -253,6 +253,12 @@ final class AppModel {
         refresh()
     }
 
+    /// General › List.
+    func setListLayout(_ layout: ListLayout) {
+        try? core.setListLayout(layout: layout)
+        refresh()
+    }
+
     /// Reads the login shell's environment again; new Runs get it.
     func reloadEnvironment() {
         core.reloadEnvironment()

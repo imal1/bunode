@@ -221,6 +221,16 @@
       }
     },
     "bunode-runner exited unexpectedly (%@).": {},
+    "By Project": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按项目"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "zh-Hans": {
@@ -256,6 +266,16 @@
     "Enter a name.": {},
     "Exited": {},
     "Exited with code %@": {},
+    "Flat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平铺"
+          }
+        }
+      }
+    },
     "Force stop after must be one of %@ seconds.": {},
     "General": {
       "localizations": {
@@ -263,6 +283,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "通用"
+          }
+        }
+      }
+    },
+    "How the menu bar list is arranged.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单栏列表的排列方式。"
           }
         }
       }
@@ -296,6 +326,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "语言"
+          }
+        }
+      }
+    },
+    "List": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "列表"
           }
         }
       }

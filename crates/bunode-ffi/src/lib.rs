@@ -10,10 +10,10 @@ use std::sync::Arc;
 
 use bunode_core::{
     AddProjectOutcome, ConfigIssue, ConfigProblem, DiscoveredProcess, EnvironmentProblem,
-    EnvironmentState, LogColor, LogLine, LogSpan, LogStream, LogStyle, NewService, PackageManager,
-    PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus, ScriptGroup,
-    ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome, Tool,
-    ToolState,
+    EnvironmentState, ListLayout, LogColor, LogLine, LogSpan, LogStream, LogStyle, NewService,
+    PackageManager, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus,
+    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome,
+    Tool, ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -48,6 +48,12 @@ pub struct ConfigIssue {
     pub path: String,
     pub backup: Option<String>,
     pub problem: ConfigProblem,
+}
+
+#[uniffi::remote(Enum)]
+pub enum ListLayout {
+    Flat,
+    ByProject,
 }
 
 #[uniffi::remote(Enum)]
@@ -189,6 +195,7 @@ pub enum RunStatus {
 #[uniffi::remote(Record)]
 pub struct SettingsState {
     pub show_running_count: bool,
+    pub list_layout: ListLayout,
     pub force_stop_after_secs: u32,
     pub log_lines_kept: u32,
 }
@@ -540,6 +547,11 @@ impl BunodeCore {
     /// General › Show running count.
     pub fn set_show_running_count(&self, show: bool) -> Result<(), CoreError> {
         Ok(self.supervisor.set_show_running_count(show)?)
+    }
+
+    /// General › List.
+    pub fn set_list_layout(&self, layout: ListLayout) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_list_layout(layout)?)
     }
 
     /// Reads the login shell's environment again, in the background.

@@ -1,7 +1,7 @@
 //! The read-only view of the Supervisor's state that the UI renders.
 //! The UI never derives state on its own; it shows the latest snapshot.
 
-use crate::model::PackageManager;
+use crate::model::{ListLayout, PackageManager};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot {
@@ -230,6 +230,7 @@ impl RunStatus {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SettingsState {
     pub show_running_count: bool,
+    pub list_layout: ListLayout,
     pub force_stop_after_secs: u32,
     pub log_lines_kept: u32,
 }

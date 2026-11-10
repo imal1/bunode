@@ -56,9 +56,11 @@ extension ServiceState {
     }
 
     /// A row's and the Service view's title: `{project} {script}` for a
-    /// preset, otherwise the whole command.
-    func title(projectName: String) -> String {
-        Self.preset(command).map { "\(projectName) \($0.script)" } ?? command
+    /// preset, otherwise the whole command. Without a Project name (a row
+    /// under its Project's heading) a preset is just its script.
+    func title(projectName: String?) -> String {
+        guard let preset = Self.preset(command) else { return command }
+        return projectName.map { "\($0) \(preset.script)" } ?? preset.script
     }
 
     /// A build, test or lint script ends by itself, unless it watches.
