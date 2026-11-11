@@ -80,7 +80,9 @@ fn force_kill_ends_a_run_that_ignores_sigterm() {
     let id = h.service(
         "process-tree",
         &format!(
-            "node -e \"require('fs').appendFileSync('{}', process.pid + '\\n'); process.on('SIGTERM', () => {{}}); setInterval(() => {{}}, 1000)\"",
+            // The handler goes in before the pid is written: a SIGTERM in
+            // between would otherwise end it and fail the test.
+            "node -e \"process.on('SIGTERM', () => {{}}); require('fs').appendFileSync('{}', process.pid + '\\n'); setInterval(() => {{}}, 1000)\"",
             pids.display()
         ),
     );
