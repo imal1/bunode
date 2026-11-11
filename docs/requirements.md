@@ -49,7 +49,7 @@ Bunode 是一款专为 macOS 设计的轻量级 Node.js / Bun 原生图形化进
 
 |层级|技术|
 |---|---|
-|UI 框架|SwiftUI（Popover、Settings）+ AppKit（日志视图、菜单栏状态项等性能敏感部分）|
+|UI 框架|SwiftUI（Popover、Settings）+ AppKit（菜单栏状态项等性能敏感部分）；日志用系统控制台（3.4）|
 |UI 状态|Observation（`@Observable`）|
 |图标|SF Symbols|
 |本地化|String Catalog，英文与简体中文，Settings 中切换（4.1）|
@@ -86,7 +86,7 @@ Bunode.app
 │   ├── Process Discovery
 │   ├── Port Scanner
 │   ├── Resource Monitor
-│   ├── Log Collector（有界环形缓冲区）
+│   ├── Log Writer（每个 Run 一个滚动文件）
 │   └── Project Repository
 │
 └── bunode-runner（每个 Run 一个）
@@ -537,7 +537,7 @@ Claude 等 agent 会按自己的启动配置在 Project 根目录里跑开发服
 - SwiftUI App + Rust 核心 + UniFFI 构建链路打通。
 - 添加 Project，识别 `package.json` scripts 为 Service。
 - 启动、停止 Service，正确终止进程组（含 `bunode-runner`）。
-- 实时日志（内存有界缓冲区）。
+- 实时日志（写入文件，在控制台中查看，3.4）。
 - 菜单栏：运行数量与启停。
 
 ### M1 — MVP 补全

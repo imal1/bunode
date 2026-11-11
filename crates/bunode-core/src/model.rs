@@ -102,8 +102,6 @@ pub struct Settings {
     pub show_agent_servers: bool,
     /// Advanced › Force stop after, in seconds.
     pub force_stop_after_secs: u32,
-    /// Advanced › Log lines kept, per Service.
-    pub log_lines_kept: u32,
     /// Advanced › Node.js path override.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node_path: Option<PathBuf>,
@@ -119,7 +117,6 @@ impl Default for Settings {
             list_layout: ListLayout::Flat,
             show_agent_servers: true,
             force_stop_after_secs: 5,
-            log_lines_kept: 10_000,
             node_path: None,
             bun_path: None,
         }

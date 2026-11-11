@@ -2,7 +2,7 @@
 
 mod support;
 
-use bunode_core::{AddProjectOutcome, LogStream, NewService, PackageManager, RunStatus};
+use bunode_core::{AddProjectOutcome, NewService, PackageManager, RunStatus};
 use support::*;
 
 fn project(h: &Harness, fixture_name: &str) -> bunode_core::ProjectState {
@@ -99,11 +99,9 @@ fn package_services_run_in_their_folder() {
         let state = h.state(service.id);
         assert_eq!(state.status, RunStatus::Stopped, "{name}: {state:?}");
         let cwd = h
-            .supervisor
-            .log_lines(service.id, 0, 100)
+            .stdout(service.id)
             .into_iter()
-            .filter(|l| l.stream == LogStream::Stdout)
-            .find_map(|l| l.text.strip_prefix("cwd ").map(str::to_owned))
+            .find_map(|l| l.strip_prefix("cwd ").map(str::to_owned))
             .unwrap_or_default();
         assert!(cwd.ends_with(&format!("{name}/apps/web")), "{name}: {cwd}");
     }

@@ -10,10 +10,10 @@ use std::sync::Arc;
 
 use bunode_core::{
     AddProjectOutcome, AgentServerState, ConfigIssue, ConfigProblem, DiscoveredProcess,
-    EnvironmentProblem, EnvironmentState, ListLayout, LogColor, LogLine, LogSpan, LogStream,
-    LogStyle, NewService, PackageManager, PortConflictOwner, ProjectScripts, ProjectState, RunEnd,
-    RunNote, RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState,
-    Snapshot, StartOutcome, Tool, ToolState,
+    EnvironmentProblem, EnvironmentState, ListLayout, NewService, PackageManager,
+    PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus, ScriptGroup,
+    ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome, Tool,
+    ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -149,12 +149,6 @@ pub struct ServiceState {
     pub run_number: Option<u64>,
     pub pid: Option<u32>,
     pub last_exit: Option<RunNote>,
-    pub log_first: u64,
-    pub log_count: u64,
-    pub log_dropped: u64,
-    pub log_match_first: u64,
-    pub log_match_count: u64,
-    pub log_filter_generation: u64,
     pub has_pending_config: bool,
     pub ended_by: Option<RunEnd>,
     pub live_ports: Vec<u16>,
@@ -211,7 +205,6 @@ pub struct SettingsState {
     pub list_layout: ListLayout,
     pub show_agent_servers: bool,
     pub force_stop_after_secs: u32,
-    pub log_lines_kept: u32,
 }
 
 #[uniffi::remote(Enum)]
@@ -245,45 +238,6 @@ pub struct NewService {
     pub name: String,
     pub command: String,
     pub folder: Option<String>,
-}
-
-#[uniffi::remote(Record)]
-pub struct LogLine {
-    pub seq: u64,
-    pub time_ms: i64,
-    pub stream: LogStream,
-    pub text: String,
-    pub spans: Vec<LogSpan>,
-}
-
-#[uniffi::remote(Enum)]
-pub enum LogStream {
-    Stdout,
-    Stderr,
-    System,
-}
-
-#[uniffi::remote(Record)]
-pub struct LogSpan {
-    pub start: u32,
-    pub length: u32,
-    pub style: LogStyle,
-}
-
-#[uniffi::remote(Record)]
-pub struct LogStyle {
-    pub foreground: Option<LogColor>,
-    pub background: Option<LogColor>,
-    pub bold: bool,
-    pub dim: bool,
-    pub italic: bool,
-    pub underline: bool,
-}
-
-#[uniffi::remote(Enum)]
-pub enum LogColor {
-    Palette { index: u8 },
-    Rgb { red: u8, green: u8, blue: u8 },
 }
 
 #[uniffi::remote(Enum)]
@@ -341,12 +295,6 @@ pub enum CoreError {
     NotExecutable { path: String },
     #[error("Force stop after must be one of {choices:?} seconds.")]
     InvalidForceStopAfter { choices: Vec<u32> },
-    #[error("Log lines kept must be one of {choices:?}.")]
-    InvalidLogLinesKept { choices: Vec<u32> },
-    #[error("This Service has no Runs yet.")]
-    NoRuns,
-    #[error("Couldn't export to {path}: {reason}")]
-    ExportFailed { path: String, reason: String },
     #[error("PID {pid} has already exited.")]
     ProcessExited { pid: u32 },
     #[error("Couldn't send SIGTERM to PID {pid}: {reason}")]
@@ -377,9 +325,6 @@ impl From<bunode_core::Error> for CoreError {
             E::NameTaken { project } => CoreError::NameTaken { project },
             E::NotExecutable { path } => CoreError::NotExecutable { path },
             E::InvalidForceStopAfter { choices } => CoreError::InvalidForceStopAfter { choices },
-            E::InvalidLogLinesKept { choices } => CoreError::InvalidLogLinesKept { choices },
-            E::NoRuns => CoreError::NoRuns,
-            E::ExportFailed { path, reason } => CoreError::ExportFailed { path, reason },
             E::ProcessExited { pid } => CoreError::ProcessExited { pid },
             E::SignalFailed { pid, reason } => CoreError::SignalFailed { pid, reason },
             E::AgentServerSurvived { name } => CoreError::AgentServerSurvived { name },
@@ -600,43 +545,11 @@ impl BunodeCore {
             .set_tool_path(tool, path.as_deref().map(std::path::Path::new))?)
     }
 
-    /// Up to `max` lines of the Service's current or last Run, from `from` on.
-    pub fn log_lines(&self, service_id: u64, from: u64, max: u32) -> Vec<LogLine> {
-        self.supervisor.log_lines(service_id, from, max)
-    }
-
-    /// Logs › Search; an empty query shows everything. Returns at once.
-    pub fn set_log_filter(&self, service_id: u64, query: String) {
-        self.supervisor.set_log_filter(service_id, &query);
-    }
-
-    /// Up to `max` lines matching the search, from match number `from` on.
-    pub fn log_matching_lines(&self, service_id: u64, from: u64, max: u32) -> Vec<LogLine> {
-        self.supervisor.log_matching_lines(service_id, from, max)
-    }
-
-    /// Logs › Export…: the full log of the current or last Run.
-    pub fn export_log(&self, service_id: u64, destination: String) -> Result<(), CoreError> {
-        Ok(self
-            .supervisor
-            .export_log(service_id, std::path::Path::new(&destination))?)
-    }
-
     /// Logs › Open in Console: the newest file of the current or last Run.
     pub fn current_log_file(&self, service_id: u64) -> Option<String> {
         self.supervisor
             .current_log_file(service_id)
             .map(|p| p.display().to_string())
-    }
-
-    /// Logs › Clear: hides the lines shown so far.
-    pub fn clear_logs(&self, service_id: u64) {
-        self.supervisor.clear_logs(service_id);
-    }
-
-    /// Advanced › Log lines kept: 5,000, 10,000 or 50,000.
-    pub fn set_log_lines_kept(&self, lines: u32) -> Result<(), CoreError> {
-        Ok(self.supervisor.set_log_lines_kept(lines)?)
     }
 
     /// Advanced › Force stop after: 3, 5, 10 or 30 seconds.

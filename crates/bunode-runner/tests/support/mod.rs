@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use bunode_core::{
-    AddProjectOutcome, Listener, NewService, ServiceState, Supervisor, SupervisorOptions,
+    AddProjectOutcome, Listener, LogStream, NewService, ServiceState, Supervisor, SupervisorOptions,
 };
 use nix::sys::signal::kill;
 use nix::unistd::Pid;
@@ -86,6 +86,38 @@ impl Harness {
             )
             .unwrap()
             .id
+    }
+
+    /// The current or last Run's log as its file holds it, line by line.
+    pub fn log(&self, id: u64) -> Vec<(LogStream, String)> {
+        let Some(path) = self.supervisor.current_log_file(id) else {
+            return Vec::new();
+        };
+        fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| {
+                // `{timestamp} {out|err|bunode} {text}`
+                let (_, rest) = line.split_once(' ')?;
+                let (tag, text) = rest.split_once(' ').unwrap_or((rest, ""));
+                let stream = match tag {
+                    "out" => LogStream::Stdout,
+                    "err" => LogStream::Stderr,
+                    "bunode" => LogStream::System,
+                    _ => return None,
+                };
+                Some((stream, text.to_owned()))
+            })
+            .collect()
+    }
+
+    /// The text of the Run's stdout lines.
+    pub fn stdout(&self, id: u64) -> Vec<String> {
+        self.log(id)
+            .into_iter()
+            .filter(|(stream, _)| *stream == LogStream::Stdout)
+            .map(|(_, text)| text)
+            .collect()
     }
 
     pub fn state(&self, id: u64) -> ServiceState {

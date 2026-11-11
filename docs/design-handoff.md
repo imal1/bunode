@@ -287,7 +287,7 @@ agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launc
 | Env | Node.js · 路径（mono） | 版本 `22.11.0` + `Change…` | `NSOpenPanel` 选可执行文件 |
 | Env | Bun · 路径（mono） | 版本 `1.2.4` + `Change…` | 同上 |
 | Stop | Force stop after · `Stop asks nicely first, then force-quits.` | 弹出菜单 `5 s` | 选项 3 / 5 / 10 / 30 s，默认 5（需求 §3.2-7） |
-| Stop | Log lines kept · `Per Service. Export saves the full log.` | 弹出菜单 `10,000` | 选项 5,000 / 10,000 / 50,000，默认 10,000 |
+| Stop | ~~Log lines kept~~ | — | **已取消**（2026-11-11，ADR-0008）：日志不再保留在内存里 |
 | Stop | Diagnostics · `Supervisor and runner logs.` | `Open` | Finder 打开 `~/Library/Logs/Bunode` |
 
 > 画布里弹出菜单是“点一下轮换下一个值”的假控件，落地必须是真正的 `Picker(.menu)`。
@@ -767,7 +767,7 @@ Settings
   "Stop %d and Remove" · "Remove" · "Removed %@. Files untouched."
   "Shell environment" · "%d variables from %@ · %@" · "Reload" · "Reloading" · "Environment reloaded. New Runs get it."
   "Node.js" · "Bun" · "Force stop after" · "Stop asks nicely first, then force-quits."
-  "Log lines kept" · "Per Service. Export saves the full log." · "Diagnostics" · "Supervisor and runner logs." · "Open"
+  "Diagnostics" · "Supervisor and runner logs." · "Open"
   "List" · "How the menu bar list is arranged." · "Flat" · "By Project"
   "Language" · "Applies after Bunode restarts." · "System" · "English" · "简体中文" · "Restart Bunode to apply." · "Restart Now"
   "Show dev servers started by agents" · "Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here."

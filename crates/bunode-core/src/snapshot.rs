@@ -194,16 +194,6 @@ pub struct ServiceState {
     pub pid: Option<u32>,
     /// How the last Run ended, for Crashed and Failed.
     pub last_exit: Option<RunNote>,
-    /// The log of the current or last Run: `seq` of the first line shown,
-    /// how many are shown, and how many were dropped (`LogInfo`).
-    pub log_first: u64,
-    pub log_count: u64,
-    pub log_dropped: u64,
-    /// With a Logs search: the first match number and how many matches,
-    /// and a number that changes whenever the search does.
-    pub log_match_first: u64,
-    pub log_match_count: u64,
-    pub log_filter_generation: u64,
     /// The settings changed while the Run was live; they apply to the next
     /// Run ("Saved. Applies on the next Run.").
     pub has_pending_config: bool,
@@ -256,7 +246,6 @@ pub struct SettingsState {
     pub list_layout: ListLayout,
     pub show_agent_servers: bool,
     pub force_stop_after_secs: u32,
-    pub log_lines_kept: u32,
 }
 
 /// What Start did (design-handoff §5.3).

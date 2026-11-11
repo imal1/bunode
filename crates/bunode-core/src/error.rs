@@ -40,12 +40,6 @@ pub enum Error {
     NotExecutable { path: String },
     #[error("Force stop after must be one of {choices:?} seconds.")]
     InvalidForceStopAfter { choices: Vec<u32> },
-    #[error("Log lines kept must be one of {choices:?}.")]
-    InvalidLogLinesKept { choices: Vec<u32> },
-    #[error("This Service has no Runs yet.")]
-    NoRuns,
-    #[error("Couldn't export to {path}: {reason}")]
-    ExportFailed { path: String, reason: String },
     #[error("PID {pid} has already exited.")]
     ProcessExited { pid: u32 },
     #[error("Couldn't send SIGTERM to PID {pid}: {reason}")]

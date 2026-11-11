@@ -121,74 +121,6 @@
         }
       }
     },
-    "%lld dropped": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已丢弃 %lld 行"
-          }
-        }
-      }
-    },
-    "%lld lines": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld line"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld lines"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 行"
-          }
-        }
-      }
-    },
-    "%lld matches": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld match"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld matches"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个匹配"
-          }
-        }
-      }
-    },
     "%lld running": {
       "localizations": {
         "zh-Hans": {
@@ -662,26 +594,6 @@
         }
       }
     },
-    "Clear": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清除"
-          }
-        }
-      }
-    },
-    "Clear search": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清除搜索"
-          }
-        }
-      }
-    },
     "Click to rename": {
       "localizations": {
         "zh-Hans": {
@@ -718,16 +630,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "拷贝"
-          }
-        }
-      }
-    },
-    "Couldn't export to %@: %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法导出到 %@：%@"
           }
         }
       }
@@ -1002,16 +904,6 @@
         }
       }
     },
-    "Export…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "导出…"
-          }
-        }
-      }
-    },
     "Failed": {
       "localizations": {
         "zh-Hans": {
@@ -1231,62 +1123,12 @@
         }
       }
     },
-    "Log lines kept": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留日志行数"
-          }
-        }
-      }
-    },
-    "Log lines kept must be one of %@.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留日志行数必须是 %@ 中的值。"
-          }
-        }
-      }
-    },
     "Logs": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "日志"
-          }
-        }
-      }
-    },
-    "Logs of %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 的日志"
-          }
-        }
-      }
-    },
-    "Logs · No Runs yet": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "日志 · 尚无运行"
-          }
-        }
-      }
-    },
-    "Logs · Run #%@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "日志 · 运行 #%@"
           }
         }
       }
@@ -1351,16 +1193,6 @@
         }
       }
     },
-    "No lines match.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有匹配的行。"
-          }
-        }
-      }
-    },
     "No log file yet.": {
       "localizations": {
         "zh-Hans": {
@@ -1377,16 +1209,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有其他 Node 或 Bun 进程。"
-          }
-        }
-      }
-    },
-    "No output yet.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "还没有输出。"
           }
         }
       }
@@ -1517,16 +1339,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "粘贴"
-          }
-        }
-      }
-    },
-    "Per Service. Export saves the full log.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按服务计。导出会保存完整日志。"
           }
         }
       }
@@ -1841,16 +1653,6 @@
         }
       }
     },
-    "Saved %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已保存 %@"
-          }
-        }
-      }
-    },
     "Saved. Applies on the next Run.": {
       "localizations": {
         "zh-Hans": {
@@ -1867,16 +1669,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "package.json 中的脚本"
-          }
-        }
-      }
-    },
-    "Search": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "搜索"
           }
         }
       }
@@ -2305,16 +2097,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "这个项目已不在 Bunode 中。"
-          }
-        }
-      }
-    },
-    "This Service has no Runs yet.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这个服务还没有运行过。"
           }
         }
       }

@@ -329,8 +329,10 @@ async fn collect(
         while matches!(line.last(), Some(b'\n' | b'\r')) {
             line.pop();
         }
-        log.line(kind, parser.line(&line));
-        shared.notifier.notify();
+        // The snapshot shows no lines, only ports an announcement may reorder.
+        if log.line(kind, &parser.line(&line)) {
+            shared.notifier.notify();
+        }
     }
 }
 

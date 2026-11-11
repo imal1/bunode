@@ -24,10 +24,9 @@ pub mod supervisor;
 pub mod sys;
 pub mod workspace;
 
-pub use ansi::{LogColor, LogSpan, LogStyle};
 pub use discovery::DiscoveredProcess;
 pub use error::{Error, Result};
-pub use logs::{LogLine, LogStream};
+pub use logs::LogStream;
 pub use model::{ListLayout, PackageManager};
 pub use snapshot::{
     AddProjectOutcome, AgentServerState, ConfigIssue, ConfigProblem, EnvironmentProblem,
@@ -35,9 +34,7 @@ pub use snapshot::{
     RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot,
     StartOutcome, Tool, ToolState,
 };
-pub use supervisor::{
-    FORCE_STOP_CHOICES, LOG_LINES_CHOICES, Listener, Supervisor, SupervisorOptions,
-};
+pub use supervisor::{FORCE_STOP_CHOICES, Listener, Supervisor, SupervisorOptions};
 
 /// The version of `bunode-core`, as set in its `Cargo.toml`.
 pub fn version() -> &'static str {

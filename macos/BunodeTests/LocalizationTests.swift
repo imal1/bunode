@@ -50,9 +50,9 @@ struct LocalizationTests {
     @Test func chinesePluralsKeepTheCount() throws {
         let path = try #require(Bundle.main.path(forResource: "zh-Hans", ofType: "lproj"))
         let chinese = try #require(Bundle(path: path))
-        let format = chinese.localizedString(forKey: "%lld lines", value: nil, table: nil)
-        #expect(String.localizedStringWithFormat(format, 1) == "1 行")
-        #expect(String.localizedStringWithFormat(format, 3) == "3 行")
+        let format = chinese.localizedString(forKey: "%lld Services", value: nil, table: nil)
+        #expect(String.localizedStringWithFormat(format, 1) == "1 个服务")
+        #expect(String.localizedStringWithFormat(format, 3) == "3 个服务")
     }
 
     /// Every String Catalog entry ships Simplified Chinese (#34).

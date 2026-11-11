@@ -2,7 +2,7 @@
 
 mod support;
 
-use bunode_core::{LogStream, RunStatus};
+use bunode_core::RunStatus;
 use support::*;
 
 #[test]
@@ -16,13 +16,7 @@ fn runs_a_plain_executable_with_a_quoted_path_like_any_other_service() {
     let running = h.wait(id, "Running", |s| s.status == RunStatus::Running);
     let pid = running.pid.unwrap() as i32;
 
-    let printed = |prefix: &str| {
-        h.supervisor
-            .log_lines(id, 0, 100)
-            .into_iter()
-            .find(|l| l.stream == LogStream::Stdout && l.text.starts_with(prefix))
-            .map(|l| l.text)
-    };
+    let printed = |prefix: &str| h.stdout(id).into_iter().find(|l| l.starts_with(prefix));
     h.wait(id, "the first log line", |_| {
         printed("plain tool started").is_some()
     });

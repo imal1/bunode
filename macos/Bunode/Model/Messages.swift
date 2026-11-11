@@ -36,12 +36,6 @@ extension CoreError {
             String(localized: "\(path) is not an executable file.")
         case .InvalidForceStopAfter(let choices):
             String(localized: "Force stop after must be one of \(Self.list(choices)) seconds.")
-        case .InvalidLogLinesKept(let choices):
-            String(localized: "Log lines kept must be one of \(Self.list(choices)).")
-        case .NoRuns:
-            String(localized: "This Service has no Runs yet.")
-        case .ExportFailed(let path, let reason):
-            String(localized: "Couldn't export to \(path): \(reason)")
         case .ProcessExited(let pid):
             String(localized: "PID \(String(pid)) has already exited.")
         case .SignalFailed(let pid, let reason):

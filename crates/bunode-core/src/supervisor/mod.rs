@@ -23,7 +23,7 @@ use crate::error::{Error, Result};
 use crate::launch;
 use crate::leftovers::{self, RunRecord, RunRecords};
 use crate::logfile::{Limits, LogFiles, RunLogWriter};
-use crate::logs::{LogBuffer, LogLine, LogStream};
+use crate::logs::LogStream;
 use crate::model::{Config, ListLayout, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
@@ -41,9 +41,6 @@ const COALESCE: Duration = Duration::from_millis(100);
 
 /// How often other Node and Bun processes are looked for.
 const DISCOVERY_INTERVAL: Duration = Duration::from_secs(3);
-
-/// The choices of Advanced › Log lines kept.
-pub const LOG_LINES_CHOICES: [u32; 3] = [5_000, 10_000, 50_000];
 
 /// The choices of Advanced › Force stop after, in seconds.
 pub const FORCE_STOP_CHOICES: [u32; 4] = [3, 5, 10, 30];
@@ -127,8 +124,6 @@ struct State {
     /// The environment new Runs start from.
     base_env: Vec<(OsString, OsString)>,
     environment: EnvironmentInfo,
-    /// The Logs search of each Service; a new Run keeps it.
-    log_filters: HashMap<ServiceId, String>,
     /// `Use :N`: the `PORT` of a Service's next Run only.
     port_overrides: HashMap<ServiceId, u16>,
     /// Projects to remove once their last live Run has ended.
@@ -163,8 +158,6 @@ struct RunEntry {
     /// How to reach the Run's task while it is live.
     control: Option<async_mpsc::UnboundedSender<Control>>,
     last_exit: Option<RunNote>,
-    /// The Run's output in memory; kept after it ends, until the next Run.
-    logs: Arc<Mutex<LogBuffer>>,
     /// The Run's log file. Kept after the Run ends, so an export can wait
     /// for the last lines to reach the disk; the next Run replaces it.
     file: Option<RunLogWriter>,
@@ -186,31 +179,30 @@ struct RunEntry {
 /// Ports a Run's output announced (`http://localhost:9000`), at most a few.
 pub(crate) type Announced = Arc<Mutex<Vec<u16>>>;
 
-/// Where a Run's output goes: memory for the Logs view, and its file.
+/// Where a Run's output goes: its file, and the ports it announces.
 #[derive(Clone)]
 pub(crate) struct RunLog {
-    pub(crate) buffer: Arc<Mutex<LogBuffer>>,
     pub(crate) file: RunLogWriter,
     pub(crate) announced: Announced,
 }
 
 impl RunLog {
-    pub(crate) fn line(&self, stream: LogStream, line: crate::ansi::StyledLine) {
-        let time = now_ms();
-        self.file.line(time, stream, &line.text);
-        if let Some(port) = crate::discovery::announced_port(&line.text) {
-            let mut announced = self.announced.lock().unwrap_or_else(|e| e.into_inner());
-            if announced.len() < 16 && !announced.contains(&port) {
-                announced.push(port);
-            }
+    /// Writes one line; true when it announced a port not seen before.
+    pub(crate) fn line(&self, stream: LogStream, text: &str) -> bool {
+        self.file.line(now_ms(), stream, text);
+        let Some(port) = crate::discovery::announced_port(text) else {
+            return false;
+        };
+        let mut announced = self.announced.lock().unwrap_or_else(|e| e.into_inner());
+        let new = announced.len() < 16 && !announced.contains(&port);
+        if new {
+            announced.push(port);
         }
-        lock_logs(&self.buffer).push(stream, time, line);
+        new
     }
 
     pub(crate) fn system(&self, text: &str) {
-        let time = now_ms();
-        self.file.line(time, LogStream::System, text);
-        lock_logs(&self.buffer).push_system(time, text);
+        self.file.line(now_ms(), LogStream::System, text);
     }
 }
 
@@ -219,10 +211,6 @@ pub(crate) fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-pub(crate) fn lock_logs(logs: &Mutex<LogBuffer>) -> MutexGuard<'_, LogBuffer> {
-    logs.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 impl Supervisor {
@@ -264,7 +252,6 @@ impl Supervisor {
                         tools: Vec::new(),
                         tools_lookup: 0,
                     },
-                    log_filters: HashMap::new(),
                     port_overrides: HashMap::new(),
                     removing_projects: Default::default(),
                     discovered: Vec::new(),
@@ -509,7 +496,6 @@ impl Supervisor {
                 list_layout: state.config.settings.list_layout,
                 show_agent_servers: state.config.settings.show_agent_servers,
                 force_stop_after_secs: state.config.settings.force_stop_after_secs,
-                log_lines_kept: state.config.settings.log_lines_kept,
             },
             environment: EnvironmentState {
                 shell: self
@@ -1049,77 +1035,6 @@ impl Supervisor {
 
     // MARK: - Logs
 
-    /// Up to `max` lines of the Service's current or last Run, from `from` on.
-    pub fn log_lines(&self, service_id: ServiceId, from: u64, max: u32) -> Vec<LogLine> {
-        let logs = self
-            .shared
-            .lock()
-            .runs
-            .get(&service_id)
-            .map(|run| run.logs.clone());
-        match logs {
-            Some(logs) => lock_logs(&logs).lines(from, max as usize),
-            None => Vec::new(),
-        }
-    }
-
-    /// Logs › Search: shows only lines containing `query`, ignoring case.
-    /// Returns at once; the matches arrive through snapshots, and new lines
-    /// that match are added as they come.
-    pub fn set_log_filter(&self, service_id: ServiceId, query: &str) {
-        let logs = {
-            let mut state = self.shared.lock();
-            if query.trim().is_empty() {
-                state.log_filters.remove(&service_id);
-            } else {
-                state.log_filters.insert(service_id, query.to_owned());
-            }
-            state.runs.get(&service_id).map(|run| run.logs.clone())
-        };
-        let Some(logs) = logs else { return };
-        let shared = self.shared.clone();
-        let query = query.to_owned();
-        self.runtime.spawn_blocking(move || {
-            lock_logs(&logs).set_filter(&query);
-            shared.notifier.notify();
-        });
-    }
-
-    /// Up to `max` lines matching the search, from match number `from` on.
-    pub fn log_matching_lines(&self, service_id: ServiceId, from: u64, max: u32) -> Vec<LogLine> {
-        let logs = self
-            .shared
-            .lock()
-            .runs
-            .get(&service_id)
-            .map(|run| run.logs.clone());
-        match logs {
-            Some(logs) => lock_logs(&logs).matching_lines(from, max as usize),
-            None => Vec::new(),
-        }
-    }
-
-    /// Logs › Export…: writes the full log of the Service's current or last
-    /// Run, not only the lines kept in memory, to `destination`.
-    pub fn export_log(&self, service_id: ServiceId, destination: &Path) -> Result<()> {
-        let (run_number, file) = {
-            let state = self.shared.lock();
-            let run = state.runs.get(&service_id).ok_or(Error::NoRuns)?;
-            (run.run_number, run.file.clone())
-        };
-        if let Some(file) = file {
-            file.flush(Duration::from_secs(2));
-        }
-        self.shared
-            .log_files
-            .export(service_id, run_number, destination)
-            .map(|_| ())
-            .map_err(|e| Error::ExportFailed {
-                path: destination.display().to_string(),
-                reason: e.to_string(),
-            })
-    }
-
     /// Logs › Open in Console: the newest file of the Service's current or
     /// last Run, flushed, for the Console app to follow. `None` before a
     /// Run, or when nothing reached the disk.
@@ -1136,31 +1051,6 @@ impl Supervisor {
             .log_files
             .files_of_run(service_id, run_number)
             .pop()
-    }
-
-    /// Logs › Clear: hides the lines shown so far. Files are not touched.
-    pub fn clear_logs(&self, service_id: ServiceId) {
-        let logs = self
-            .shared
-            .lock()
-            .runs
-            .get(&service_id)
-            .map(|run| run.logs.clone());
-        if let Some(logs) = logs {
-            lock_logs(&logs).clear();
-            self.shared.notifier.notify();
-        }
-    }
-
-    /// Advanced › Log lines kept: 5,000, 10,000 or 50,000 per Service, for
-    /// Runs started from now on.
-    pub fn set_log_lines_kept(&self, lines: u32) -> Result<()> {
-        if !LOG_LINES_CHOICES.contains(&lines) {
-            return Err(Error::InvalidLogLinesKept {
-                choices: LOG_LINES_CHOICES.to_vec(),
-            });
-        }
-        self.update_settings(|settings| settings.log_lines_kept = lines)
     }
 
     /// Stops the Service's Run: SIGTERM to its process group, SIGKILL after
@@ -1227,12 +1117,6 @@ impl Shared {
         }
         let project_id = project.id;
         let command = service.command.clone();
-        let logs = Arc::new(Mutex::new(LogBuffer::new(
-            state.config.settings.log_lines_kept as usize,
-        )));
-        if let Some(query) = state.log_filters.get(&service_id) {
-            lock_logs(&logs).set_filter(query);
-        }
 
         // Run numbers count every Run, including ones that fail to start.
         let mut config = state.config.clone();
@@ -1247,9 +1131,11 @@ impl Shared {
         // A failed save must not keep the Service from starting.
         let _ = self.store.save(&config);
         state.config = config;
+        let reporter = self.clone();
         let log = RunLog {
-            buffer: logs.clone(),
-            file: RunLogWriter::start(&self.log_files, service_id, run_number, logs.clone()),
+            file: RunLogWriter::start(&self.log_files, service_id, run_number, move |problem| {
+                reporter.diagnostics.log(&problem)
+            }),
             announced: Announced::default(),
         };
         log.system(&format!("Run #{run_number}: {command}"));
@@ -1270,7 +1156,6 @@ impl Shared {
                         stop_requested: false,
                         control: None,
                         last_exit: Some(note),
-                        logs,
                         file: Some(log.file.clone()),
                         restart_after: false,
                         delete_after: false,
@@ -1297,7 +1182,6 @@ impl Shared {
                 stop_requested: false,
                 control: Some(control),
                 last_exit: None,
-                logs: logs.clone(),
                 file: Some(log.file.clone()),
                 restart_after: false,
                 delete_after: false,
@@ -1356,7 +1240,6 @@ impl Shared {
         self.save(&config)?;
         state.config = config;
         state.runs.remove(&service_id);
-        state.log_filters.remove(&service_id);
         drop(state);
         self.log_files.remove_service(service_id);
         if let Some(project_id) = project_id {
@@ -1488,11 +1371,9 @@ impl Shared {
             (None, false) => "Stopped".to_owned(),
             (Some(note), _) => note.to_string(),
         };
-        let time = now_ms();
         if let Some(file) = &run.file {
-            file.line(time, LogStream::System, &line);
+            file.line(now_ms(), LogStream::System, &line);
         }
-        lock_logs(&run.logs).push_system(time, line);
         run.status = status;
         run.last_exit = note;
         run.pid = None;
@@ -1724,7 +1605,6 @@ fn effective_manager(
 }
 
 fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -> ServiceState {
-    let logs = run.map(|r| lock_logs(&r.logs).info()).unwrap_or_default();
     // A Service in a subfolder shows the folder's name first: "web › dev".
     let display_name = match service.folder.as_deref().and_then(Path::file_name) {
         Some(folder) => format!("{} › {}", folder.to_string_lossy(), service.name),
@@ -1743,12 +1623,6 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         run_number: run.map(|r| r.run_number),
         pid: run.and_then(|r| r.pid),
         last_exit: run.and_then(|r| r.last_exit.clone()),
-        log_first: logs.first,
-        log_count: logs.count,
-        log_dropped: logs.dropped,
-        log_match_first: logs.match_first,
-        log_match_count: logs.match_count,
-        log_filter_generation: logs.filter_generation,
         has_pending_config: run.is_some_and(|r| r.config_changed && r.status.is_live()),
         ended_by: run.and_then(|r| r.ended_by),
         live_ports: run.map(|r| live_ports(service, r)).unwrap_or_default(),

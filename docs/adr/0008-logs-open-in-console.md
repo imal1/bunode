@@ -10,4 +10,4 @@ The popover had a Logs page: a virtualized AppKit table of the Run's last ~10,00
 
 ## Consequences
 
-The log file has to keep up: the writer flushes whenever it has caught up, so Console is live. Console stays on the file it opened, so a Run's file is allowed to grow to 50 MB before the next one starts. Console shows no ANSI colors; stdout and stderr are told apart by the `out` / `err` tag on each line. Supersedes the "logs inside the popover" part of ADR-0004.
+The log file has to keep up: the writer flushes whenever it has caught up, so Console is live. Console stays on the file it opened, so a Run's file is allowed to grow to 50 MB before the next one starts. Console shows no ANSI colors; stdout and stderr are told apart by the `out` / `err` tag on each line. The in-memory log, its search, the ANSI styling and Advanced › Log lines kept went with the page: output goes only to the file, colors stripped. Supersedes the "logs inside the popover" part of ADR-0004.

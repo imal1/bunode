@@ -32,8 +32,7 @@ private func service(command: String = "x", port: UInt16? = nil, live: [UInt16] 
     ServiceState(
         id: 1, projectId: 1, name: "dev", displayName: "dev", command: command, folder: nil,
         port: port, runThroughShell: false, status: .running, runNumber: 1, pid: 10,
-        lastExit: nil, logFirst: 0, logCount: 0, logDropped: 0, logMatchFirst: 0,
-        logMatchCount: 0, logFilterGeneration: 0, hasPendingConfig: false, endedBy: endedBy,
+        lastExit: nil, hasPendingConfig: false, endedBy: endedBy,
         livePorts: live
     )
 }

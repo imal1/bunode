@@ -2,7 +2,7 @@
 
 mod support;
 
-use bunode_core::{LogStream, RunStatus};
+use bunode_core::RunStatus;
 use support::*;
 
 #[test]
@@ -16,12 +16,11 @@ fn finds_every_port_of_a_run_and_forgets_them_when_it_ends() {
     // The server prints the two ports it got.
     let printed = loop {
         let line = h
-            .supervisor
-            .log_lines(id, 0, 100)
+            .stdout(id)
             .into_iter()
-            .find(|l| l.stream == LogStream::Stdout && l.text.starts_with("listening on "));
+            .find(|l| l.starts_with("listening on "));
         if let Some(line) = line {
-            break line.text;
+            break line;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
@@ -120,11 +119,10 @@ fn a_taken_port_is_reported_and_the_next_one_offered() {
         s.live_ports.contains(&suggestion)
     });
     assert_eq!(running.port, Some(port));
-    let lines = h.supervisor.log_lines(second, 0, 10);
     assert!(
-        lines
+        h.log(second)
             .iter()
-            .any(|l| l.text == format!("PORT={suggestion} for this Run"))
+            .any(|(_, text)| *text == format!("PORT={suggestion} for this Run"))
     );
 
     // Bunode never stopped the first one.

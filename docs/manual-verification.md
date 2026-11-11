@@ -60,15 +60,12 @@
 - [ ] Advanced › Shell environment 显示变量数量、shell 和时间；`Reload` 期间显示 spinner，结束后弹出 Toast
 - [ ] Node.js 和 Bun 两行显示路径和版本；`Change…` 换成另一个 node 后，新 Run 使用它（可用 `node -v` 作为 Service 命令验证）；`Use PATH` 可以恢复
 
-## 6. 日志（#7 #8 #9）
+## 6. 日志（#7 #8 #9，ADR-0008）
 
-- [ ] Logs 视图：每行有时间戳，保留 ANSI 颜色（例如 Vite 的输出），stderr 为红色，Bunode 的系统行为灰色；浅色模式下日志区仍为深色
-- [ ] `fixtures/flood` 的 `node flood.js`：Popover 不卡，能滚动和搜索；底栏显示 `10,000 lines · … dropped`
-- [ ] 向上滚动后不再跟随新行，滚回底部后恢复跟随
-- [ ] `Clear` 清空显示；`Copy` 复制全部；选中若干行后按 ⌘C 只复制选中的行
-- [ ] 搜索：⌘F 聚焦搜索框，输入后底栏显示 `N lines · M matches`，无结果时显示 `No lines match.`；从 Service 视图重新进入 Logs 时搜索词被清空
-- [ ] `Export…` 默认文件名为 `<project>-<service>-run<N>.log`，内容是完整日志，包括超出 Log lines kept 而被丢弃的行
-- [ ] Advanced › Log lines kept 有 5,000、10,000、50,000 三档，对之后的新 Run 生效
+- [ ] Service 视图的 Logs 行：点击后控制台打开当前 Run 的日志文件；还没有 Run 时 Toast 提示 `No log file yet.`
+- [ ] 每行是 `{UTC 时间戳} {out|err|bunode} {内容}`，没有 ANSI 转义符（例如 Vite 的彩色输出）
+- [ ] Run 在跑时新输出马上出现在控制台里，不需要等缓冲写满
+- [ ] `fixtures/flood` 的 `node flood.js`：Popover 不卡，控制台持续刷新
 
 ## 7. 端口（#16 #17）
 
