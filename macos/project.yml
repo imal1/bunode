@@ -46,6 +46,9 @@ targets:
         PRODUCT_NAME: Bunode
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imal1.Bunode
         GENERATE_INFOPLIST_FILE: "YES"
+        # Bunode/AppIcon.icon (Icon Composer), light and dark. Its artwork
+        # comes from design/icons.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Agent app: no Dock icon and no app menu bar (ADR-0004).
         INFOPLIST_KEY_LSUIElement: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: Bunode
