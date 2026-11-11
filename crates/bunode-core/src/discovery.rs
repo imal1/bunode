@@ -3,9 +3,12 @@
 //! never claimed as a Service's Run, never signalled in bulk.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use crate::agent::{self, AgentServer, Watched};
+use crate::model::ProjectId;
 use crate::sys::{self, ProcessInfo};
+use crate::tree;
 
 /// A Discovered Process: a Node or Bun process tree started outside
 /// Bunode, shown as one item (`npm run dev` and the Vite it started).
@@ -19,7 +22,8 @@ pub struct DiscoveredProcess {
     pub command: String,
     pub cwd: Option<String>,
     /// Where it was started from: "Terminal", "VS Code", "tmux"…
-    pub source: String,
+    /// The app it was started from; `None` when unknown.
+    pub source: Option<String>,
     /// Every process of the tree, the top one first, and their start
     /// times, so a force kill can check each one is still the same.
     pub members: Vec<u32>,
@@ -33,14 +37,15 @@ pub struct DiscoveredProcess {
 /// Process names that are JavaScript runtimes or their launchers.
 const LAUNCHERS: &[&str] = &["npm", "npx", "pnpm", "pnpx", "yarn", "yarnpkg", "bunx"];
 
+/// Whether an executable named `name` is node, bun or one of their launchers.
+pub(crate) fn is_runtime_or_launcher(name: &str) -> bool {
+    name == "node" || name == "bun" || LAUNCHERS.contains(&name)
+}
+
 fn is_javascript(info: &ProcessInfo, args: Option<&[String]>) -> bool {
-    let name = info.name.as_str();
-    if name == "node" || name == "bun" {
-        return true;
-    }
     // Node rewrites its title, e.g. to "npm run dev".
-    let first = name.split_whitespace().next().unwrap_or("");
-    if LAUNCHERS.contains(&first) {
+    let first = info.name.split_whitespace().next().unwrap_or("");
+    if is_runtime_or_launcher(first) {
         return true;
     }
     args.and_then(|a| a.first())
@@ -86,8 +91,9 @@ pub fn display_command(args: &[String]) -> String {
         .join(" ")
 }
 
-/// The app a process tree was started from, by its ancestors' names.
-pub fn source_of(ancestors: &[&ProcessInfo]) -> String {
+/// The app a process tree was started from, by its ancestors' names;
+/// `None` when only shells started it.
+pub fn source_of(ancestors: &[&ProcessInfo]) -> Option<String> {
     const SHELLS: &[&str] = &[
         "zsh", "bash", "sh", "fish", "login", "dash", "nu", "-zsh", "-bash",
     ];
@@ -116,18 +122,18 @@ pub fn source_of(ancestors: &[&ProcessInfo]) -> String {
             continue;
         }
         if let Some((_, label)) = KNOWN.iter().find(|(key, _)| name.contains(key)) {
-            return (*label).to_owned();
+            return Some((*label).to_owned());
         }
-        return ancestor.name.clone();
+        return Some(ancestor.name.clone());
     }
-    "Unknown".into()
+    None
 }
 
 /// What stays the same while a process lives, so it is read once.
-#[derive(Clone)]
-struct Details {
-    args: Option<Vec<String>>,
-    cwd: Option<String>,
+#[derive(Debug, Clone)]
+pub(crate) struct Details {
+    pub(crate) args: Option<Vec<String>>,
+    pub(crate) cwd: Option<String>,
 }
 
 /// Scans the machine for Discovered Processes, remembering what it read.
@@ -139,27 +145,35 @@ pub struct Scanner {
 impl Scanner {
     /// One scan. `ours` are the process groups and runners of Bunode's own
     /// Runs, which are never listed; the ports each of those groups listens
-    /// on are returned alongside.
-    pub fn scan(&mut self, ours: &Ours) -> Scan {
+    /// on are returned alongside. The Agent Servers of `watched` are
+    /// returned too, and their processes aren't Discovered Processes;
+    /// `roots` are every Project's, to tell which one each belongs to.
+    pub fn scan(
+        &mut self,
+        ours: &Ours,
+        watched: &[Watched],
+        roots: &[(ProjectId, PathBuf)],
+    ) -> Scan {
         let uid = sys::current_uid();
         let me = std::process::id() as i32;
-        let infos: HashMap<i32, ProcessInfo> = sys::all_pids()
-            .into_iter()
-            .filter_map(sys::process)
-            .map(|p| (p.pid, p))
-            .collect();
+        let infos = sys::processes();
 
         // Forget processes that are gone.
         self.details
             .retain(|(pid, start), _| infos.get(pid).is_some_and(|p| p.start == *start));
 
-        let mut javascript: HashSet<i32> = HashSet::new();
-        for info in infos.values().filter(|p| p.uid == uid && p.pid != me) {
-            let details = self.details_of(info);
-            if is_javascript(info, details.args.as_deref()) {
-                javascript.insert(info.pid);
-            }
-        }
+        let details: HashMap<i32, Details> = infos
+            .values()
+            .filter(|p| p.uid == uid && p.pid != me)
+            .map(|info| (info.pid, self.details_of(info)))
+            .collect();
+        let mut agent_servers = agent::detect(&infos, &details, watched);
+        let agent_groups: HashSet<i32> = agent_servers.iter().map(|s| s.pgid as i32).collect();
+        let javascript: HashSet<i32> = details
+            .iter()
+            .filter(|(pid, d)| is_javascript(&infos[pid], d.args.as_deref()))
+            .map(|(&pid, _)| pid)
+            .collect();
 
         let ancestors = |pid: i32| -> Vec<&ProcessInfo> {
             let mut chain = Vec::new();
@@ -179,6 +193,7 @@ impl Scanner {
         };
         let is_ours = |info: &ProcessInfo| {
             ours.groups.contains(&info.pgid)
+                || agent_groups.contains(&info.pgid)
                 || ours.runners.contains(&info.pid)
                 || info.pid == me
                 || ancestors(info.pid)
@@ -209,7 +224,7 @@ impl Scanner {
                 members.retain(|&m| m != root);
                 members.insert(0, root);
                 let info = &infos[&root];
-                let details = self.details_of(info);
+                let details = &details[&root];
                 let command = details
                     .args
                     .as_deref()
@@ -225,7 +240,7 @@ impl Scanner {
                     pid: root as u32,
                     start: info.start,
                     command,
-                    cwd: details.cwd,
+                    cwd: details.cwd.clone(),
                     source: source_of(&ancestors(root)),
                     member_starts: members.iter().map(|m| infos[m].start).collect(),
                     members: members.into_iter().map(|m| m as u32).collect(),
@@ -236,21 +251,44 @@ impl Scanner {
             .collect();
         found.sort_by_key(|p| (p.start, p.pid));
 
-        // The ports of Bunode's own Runs: every process of each group.
+        // The ports of Bunode's own Runs: every process of each, in its
+        // group or not (ADR-0010).
         let mut group_ports: HashMap<i32, Vec<u16>> = HashMap::new();
-        for info in infos.values().filter(|p| ours.groups.contains(&p.pgid)) {
-            group_ports
-                .entry(info.pgid)
-                .or_default()
-                .extend(sys::listening_ports(info.pid));
+        for &group in &ours.groups {
+            let ports = tree::members(group, &infos)
+                .into_iter()
+                .flat_map(sys::listening_ports)
+                .collect();
+            group_ports.insert(group, ports);
+        }
+        // The Agent Servers': every process of each group, and the ones
+        // that listen.
+        let mut listeners: HashMap<i32, Vec<i32>> = HashMap::new();
+        for info in infos.values().filter(|p| agent_groups.contains(&p.pgid)) {
+            let ports = sys::listening_ports(info.pid);
+            if !ports.is_empty() {
+                listeners.entry(info.pgid).or_default().push(info.pid);
+            }
+            group_ports.entry(info.pgid).or_default().extend(ports);
         }
         for ports in group_ports.values_mut() {
             ports.sort_unstable();
             ports.dedup();
         }
+        for server in &mut agent_servers {
+            let group = server.pgid as i32;
+            let mut pids = listeners.remove(&group).unwrap_or_default();
+            pids.sort_unstable();
+            let cwds: Vec<&str> = pids
+                .iter()
+                .filter_map(|pid| details.get(pid).and_then(|d| d.cwd.as_deref()))
+                .collect();
+            server.settle(group_ports.remove(&group).unwrap_or_default(), &cwds, roots);
+        }
         Scan {
             discovered: found,
             group_ports,
+            agent_servers,
         }
     }
 
@@ -272,18 +310,15 @@ pub struct PortOwner {
     /// "astro dev"
     pub command: String,
     /// "Terminal"
-    pub source: String,
+    /// The app it was started from; `None` when unknown.
+    pub source: Option<String>,
 }
 
 /// The user's process listening on TCP `port`, if any. Reads every process
 /// of the user, so it is for a Start, not for a loop.
 pub fn port_owner(port: u16) -> Option<PortOwner> {
     let uid = sys::current_uid();
-    let infos: HashMap<i32, ProcessInfo> = sys::all_pids()
-        .into_iter()
-        .filter_map(sys::process)
-        .map(|p| (p.pid, p))
-        .collect();
+    let infos = sys::processes();
     let owner = infos
         .values()
         .filter(|p| p.uid == uid)
@@ -342,11 +377,47 @@ pub fn next_free_port(port: u16) -> Option<u16> {
     (port.checked_add(1)?..=port.saturating_add(200)).find(|&p| !port_in_use(p))
 }
 
+/// Moves the first of `preferred` that is in `ports` to the front: the
+/// port a row shows and Open in Browser opens. Dev tools often listen on
+/// a helper port too (code-inspector's :5678), which may sort first.
+pub(crate) fn lead_with(ports: &mut Vec<u16>, preferred: impl IntoIterator<Item = u16>) {
+    if let Some(i) = preferred
+        .into_iter()
+        .find_map(|port| ports.iter().position(|&p| p == port))
+    {
+        let port = ports.remove(i);
+        ports.insert(0, port);
+    }
+}
+
+/// The port of the first `http(s)://host:port` in `text`, the way dev
+/// servers say where they listen ("Local: http://localhost:5173/").
+pub(crate) fn announced_port(text: &str) -> Option<u16> {
+    text.match_indices("://").find_map(|(i, _)| {
+        if !text[..i].ends_with("http") && !text[..i].ends_with("https") {
+            return None;
+        }
+        let rest = &text[i + 3..];
+        let host_end = if rest.starts_with('[') {
+            rest.find(']')? + 1
+        } else {
+            rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
+                .unwrap_or(rest.len())
+        };
+        let port = rest[host_end..].strip_prefix(':')?;
+        let end = port
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(port.len());
+        port[..end].parse().ok()
+    })
+}
+
 /// What one scan found.
 pub struct Scan {
     pub discovered: Vec<DiscoveredProcess>,
     /// The TCP ports each of Bunode's own Run groups listens on.
     pub group_ports: HashMap<i32, Vec<u16>>,
+    pub agent_servers: Vec<AgentServer>,
 }
 
 /// Bunode's own processes, never listed.
@@ -410,6 +481,19 @@ mod tests {
     }
 
     #[test]
+    fn only_node_and_bun_processes_are_discovered() {
+        assert!(is_javascript(&info(1, "node"), None));
+        assert!(is_javascript(&info(1, "npm run dev"), None));
+        let node = args(&["/opt/node/bin/node", "server.js"]);
+        assert!(is_javascript(&info(1, "MainThread"), Some(&node)));
+        // Services may run these (ADR-0005), but they are never Discovered Processes.
+        let qq = args(&["/Applications/QQ.app/Contents/MacOS/QQ", "--no-sandbox"]);
+        assert!(!is_javascript(&info(1, "QQ"), Some(&qq)));
+        let python = args(&["python3", "-m", "http.server"]);
+        assert!(!is_javascript(&info(1, "Python"), Some(&python)));
+    }
+
+    #[test]
     fn knows_who_holds_a_port() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -433,11 +517,61 @@ mod tests {
         let terminal = info(9, "Terminal");
         let tmux = info(8, "tmux");
         let code = info(7, "Code Helper (Plugin)");
-        assert_eq!(source_of(&[&zsh, &terminal]), "Terminal");
-        assert_eq!(source_of(&[&zsh, &tmux, &terminal]), "tmux");
-        assert_eq!(source_of(&[&code]), "VS Code");
-        assert_eq!(source_of(&[&zsh, &info(1, "launchd")]), "launchd");
-        assert_eq!(source_of(&[&zsh]), "Unknown");
-        assert_eq!(source_of(&[&info(3, "my-runner")]), "my-runner");
+        let source = |a: &[&ProcessInfo]| source_of(a);
+        assert_eq!(source(&[&zsh, &terminal]).as_deref(), Some("Terminal"));
+        assert_eq!(source(&[&zsh, &tmux, &terminal]).as_deref(), Some("tmux"));
+        assert_eq!(source(&[&code]).as_deref(), Some("VS Code"));
+        assert_eq!(
+            source(&[&zsh, &info(1, "launchd")]).as_deref(),
+            Some("launchd")
+        );
+        assert_eq!(source(&[&zsh]), None);
+        assert_eq!(
+            source(&[&info(3, "my-runner")]).as_deref(),
+            Some("my-runner")
+        );
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_port_a_dev_server_announces() {
+        assert_eq!(
+            announced_port("  ➜  Local:   http://localhost:5173/"),
+            Some(5173)
+        );
+        assert_eq!(
+            announced_port("║  > Local: http://localhost:9000  ║"),
+            Some(9000)
+        );
+        assert_eq!(
+            announced_port("Url: http://[::]:6099/webui?token=x"),
+            Some(6099)
+        );
+        assert_eq!(announced_port("on https://127.0.0.1:8443"), Some(8443));
+        assert_eq!(announced_port("see https://github.com/x:y"), None);
+        assert_eq!(
+            announced_port("see https://example.com then http://0.0.0.0:3000"),
+            Some(3000)
+        );
+        assert_eq!(announced_port("redis://localhost:6379"), None);
+        assert_eq!(announced_port("http://localhost:99999"), None);
+        assert_eq!(announced_port("no url"), None);
+    }
+
+    #[test]
+    fn the_preferred_port_leads() {
+        let mut ports = vec![5678, 9000];
+        lead_with(&mut ports, [9000]);
+        assert_eq!(ports, [9000, 5678]);
+        let mut ports = vec![5678, 9000];
+        lead_with(&mut ports, [3000, 9000]);
+        assert_eq!(ports, [9000, 5678]);
+        let mut ports = vec![5678, 9000];
+        lead_with(&mut ports, [3000]);
+        assert_eq!(ports, [5678, 9000]);
     }
 }

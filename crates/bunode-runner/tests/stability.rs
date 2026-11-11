@@ -163,14 +163,10 @@ fn soak_a_flood_of_logs() {
 
     let me = std::process::id() as i32;
     let started = Instant::now();
-    // Let the buffer fill before taking the baseline.
+    // Let the log file get going before taking the baseline.
     std::thread::sleep(Duration::from_secs(10).min(duration / 4));
     let baseline = sys::resident_memory(me).unwrap();
     let reports_before = h.changes.0.load(Ordering::SeqCst);
-    let lines_before = {
-        let s = h.state(id);
-        s.log_first + s.log_count
-    };
     let measured_from = Instant::now();
     let mut peak = baseline;
     while started.elapsed() < duration {
@@ -183,22 +179,21 @@ fn soak_a_flood_of_logs() {
             RunStatus::Running,
             "the flood must not stop: {state:?}"
         );
-        assert!(state.log_count <= 10_000, "the log stays bounded");
+        let file = h.supervisor.current_log_file(id);
+        let on_disk = file
+            .and_then(|f| std::fs::metadata(f).ok())
+            .map_or(0, |m| m.len());
         eprintln!(
-            "{:>5}s  memory {:>6} MB  lines {:>12}  dropped {:>12}",
+            "{:>5}s  memory {:>6} MB  current log file {:>6} MB",
             started.elapsed().as_secs(),
             memory / 1_048_576,
-            state.log_first + state.log_count,
-            state.log_dropped
+            on_disk / 1_048_576
         );
     }
     let elapsed = measured_from.elapsed().as_secs_f64();
-    let state = h.state(id);
-    let lines = (state.log_first + state.log_count - lines_before) as f64;
     let reports = (h.changes.0.load(Ordering::SeqCst) - reports_before) as f64;
     eprintln!(
-        "soak: {:.0} lines/s, {:.1} reports/s, memory {} MB at start, {} MB at peak",
-        lines / elapsed,
+        "soak: {:.1} reports/s, memory {} MB at start, {} MB at peak",
         reports / elapsed,
         baseline / 1_048_576,
         peak / 1_048_576

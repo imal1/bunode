@@ -10,7 +10,6 @@ final class PopoverRouter {
         case home
         case addService(projectID: UInt64)
         case service(UInt64)
-        case logs(UInt64)
         /// Other processes, scrolled to a process if given.
         case processes(focus: UInt32?)
     }

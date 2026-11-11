@@ -9,10 +9,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bunode_core::{
-    AddProjectOutcome, DiscoveredProcess, EnvironmentState, LogColor, LogLine, LogSpan, LogStream,
-    LogStyle, NewService, PackageManager, PortConflictOwner, ProjectScripts, ProjectState, RunEnd,
-    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot,
-    StartOutcome, Tool, ToolState,
+    AddProjectOutcome, AgentServerState, ConfigIssue, ConfigProblem, DiscoveredProcess,
+    EnvironmentProblem, EnvironmentState, ListLayout, NewService, PackageManager,
+    PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus, ScriptGroup,
+    ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome, Tool,
+    ToolState,
 };
 
 uniffi::setup_scaffolding!();
@@ -38,8 +39,27 @@ pub struct Snapshot {
     pub projects: Vec<ProjectState>,
     pub settings: SettingsState,
     pub environment: EnvironmentState,
-    pub config_issue: Option<String>,
+    pub config_issue: Option<ConfigIssue>,
     pub discovered: Vec<DiscoveredProcess>,
+}
+
+#[uniffi::remote(Record)]
+pub struct ConfigIssue {
+    pub path: String,
+    pub backup: Option<String>,
+    pub problem: ConfigProblem,
+}
+
+#[uniffi::remote(Enum)]
+pub enum ListLayout {
+    Flat,
+    ByProject,
+}
+
+#[uniffi::remote(Enum)]
+pub enum ConfigProblem {
+    Unreadable { detail: String },
+    NewerFormat { version: u32 },
 }
 
 #[uniffi::remote(Record)]
@@ -48,7 +68,7 @@ pub struct DiscoveredProcess {
     pub start: u64,
     pub command: String,
     pub cwd: Option<String>,
-    pub source: String,
+    pub source: Option<String>,
     pub members: Vec<u32>,
     pub member_starts: Vec<u64>,
     pub ports: Vec<u16>,
@@ -61,8 +81,16 @@ pub struct EnvironmentState {
     pub variable_count: u32,
     pub loaded_at: Option<i64>,
     pub is_loading: bool,
-    pub problem: Option<String>,
+    pub problem: Option<EnvironmentProblem>,
     pub tools: Vec<ToolState>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum EnvironmentProblem {
+    ShellFailed { shell: String, reason: String },
+    NoOutput { shell: String },
+    TimedOut { shell: String, seconds: u32 },
+    ReadFailed { reason: String },
 }
 
 #[uniffi::remote(Enum)]
@@ -92,6 +120,19 @@ pub struct ProjectState {
     pub is_missing: bool,
     pub external: Vec<u32>,
     pub services: Vec<ServiceState>,
+    pub agent_servers: Vec<AgentServerState>,
+}
+
+#[uniffi::remote(Record)]
+pub struct AgentServerState {
+    pub project_id: u64,
+    pub agent: String,
+    pub name: String,
+    pub command: String,
+    pub pid: u32,
+    pub pgid: u32,
+    pub live_ports: Vec<u16>,
+    pub stopping: bool,
 }
 
 #[uniffi::remote(Record)]
@@ -107,16 +148,27 @@ pub struct ServiceState {
     pub status: RunStatus,
     pub run_number: Option<u64>,
     pub pid: Option<u32>,
-    pub last_exit: Option<String>,
-    pub log_first: u64,
-    pub log_count: u64,
-    pub log_dropped: u64,
-    pub log_match_first: u64,
-    pub log_match_count: u64,
-    pub log_filter_generation: u64,
+    pub last_exit: Option<RunNote>,
     pub has_pending_config: bool,
     pub ended_by: Option<RunEnd>,
     pub live_ports: Vec<u16>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum RunNote {
+    Exited,
+    ExitedWithCode { code: i32 },
+    EndedBySignal { signal: String },
+    UnmatchedQuote,
+    EmptyCommand,
+    FolderMissing { path: String },
+    NotInPath { program: String },
+    ProgramMissing { program: String },
+    CouldNotStart { program: String, reason: String },
+    RunnerFailed { reason: String },
+    RunnerExited { status: String },
+    RunnerLost { reason: String },
+    UnknownEnd,
 }
 
 #[uniffi::remote(Enum)]
@@ -150,8 +202,9 @@ pub enum RunStatus {
 #[uniffi::remote(Record)]
 pub struct SettingsState {
     pub show_running_count: bool,
+    pub list_layout: ListLayout,
+    pub show_agent_servers: bool,
     pub force_stop_after_secs: u32,
-    pub log_lines_kept: u32,
 }
 
 #[uniffi::remote(Enum)]
@@ -187,45 +240,6 @@ pub struct NewService {
     pub folder: Option<String>,
 }
 
-#[uniffi::remote(Record)]
-pub struct LogLine {
-    pub seq: u64,
-    pub time_ms: i64,
-    pub stream: LogStream,
-    pub text: String,
-    pub spans: Vec<LogSpan>,
-}
-
-#[uniffi::remote(Enum)]
-pub enum LogStream {
-    Stdout,
-    Stderr,
-    System,
-}
-
-#[uniffi::remote(Record)]
-pub struct LogSpan {
-    pub start: u32,
-    pub length: u32,
-    pub style: LogStyle,
-}
-
-#[uniffi::remote(Record)]
-pub struct LogStyle {
-    pub foreground: Option<LogColor>,
-    pub background: Option<LogColor>,
-    pub bold: bool,
-    pub dim: bool,
-    pub italic: bool,
-    pub underline: bool,
-}
-
-#[uniffi::remote(Enum)]
-pub enum LogColor {
-    Palette { index: u8 },
-    Rgb { red: u8, green: u8, blue: u8 },
-}
-
 #[uniffi::remote(Enum)]
 pub enum StartOutcome {
     Started,
@@ -240,24 +254,101 @@ pub enum StartOutcome {
 pub struct PortConflictOwner {
     pub pid: u32,
     pub command: String,
-    pub source: String,
+    pub source: Option<String>,
     pub service_id: Option<u64>,
+    pub agent_server: bool,
 }
 
 // MARK: - Errors
 
-/// An error with a message written for the user.
+/// `bunode_core::Error` for Swift, which words it (requirements §4.1).
+/// `Display` is the core's English, for logs.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum CoreError {
-    #[error("{message}")]
-    Failed { message: String },
+    #[error("{path} is not a folder.")]
+    NotAFolder { path: String },
+    #[error("{path} doesn't exist.")]
+    Missing { path: String },
+    #[error("{path} is already a Project.")]
+    AlreadyAProject { path: String },
+    #[error("Choose the Project's folder or a folder inside it.")]
+    OutsideProject,
+    #[error("Couldn't save {path}: {reason}")]
+    Save { path: String, reason: String },
+    #[error("This Project is no longer in Bunode.")]
+    UnknownProject,
+    #[error("This Service is no longer in Bunode.")]
+    UnknownService,
+    #[error("Enter a command.")]
+    EmptyCommand,
+    #[error("The command has an unmatched quote.")]
+    UnmatchedQuote,
+    #[error("Use a port from 1 to 65535.")]
+    InvalidPort,
+    #[error("Enter a name.")]
+    EmptyName,
+    #[error("Use at most {max} characters.")]
+    NameTooLong { max: u32 },
+    #[error("Name already used in {project}")]
+    NameTaken { project: String },
+    #[error("{path} is not an executable file.")]
+    NotExecutable { path: String },
+    #[error("Force stop after must be one of {choices:?} seconds.")]
+    InvalidForceStopAfter { choices: Vec<u32> },
+    #[error("PID {pid} has already exited.")]
+    ProcessExited { pid: u32 },
+    #[error("Couldn't send SIGTERM to PID {pid}: {reason}")]
+    SignalFailed { pid: u32, reason: String },
+    #[error("Couldn’t stop {name}.")]
+    AgentServerSurvived { name: String },
 }
 
 impl From<bunode_core::Error> for CoreError {
     fn from(error: bunode_core::Error) -> Self {
-        CoreError::Failed {
-            message: error.to_string(),
+        use bunode_core::Error as E;
+        match error {
+            E::NotAFolder { path } => CoreError::NotAFolder { path },
+            E::Missing { path } => CoreError::Missing { path },
+            E::AlreadyAProject { path } => CoreError::AlreadyAProject { path },
+            E::OutsideProject => CoreError::OutsideProject,
+            E::Save { path, source } => CoreError::Save {
+                path,
+                reason: source.to_string(),
+            },
+            E::UnknownProject => CoreError::UnknownProject,
+            E::UnknownService => CoreError::UnknownService,
+            E::EmptyCommand => CoreError::EmptyCommand,
+            E::UnmatchedQuote => CoreError::UnmatchedQuote,
+            E::InvalidPort => CoreError::InvalidPort,
+            E::EmptyName => CoreError::EmptyName,
+            E::NameTooLong { max } => CoreError::NameTooLong { max },
+            E::NameTaken { project } => CoreError::NameTaken { project },
+            E::NotExecutable { path } => CoreError::NotExecutable { path },
+            E::InvalidForceStopAfter { choices } => CoreError::InvalidForceStopAfter { choices },
+            E::ProcessExited { pid } => CoreError::ProcessExited { pid },
+            E::SignalFailed { pid, reason } => CoreError::SignalFailed { pid, reason },
+            E::AgentServerSurvived { name } => CoreError::AgentServerSurvived { name },
         }
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn core_errors_keep_their_facts_and_english() {
+        let error = CoreError::from(bunode_core::Error::Save {
+            path: "/x/config.json".into(),
+            source: std::io::Error::other("disk full"),
+        });
+        assert!(matches!(&error, CoreError::Save { path, reason }
+            if path == "/x/config.json" && reason == "disk full"));
+        assert_eq!(error.to_string(), "Couldn't save /x/config.json: disk full");
+        let error = CoreError::from(bunode_core::Error::NameTaken {
+            project: "acme".into(),
+        });
+        assert_eq!(error.to_string(), "Name already used in acme");
     }
 }
 
@@ -390,6 +481,12 @@ impl BunodeCore {
         Ok(self.supervisor.stop_discovered(pid, start)?)
     }
 
+    /// Stops an Agent Server: SIGTERM to its group, SIGKILL after Force
+    /// stop after. Blocks until it is gone, so call it off the main thread.
+    pub fn stop_agent_server(&self, pid: u32) -> Result<(), CoreError> {
+        Ok(self.supervisor.stop_agent_server(pid)?)
+    }
+
     /// The Force Kill alert: SIGKILL to the process tree, each process
     /// checked first.
     pub fn force_kill_discovered(&self, pid: u32, start: u64) -> Result<(), CoreError> {
@@ -421,6 +518,21 @@ impl BunodeCore {
         Ok(self.supervisor.set_show_running_count(show)?)
     }
 
+    /// General › List.
+    pub fn set_list_layout(&self, layout: ListLayout) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_list_layout(layout)?)
+    }
+
+    /// Projects › Show dev servers started by agents.
+    pub fn set_show_agent_servers(&self, show: bool) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_show_agent_servers(show)?)
+    }
+
+    /// The popover opened: rereads the agent launch files that changed.
+    pub fn check_launch_files(&self) {
+        self.supervisor.check_launch_files();
+    }
+
     /// Reads the login shell's environment again, in the background.
     pub fn reload_environment(&self) {
         self.supervisor.reload_environment();
@@ -433,36 +545,11 @@ impl BunodeCore {
             .set_tool_path(tool, path.as_deref().map(std::path::Path::new))?)
     }
 
-    /// Up to `max` lines of the Service's current or last Run, from `from` on.
-    pub fn log_lines(&self, service_id: u64, from: u64, max: u32) -> Vec<LogLine> {
-        self.supervisor.log_lines(service_id, from, max)
-    }
-
-    /// Logs › Search; an empty query shows everything. Returns at once.
-    pub fn set_log_filter(&self, service_id: u64, query: String) {
-        self.supervisor.set_log_filter(service_id, &query);
-    }
-
-    /// Up to `max` lines matching the search, from match number `from` on.
-    pub fn log_matching_lines(&self, service_id: u64, from: u64, max: u32) -> Vec<LogLine> {
-        self.supervisor.log_matching_lines(service_id, from, max)
-    }
-
-    /// Logs › Export…: the full log of the current or last Run.
-    pub fn export_log(&self, service_id: u64, destination: String) -> Result<(), CoreError> {
-        Ok(self
-            .supervisor
-            .export_log(service_id, std::path::Path::new(&destination))?)
-    }
-
-    /// Logs › Clear: hides the lines shown so far.
-    pub fn clear_logs(&self, service_id: u64) {
-        self.supervisor.clear_logs(service_id);
-    }
-
-    /// Advanced › Log lines kept: 5,000, 10,000 or 50,000.
-    pub fn set_log_lines_kept(&self, lines: u32) -> Result<(), CoreError> {
-        Ok(self.supervisor.set_log_lines_kept(lines)?)
+    /// Logs › Open in Console: the newest file of the current or last Run.
+    pub fn current_log_file(&self, service_id: u64) -> Option<String> {
+        self.supervisor
+            .current_log_file(service_id)
+            .map(|p| p.display().to_string())
     }
 
     /// Advanced › Force stop after: 3, 5, 10 or 30 seconds.

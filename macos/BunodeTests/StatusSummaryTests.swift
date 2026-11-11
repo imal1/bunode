@@ -32,8 +32,7 @@ private func service(command: String = "x", port: UInt16? = nil, live: [UInt16] 
     ServiceState(
         id: 1, projectId: 1, name: "dev", displayName: "dev", command: command, folder: nil,
         port: port, runThroughShell: false, status: .running, runNumber: 1, pid: 10,
-        lastExit: nil, logFirst: 0, logCount: 0, logDropped: 0, logMatchFirst: 0,
-        logMatchCount: 0, logFilterGeneration: 0, hasPendingConfig: false, endedBy: endedBy,
+        lastExit: nil, hasPendingConfig: false, endedBy: endedBy,
         livePorts: live
     )
 }
@@ -61,6 +60,8 @@ struct ServiceTitleTests {
     ])
     func aPresetScriptReadsAsProjectAndScript(command: String, script: String) {
         #expect(service(command: command).title(projectName: "shop") == "shop \(script)")
+        // In its Project's group the row leaves the name out.
+        #expect(service(command: command).title(projectName: nil) == script)
     }
 
     @Test(arguments: [
@@ -75,6 +76,7 @@ struct ServiceTitleTests {
     ])
     func anythingElseStaysWhole(command: String) {
         #expect(service(command: command).title(projectName: "shop") == command)
+        #expect(service(command: command).title(projectName: nil) == command)
     }
 }
 
@@ -175,12 +177,45 @@ struct KeyboardTests {
         #expect(HomeView.focus(after: 4, in: [], step: 1) == nil)
     }
 
+    @Test func agentServerRowsFollowTheirProjectsServices() {
+        let projects = [
+            project(id: 1, services: [service()], agentServers: [agentServer(pid: 40)]),
+            project(id: 2, services: [], agentServers: [agentServer(pid: 50)]),
+        ]
+        #expect(HomeView.rowOrder(projects) == [.service(1), .agentServer(40), .agentServer(50)])
+        #expect(HomeView.focus(after: .service(1), in: HomeView.rowOrder(projects), step: 1) == .agentServer(40))
+    }
+
+    @Test func aProjectWithOnlyAgentServersGetsAHeading() {
+        let projects = [
+            project(id: 1, services: [], agentServers: []),
+            project(id: 2, services: [], agentServers: [agentServer(pid: 50)]),
+            project(id: 3, services: [service()], agentServers: []),
+        ]
+        #expect(HomeView.groups(projects).map(\.id) == [2, 3])
+    }
+
     @Test func openingThePopoverStartsAtHome() {
         let router = PopoverRouter()
-        router.push(.logs(3))
+        router.push(.service(3))
         let before = router.openCount
         router.reset()
         #expect(router.screen == .home)
         #expect(router.openCount == before + 1)
     }
+}
+
+private func project(id: UInt64, services: [ServiceState], agentServers: [AgentServerState]) -> ProjectState {
+    ProjectState(
+        id: id, name: "app", folderName: "app", path: "/tmp/app", packageManager: .npm,
+        detectedPackageManager: .npm, packageManagerChoice: nil, severalLockfiles: false,
+        isMissing: false, external: [], services: services, agentServers: agentServers
+    )
+}
+
+private func agentServer(pid: UInt32) -> AgentServerState {
+    AgentServerState(
+        projectId: 1, agent: "Claude", name: "web", command: "npm run dev",
+        pid: pid, pgid: pid, livePorts: [3001], stopping: false
+    )
 }

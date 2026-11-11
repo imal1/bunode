@@ -1,7 +1,8 @@
 import AppKit
 
-/// Entry point. Bunode is an agent app (`LSUIElement`): no Dock icon and no
-/// app menu bar. It lives in the menu bar (ADR-0004).
+/// Entry point. Bunode is an agent app (`LSUIElement`): it lives in the menu
+/// bar (ADR-0004), and shows a Dock icon and the app menu bar only while the
+/// Settings window is open (ADR-0009).
 @main
 struct BunodeMain {
     @MainActor

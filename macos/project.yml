@@ -9,8 +9,10 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    # Filled in by `make project` from Cargo.toml and the commit count
+    # (scripts/version.sh). Generate the project with make, not xcodegen alone.
+    MARKETING_VERSION: "${BUNODE_VERSION}"
+    CURRENT_PROJECT_VERSION: "${BUNODE_BUILD}"
     SWIFT_VERSION: "6.0"
     # Development builds are signed ad hoc ("Sign to Run Locally"), so no
     # Apple developer account is needed. Notarized releases come later.
@@ -46,6 +48,9 @@ targets:
         PRODUCT_NAME: Bunode
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imal1.Bunode
         GENERATE_INFOPLIST_FILE: "YES"
+        # Bunode/AppIcon.icon (Icon Composer), light and dark. Its artwork
+        # comes from design/icons.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Agent app: no Dock icon and no app menu bar (ADR-0004).
         INFOPLIST_KEY_LSUIElement: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: Bunode

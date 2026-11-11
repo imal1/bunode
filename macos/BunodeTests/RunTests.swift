@@ -44,6 +44,40 @@ struct RunTests {
         #expect(model.statusSummary.running == 0)
     }
 
+    @Test func theListCanBeGroupedByProject() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        #expect(model.snapshot.settings.listLayout == .flat)
+        _ = await model.addProject(at: code.folder("api"))
+        _ = await model.addProject(at: code.folder("empty"))
+        let api = try #require(model.snapshot.projects.first)
+        _ = try await model.addService(to: api.id, name: "dev", command: "bun run dev", folder: nil).get()
+        // A Project without rows gets no heading.
+        #expect(HomeView.groups(model.snapshot.projects).map(\.name) == ["api"])
+
+        model.setListLayout(.byProject)
+        #expect(model.snapshot.settings.listLayout == .byProject)
+        #expect(AppModel(dataDirectory: data.url).snapshot.settings.listLayout == .byProject)
+    }
+
+    @Test func agentServersCanBeHidden() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        #expect(model.snapshot.settings.showAgentServers)
+        _ = await model.addProject(at: code.folder("api"))
+        #expect(model.snapshot.projects.first?.agentServers == [])
+        model.setShowAgentServers(false)
+        #expect(!model.snapshot.settings.showAgentServers)
+        #expect(!AppModel(dataDirectory: data.url).snapshot.settings.showAgentServers)
+    }
+
+    @Test func stoppingAnAgentServerThatIsGoneSaysSo() async throws {
+        let model = AppModel(dataDirectory: data.url)
+        let server = AgentServerState(
+            projectId: 1, agent: "Claude", name: "web", command: "npm run dev",
+            pid: 999_999, pgid: 999_999, livePorts: [], stopping: false
+        )
+        #expect(await model.stopAgentServer(server) == "PID 999999 has already exited.")
+    }
+
     @Test func runningCountCanBeHidden() async throws {
         let model = AppModel(dataDirectory: data.url)
         #expect(model.statusSummary.showsCount)
@@ -71,7 +105,7 @@ struct FailureTests {
             model.refresh()
         }
         #expect(model.service(service.id)?.status == .failed)
-        #expect(model.service(service.id)?.lastExit?.contains("bunode-no-such-command") == true)
+        #expect(model.service(service.id)?.lastExit == .notInPath(program: "bunode-no-such-command"))
         #expect(model.statusSummary.aggregate == .error)
         #expect(model.statusSummary.accessibilityLabel == "Bunode, 0 running, 1 crashed")
     }

@@ -7,7 +7,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use nix::sys::signal::{Signal, killpg};
+use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -20,7 +20,8 @@ use crate::ansi::LineParser;
 use crate::launch::LaunchSpec;
 use crate::logs::LogStream;
 use crate::model::ServiceId;
-use crate::snapshot::RunStatus;
+use crate::snapshot::{RunNote, RunStatus};
+use crate::tree::RunTree;
 
 /// Longer lines are split; nobody reads a 64 KB line in a log view.
 const MAX_LINE_BYTES: usize = 16 * 1024;
@@ -44,29 +45,32 @@ pub(crate) enum Control {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Outcome {
     /// The command never started.
-    SpawnFailed(String),
+    SpawnFailed(RunNote),
     ExitedWithCode(i32),
     KilledBySignal(i32),
     /// The runner went away without saying how the command ended.
-    Lost(String),
+    Lost(RunNote),
 }
 
 impl Outcome {
     /// The status and note a Run ends with. Whatever happens after the user
     /// asked for a stop counts as stopped.
-    pub(crate) fn classify(&self, stop_requested: bool) -> (RunStatus, Option<String>) {
+    pub(crate) fn classify(&self, stop_requested: bool) -> (RunStatus, Option<RunNote>) {
         match self {
-            Outcome::SpawnFailed(message) => (RunStatus::Failed, Some(message.clone())),
+            Outcome::SpawnFailed(note) => (RunStatus::Failed, Some(note.clone())),
             _ if stop_requested => (RunStatus::Stopped, None),
-            Outcome::ExitedWithCode(0) => (RunStatus::Stopped, Some("Exited".into())),
-            Outcome::ExitedWithCode(code) => {
-                (RunStatus::Crashed, Some(format!("Exited with code {code}")))
-            }
+            Outcome::ExitedWithCode(0) => (RunStatus::Stopped, Some(RunNote::Exited)),
+            Outcome::ExitedWithCode(code) => (
+                RunStatus::Crashed,
+                Some(RunNote::ExitedWithCode { code: *code }),
+            ),
             Outcome::KilledBySignal(signal) => (
                 RunStatus::Crashed,
-                Some(format!("Ended by {}", signal_name(*signal))),
+                Some(RunNote::EndedBySignal {
+                    signal: signal_name(*signal),
+                }),
             ),
-            Outcome::Lost(message) => (RunStatus::Crashed, Some(message.clone())),
+            Outcome::Lost(note) => (RunStatus::Crashed, Some(note.clone())),
         }
     }
 }
@@ -81,21 +85,44 @@ fn signal_name(signal: i32) -> String {
 #[derive(Debug, PartialEq, Eq)]
 enum Report {
     Started(u32),
-    SpawnFailed(String),
+    SpawnFailed(SpawnFailure),
     Exited(Outcome),
+}
+
+/// Why the runner couldn't start the command: `spawn-failed not-found` or
+/// `spawn-failed error REASON`.
+#[derive(Debug, PartialEq, Eq)]
+enum SpawnFailure {
+    NotFound,
+    Other(String),
+}
+
+impl SpawnFailure {
+    fn note(self, program: &str) -> RunNote {
+        let program = program.to_owned();
+        match self {
+            SpawnFailure::NotFound if program.contains('/') => RunNote::ProgramMissing { program },
+            SpawnFailure::NotFound => RunNote::NotInPath { program },
+            SpawnFailure::Other(reason) => RunNote::CouldNotStart { program, reason },
+        }
+    }
 }
 
 fn parse_report(line: &str) -> Option<Report> {
     let (kind, rest) = line.split_once(' ').unwrap_or((line, ""));
     match kind {
         "started" => rest.trim().parse().ok().map(Report::Started),
-        "spawn-failed" => Some(Report::SpawnFailed(rest.to_owned())),
+        "spawn-failed" => Some(Report::SpawnFailed(match rest.split_once(' ') {
+            _ if rest == "not-found" => SpawnFailure::NotFound,
+            Some(("error", reason)) => SpawnFailure::Other(reason.to_owned()),
+            _ => SpawnFailure::Other(rest.to_owned()),
+        })),
         "exited" => {
             let (how, value) = rest.split_once(' ').unwrap_or((rest, ""));
             let outcome = match (how, value.trim().parse::<i32>()) {
                 ("code", Ok(code)) => Outcome::ExitedWithCode(code),
                 ("signal", Ok(signal)) => Outcome::KilledBySignal(signal),
-                _ => Outcome::Lost("The Run ended for an unknown reason.".into()),
+                _ => Outcome::Lost(RunNote::UnknownEnd),
             };
             Some(Report::Exited(outcome))
         }
@@ -112,7 +139,9 @@ pub(crate) async fn drive(
     mut control: UnboundedReceiver<Control>,
 ) -> Outcome {
     if !spec.cwd.is_dir() {
-        return Outcome::SpawnFailed(format!("{} is missing.", spec.cwd.display()));
+        return Outcome::SpawnFailed(RunNote::FolderMissing {
+            path: spec.cwd.display().to_string(),
+        });
     }
 
     let spawned = {
@@ -126,7 +155,9 @@ pub(crate) async fn drive(
     let (mut runner, lifeline) = match spawned {
         Ok(spawned) => spawned,
         Err(e) => {
-            return Outcome::SpawnFailed(format!("Couldn't start bunode-runner: {e}"));
+            return Outcome::SpawnFailed(RunNote::RunnerFailed {
+                reason: e.to_string(),
+            });
         }
     };
     if let Some(pid) = runner.id() {
@@ -168,8 +199,8 @@ pub(crate) async fn drive(
                         group = Some(Pid::from_raw(pid as i32));
                         shared.started(service_id, run_number, pid);
                     }
-                    Some(Report::SpawnFailed(message)) => {
-                        outcome = Some(Outcome::SpawnFailed(message));
+                    Some(Report::SpawnFailed(failure)) => {
+                        outcome = Some(Outcome::SpawnFailed(failure.note(&spec.program)));
                     }
                     Some(Report::Exited(exit)) => outcome = Some(exit),
                     None => {}
@@ -178,13 +209,14 @@ pub(crate) async fn drive(
                 _ => break,
             },
             request = control.recv(), if controls_open => match request {
+                // Not end of file: the lifeline stays open for a `kill`.
                 Some(Control::Stop) => {
-                    let _ = write.shutdown().await;
+                    let _ = write.write_all(b"stop\n").await;
                 }
                 Some(Control::Kill) => {
                     let _ = write.write_all(b"kill\n").await;
                     if let Some(group) = group {
-                        let _ = killpg(group, Signal::SIGKILL);
+                        RunTree::new(group.as_raw()).signal(Signal::SIGKILL);
                     }
                     runner_deadline.get_or_insert(Instant::now() + RUNNER_KILL_GRACE);
                 }
@@ -199,43 +231,54 @@ pub(crate) async fn drive(
                 runner_deadline = None;
                 let _ = runner.start_kill();
                 if let Some(group) = group {
-                    let _ = killpg(group, Signal::SIGKILL);
+                    RunTree::new(group.as_raw()).signal(Signal::SIGKILL);
                 }
             },
         }
     }
 
     let status = runner.wait().await;
-    // The runner normally leaves an empty group behind. If it was killed
-    // itself, end the group here; a process group's ID is never reused
-    // while the group exists, so signalling it is safe.
+    // The runner normally leaves nothing behind. If it was killed itself,
+    // end the Run here; a process group's ID is never reused while the
+    // group exists, so signalling it is safe.
     if let Some(group) = group {
-        end_group(group, spec.stop_timeout).await;
+        let _ = end_group(group, spec.stop_timeout).await;
     }
     for collector in collectors {
         let _ = tokio::time::timeout(DRAIN_GRACE, collector).await;
     }
     outcome.unwrap_or_else(|| match status {
-        Ok(status) => Outcome::Lost(format!("bunode-runner exited unexpectedly ({status}).")),
-        Err(e) => Outcome::Lost(format!("Lost track of bunode-runner: {e}")),
+        Ok(status) => Outcome::Lost(RunNote::RunnerExited {
+            status: status.to_string(),
+        }),
+        Err(e) => Outcome::Lost(RunNote::RunnerLost {
+            reason: e.to_string(),
+        }),
     })
 }
 
-/// Ends whatever is left of a Run's process group: SIGTERM, then SIGKILL
-/// after `timeout`.
-async fn end_group(group: Pid, timeout: Duration) {
-    let alive = || killpg(group, None).is_ok();
-    if !alive() {
-        return;
+/// Ends a process group and its descendants outside it (ADR-0010):
+/// SIGTERM, then SIGKILL after `timeout`. Returns whether all of it is
+/// gone, waiting up to a second after SIGKILL.
+pub(super) async fn end_group(group: Pid, timeout: Duration) -> bool {
+    let mut tree = RunTree::new(group.as_raw());
+    tree.refresh();
+    if tree.is_gone() {
+        return true;
     }
-    let _ = killpg(group, Signal::SIGTERM);
+    tree.signal(Signal::SIGTERM);
     let deadline = Instant::now() + timeout;
-    while alive() && Instant::now() < deadline {
+    while !tree.is_gone() && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    if alive() {
-        let _ = killpg(group, Signal::SIGKILL);
+    if !tree.is_gone() {
+        tree.signal(Signal::SIGKILL);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !tree.is_gone() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
     }
+    tree.is_gone()
 }
 
 /// Spawns the runner with a fresh lifeline on its standard input.
@@ -290,8 +333,10 @@ async fn collect(
         while matches!(line.last(), Some(b'\n' | b'\r')) {
             line.pop();
         }
-        log.line(kind, parser.line(&line));
-        shared.notifier.notify();
+        // The snapshot shows no lines, only ports an announcement may reorder.
+        if log.line(kind, &parser.line(&line)) {
+            shared.notifier.notify();
+        }
     }
 }
 
@@ -328,13 +373,21 @@ async fn read_line(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nix::sys::signal::killpg;
+    use std::os::unix::process::CommandExt;
 
     #[test]
     fn parses_runner_reports() {
         assert_eq!(parse_report("started 4812"), Some(Report::Started(4812)));
         assert_eq!(
-            parse_report("spawn-failed couldn't start x: No such file"),
-            Some(Report::SpawnFailed("couldn't start x: No such file".into()))
+            parse_report("spawn-failed not-found"),
+            Some(Report::SpawnFailed(SpawnFailure::NotFound))
+        );
+        assert_eq!(
+            parse_report("spawn-failed error Permission denied (os error 13)"),
+            Some(Report::SpawnFailed(SpawnFailure::Other(
+                "Permission denied (os error 13)".into()
+            )))
         );
         assert_eq!(
             parse_report("exited code 1"),
@@ -344,10 +397,10 @@ mod tests {
             parse_report("exited signal 15"),
             Some(Report::Exited(Outcome::KilledBySignal(15)))
         );
-        assert!(matches!(
+        assert_eq!(
             parse_report("exited unknown"),
-            Some(Report::Exited(Outcome::Lost(_)))
-        ));
+            Some(Report::Exited(Outcome::Lost(RunNote::UnknownEnd)))
+        );
         assert_eq!(parse_report("hello"), None);
     }
 
@@ -358,15 +411,77 @@ mod tests {
         let unasked = |o: Outcome| o.classify(false);
         assert_eq!(stopped(Outcome::KilledBySignal(15)), Stopped);
         assert_eq!(stopped(Outcome::ExitedWithCode(143)), Stopped);
-        assert_eq!(stopped(Outcome::SpawnFailed("x".into())), Failed);
+        assert_eq!(stopped(Outcome::SpawnFailed(RunNote::EmptyCommand)), Failed);
         assert_eq!(unasked(Outcome::ExitedWithCode(0)).0, Stopped);
         assert_eq!(
             unasked(Outcome::ExitedWithCode(1)),
-            (Crashed, Some("Exited with code 1".into()))
+            (Crashed, Some(RunNote::ExitedWithCode { code: 1 }))
         );
         assert_eq!(
             unasked(Outcome::KilledBySignal(9)),
-            (Crashed, Some("Ended by SIGKILL".into()))
+            (
+                Crashed,
+                Some(RunNote::EndedBySignal {
+                    signal: "SIGKILL".into()
+                })
+            )
         );
+    }
+
+    #[test]
+    fn names_spawn_failures_after_the_program() {
+        assert_eq!(
+            SpawnFailure::NotFound.note("vite"),
+            RunNote::NotInPath {
+                program: "vite".into()
+            }
+        );
+        assert_eq!(
+            SpawnFailure::NotFound.note("./bin/dev"),
+            RunNote::ProgramMissing {
+                program: "./bin/dev".into()
+            }
+        );
+        assert_eq!(
+            SpawnFailure::Other("Permission denied".into()).note("x"),
+            RunNote::CouldNotStart {
+                program: "x".into(),
+                reason: "Permission denied".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn end_group_ends_a_group_with_sigterm_alone() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("60")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = Pid::from_raw(child.id() as i32);
+        let reaper = std::thread::spawn(move || child.wait());
+
+        let started = std::time::Instant::now();
+        assert!(end_group(group, Duration::from_secs(5)).await);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        reaper.join().unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn end_group_kills_a_group_that_ignores_sigterm() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "trap '' TERM; while :; do sleep 1; done"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = Pid::from_raw(child.id() as i32);
+        let reaper = std::thread::spawn(move || child.wait());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let started = std::time::Instant::now();
+        assert!(end_group(group, Duration::from_millis(300)).await);
+        assert!(started.elapsed() >= Duration::from_millis(300));
+        assert!(killpg(group, None).is_err());
+        reaper.join().unwrap().unwrap();
     }
 }

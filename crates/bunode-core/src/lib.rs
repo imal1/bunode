@@ -6,6 +6,7 @@
 //! on any Apple framework, so that it can later be hosted by a standalone
 //! Supervisor daemon unchanged (ADR-0001, ADR-0002).
 
+pub mod agent;
 pub mod ansi;
 pub mod diagnostics;
 pub mod discovery;
@@ -21,21 +22,20 @@ pub mod snapshot;
 pub mod store;
 pub mod supervisor;
 pub mod sys;
+pub mod tree;
 pub mod workspace;
 
-pub use ansi::{LogColor, LogSpan, LogStyle};
 pub use discovery::DiscoveredProcess;
 pub use error::{Error, Result};
-pub use logs::{LogLine, LogStream};
-pub use model::PackageManager;
+pub use logs::LogStream;
+pub use model::{ListLayout, PackageManager};
 pub use snapshot::{
-    AddProjectOutcome, EnvironmentState, NewService, PortConflictOwner, ProjectScripts,
-    ProjectState, RunEnd, RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState,
-    SettingsState, Snapshot, StartOutcome, Tool, ToolState,
+    AddProjectOutcome, AgentServerState, ConfigIssue, ConfigProblem, EnvironmentProblem,
+    EnvironmentState, NewService, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote,
+    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot,
+    StartOutcome, Tool, ToolState,
 };
-pub use supervisor::{
-    FORCE_STOP_CHOICES, LOG_LINES_CHOICES, Listener, Supervisor, SupervisorOptions,
-};
+pub use supervisor::{FORCE_STOP_CHOICES, Listener, Supervisor, SupervisorOptions};
 
 /// The version of `bunode-core`, as set in its `Cargo.toml`.
 pub fn version() -> &'static str {

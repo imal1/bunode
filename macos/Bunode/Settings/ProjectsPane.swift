@@ -12,7 +12,7 @@ struct ProjectsPane: View {
         Form {
             if let issue = model.snapshot.configIssue {
                 Section {
-                    Label(issue, systemImage: "exclamationmark.triangle.fill")
+                    Label(issue.message, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .symbolRenderingMode(.multicolor)
                 }
@@ -34,6 +34,15 @@ struct ProjectsPane: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Add Project…", action: addProject)
+                }
+            }
+            Section {
+                Toggle(isOn: Binding(
+                    get: { model.snapshot.settings.showAgentServers },
+                    set: { model.setShowAgentServers($0) }
+                )) {
+                    Text("Show dev servers started by agents")
+                    Text("Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here.")
                 }
             }
         }
@@ -172,7 +181,7 @@ private struct ProjectRow: View {
     /// removing is the destructive choice.
     private func confirmRemove() {
         let running = model.runningCount(in: project)
-        let alert = NSAlert()
+        let alert = NSAlert.withAppIcon()
         alert.messageText = String(localized: "Remove “\(project.name)”?")
         alert.informativeText = AppModel.removalMessage(for: project, running: running)
         alert.addButton(withTitle: String(localized: "Cancel"))

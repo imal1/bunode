@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Service view (design-handoff §2.2, §5.4, §5.5): status and
 /// Start/Stop at the top, then the Service's settings, saved as soon as a
-/// field loses focus or Return is pressed, its Logs, and Delete.
+/// field loses focus or Return is pressed, its Logs (in Console), and Delete.
 struct ServiceView: View {
     let model: AppModel
     let serviceID: UInt64
@@ -96,20 +96,21 @@ struct ServiceView: View {
                         }
                         Card {
                             Button {
-                                router.push(.logs(serviceID))
+                                Task {
+                                    if let problem = await model.openLogInConsole(serviceID) {
+                                        toaster.show(problem)
+                                    }
+                                }
                             } label: {
                                 CardRow(title: "Logs") {
-                                    HStack(spacing: 6) {
-                                        Text("\(Int(service.logCount)) lines")
-                                            .foregroundStyle(.secondary)
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 9, weight: .semibold))
-                                            .foregroundStyle(.secondary)
-                                    }
+                                    Image(systemName: "arrow.up.forward.app")
+                                        .foregroundStyle(.secondary)
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .help("Open in Console")
+                            .accessibilityHint("Open in Console")
                         }
                         if service.hasPendingConfig {
                             PendingConfigBar { model.restart(serviceID) }

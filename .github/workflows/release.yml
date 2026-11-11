@@ -1,0 +1,62 @@
+name: Release
+
+# Push a tag vX.Y.Z (scripts/version.sh --set X.Y.Z first) to build a
+# universal Bunode.app and publish it as a GitHub release, with that
+# version's CHANGELOG.md section as the notes.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The build number is the commit count.
+          fetch-depth: 0
+
+      - name: Check the tag matches Cargo.toml
+        run: |
+          version=$(scripts/version.sh)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME, but Cargo.toml says $version"
+            exit 1
+          fi
+
+      - name: Install tools
+        run: |
+          brew install xcodegen
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: make dist
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(scripts/version.sh)
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on && /^\[[^]]+\]: / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          cat >> notes.md <<'EOF'
+
+          ### Install
+
+          Unzip, move **Bunode.app** to Applications and open it. This build is not notarized yet, so the first time, Control-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Bunode.app`.
+          EOF
+          gh release create "$GITHUB_REF_NAME" "build/Bunode-$version.zip" \
+            --title "Bunode $version" --notes-file notes.md

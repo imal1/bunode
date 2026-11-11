@@ -15,6 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::mpsc as async_mpsc;
 
+use crate::agent::{AgentServer, LaunchFiles};
 use crate::diagnostics::Diagnostics;
 use crate::discovery::{DiscoveredProcess, Ours, Scanner};
 use crate::env;
@@ -22,13 +23,14 @@ use crate::error::{Error, Result};
 use crate::launch;
 use crate::leftovers::{self, RunRecord, RunRecords};
 use crate::logfile::{Limits, LogFiles, RunLogWriter};
-use crate::logs::{LogBuffer, LogLine, LogStream};
-use crate::model::{Config, PackageManager, Project, ProjectId, Service, ServiceId};
+use crate::logs::LogStream;
+use crate::model::{Config, ListLayout, PackageManager, Project, ProjectId, Service, ServiceId};
 use crate::package::{self, Detection};
 use crate::snapshot::{
-    AddProjectOutcome, EnvironmentState, NewService, PortConflictOwner, ProjectScripts,
-    ProjectState, RunEnd, RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState,
-    SettingsState, Snapshot, StartOutcome, Tool, ToolState,
+    AddProjectOutcome, AgentServerState, ConfigIssue, EnvironmentProblem, EnvironmentState,
+    NewService, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus,
+    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome,
+    Tool, ToolState,
 };
 use crate::store::ConfigStore;
 
@@ -39,9 +41,6 @@ const COALESCE: Duration = Duration::from_millis(100);
 
 /// How often other Node and Bun processes are looked for.
 const DISCOVERY_INTERVAL: Duration = Duration::from_secs(3);
-
-/// The choices of Advanced › Log lines kept.
-pub const LOG_LINES_CHOICES: [u32; 3] = [5_000, 10_000, 50_000];
 
 /// The choices of Advanced › Force stop after, in seconds.
 pub const FORCE_STOP_CHOICES: [u32; 4] = [3, 5, 10, 30];
@@ -119,14 +118,12 @@ pub(crate) struct Shared {
 struct State {
     config: Config,
     detections: HashMap<ProjectId, Detection>,
-    config_issue: Option<String>,
+    config_issue: Option<ConfigIssue>,
     /// The current or last Run of each Service that has had one.
     runs: HashMap<ServiceId, RunEntry>,
     /// The environment new Runs start from.
     base_env: Vec<(OsString, OsString)>,
     environment: EnvironmentInfo,
-    /// The Logs search of each Service; a new Run keeps it.
-    log_filters: HashMap<ServiceId, String>,
     /// `Use :N`: the `PORT` of a Service's next Run only.
     port_overrides: HashMap<ServiceId, u16>,
     /// Projects to remove once their last live Run has ended.
@@ -135,12 +132,18 @@ struct State {
     discovered: Vec<DiscoveredProcess>,
     /// Discovered Processes sent SIGTERM, by PID and start time.
     exiting: std::collections::HashSet<(u32, u64)>,
+    /// The Projects' agent launch files; empty while Agent Servers are off.
+    launch_files: LaunchFiles,
+    /// Agent Servers, from the last scan.
+    agent_servers: Vec<AgentServer>,
+    /// The PIDs of Agent Servers being stopped.
+    stopping_agents: std::collections::HashSet<u32>,
 }
 
 struct EnvironmentInfo {
     loaded_at: Option<SystemTime>,
     loading: bool,
-    problem: Option<String>,
+    problem: Option<EnvironmentProblem>,
     tools: Vec<ToolState>,
     /// Counts tool lookups so that a slow, older one (one that read the
     /// settings before a Change…) can't overwrite a newer result.
@@ -154,9 +157,7 @@ struct RunEntry {
     stop_requested: bool,
     /// How to reach the Run's task while it is live.
     control: Option<async_mpsc::UnboundedSender<Control>>,
-    last_exit: Option<String>,
-    /// The Run's output in memory; kept after it ends, until the next Run.
-    logs: Arc<Mutex<LogBuffer>>,
+    last_exit: Option<RunNote>,
     /// The Run's log file. Kept after the Run ends, so an export can wait
     /// for the last lines to reach the disk; the next Run replaces it.
     file: Option<RunLogWriter>,
@@ -171,26 +172,37 @@ struct RunEntry {
     ended_by: Option<RunEnd>,
     /// The TCP ports the Run's process group listens on, from the last scan.
     ports: Vec<u16>,
+    /// The ports the Run's output announced, first one first.
+    announced: Announced,
 }
 
-/// Where a Run's output goes: memory for the Logs view, and its file.
+/// Ports a Run's output announced (`http://localhost:9000`), at most a few.
+pub(crate) type Announced = Arc<Mutex<Vec<u16>>>;
+
+/// Where a Run's output goes: its file, and the ports it announces.
 #[derive(Clone)]
 pub(crate) struct RunLog {
-    pub(crate) buffer: Arc<Mutex<LogBuffer>>,
     pub(crate) file: RunLogWriter,
+    pub(crate) announced: Announced,
 }
 
 impl RunLog {
-    pub(crate) fn line(&self, stream: LogStream, line: crate::ansi::StyledLine) {
-        let time = now_ms();
-        self.file.line(time, stream, &line.text);
-        lock_logs(&self.buffer).push(stream, time, line);
+    /// Writes one line; true when it announced a port not seen before.
+    pub(crate) fn line(&self, stream: LogStream, text: &str) -> bool {
+        self.file.line(now_ms(), stream, text);
+        let Some(port) = crate::discovery::announced_port(text) else {
+            return false;
+        };
+        let mut announced = self.announced.lock().unwrap_or_else(|e| e.into_inner());
+        let new = announced.len() < 16 && !announced.contains(&port);
+        if new {
+            announced.push(port);
+        }
+        new
     }
 
     pub(crate) fn system(&self, text: &str) {
-        let time = now_ms();
-        self.file.line(time, LogStream::System, text);
-        lock_logs(&self.buffer).push_system(time, text);
+        self.file.line(now_ms(), LogStream::System, text);
     }
 }
 
@@ -199,10 +211,6 @@ pub(crate) fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-pub(crate) fn lock_logs(logs: &Mutex<LogBuffer>) -> MutexGuard<'_, LogBuffer> {
-    logs.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 impl Supervisor {
@@ -233,7 +241,7 @@ impl Supervisor {
                 state: Mutex::new(State {
                     config,
                     detections,
-                    config_issue: issue.map(|i| i.message),
+                    config_issue: issue,
                     runs: HashMap::new(),
                     // Until the login shell answers, Runs get Bunode's own.
                     base_env: std::env::vars_os().collect(),
@@ -244,11 +252,13 @@ impl Supervisor {
                         tools: Vec::new(),
                         tools_lookup: 0,
                     },
-                    log_filters: HashMap::new(),
                     port_overrides: HashMap::new(),
                     removing_projects: Default::default(),
                     discovered: Vec::new(),
                     exiting: Default::default(),
+                    launch_files: LaunchFiles::default(),
+                    agent_servers: Vec::new(),
+                    stopping_agents: Default::default(),
                 }),
                 notifier: Notifier::new(listener),
                 runner_path: options.runner_path,
@@ -265,6 +275,7 @@ impl Supervisor {
             runtime,
         };
         supervisor.reload_environment();
+        supervisor.shared.refresh_launch_files(None);
         let shared = supervisor.shared.clone();
         supervisor.runtime.spawn(discover(shared));
         if !leftover.is_empty() {
@@ -293,13 +304,16 @@ impl Supervisor {
     /// Discovered Process, if it is still the same process.
     pub fn stop_discovered(&self, pid: u32, start: u64) -> Result<()> {
         if !crate::sys::is_same_process(pid as i32, start) {
-            return Err(Error::Invalid(format!("PID {pid} has already exited.")));
+            return Err(Error::ProcessExited { pid });
         }
         nix::sys::signal::kill(
             nix::unistd::Pid::from_raw(pid as i32),
             nix::sys::signal::Signal::SIGTERM,
         )
-        .map_err(|e| Error::Invalid(format!("Couldn't send SIGTERM to PID {pid}: {e}")))?;
+        .map_err(|e| Error::SignalFailed {
+            pid,
+            reason: e.to_string(),
+        })?;
         self.shared
             .diagnostics
             .log(&format!("Sent SIGTERM to Discovered Process {pid}"));
@@ -307,6 +321,50 @@ impl Supervisor {
         self.shared.notifier.notify();
         self.rescan();
         Ok(())
+    }
+
+    /// Stops an Agent Server: SIGTERM to its process group, then SIGKILL
+    /// after Force stop after. Blocks until the group is gone, or still
+    /// there a second after SIGKILL; never call it from Bunode's runtime.
+    pub fn stop_agent_server(&self, pid: u32) -> Result<()> {
+        let (server, timeout) = {
+            let state = self.shared.lock();
+            let server = state.agent_servers.iter().find(|s| s.pid == pid).cloned();
+            let timeout = u64::from(state.config.settings.force_stop_after_secs);
+            (server, Duration::from_secs(timeout))
+        };
+        let Some(server) = server.filter(|s| crate::sys::is_same_process(pid as i32, s.start))
+        else {
+            return Err(Error::ProcessExited { pid });
+        };
+        if !self.shared.lock().stopping_agents.insert(pid) {
+            // Already being stopped; that call reports how it went.
+            return Ok(());
+        }
+        self.shared.notifier.notify();
+        self.shared.diagnostics.log(&format!(
+            "Stopping Agent Server {} (PID {pid})",
+            server.name
+        ));
+        let group = nix::unistd::Pid::from_raw(server.pgid as i32);
+        let gone = self.shared.runtime.block_on(run::end_group(group, timeout));
+        {
+            let mut state = self.shared.lock();
+            state.stopping_agents.remove(&pid);
+            if gone {
+                state.agent_servers.retain(|s| s.pid != pid);
+            }
+        }
+        self.shared.notifier.notify();
+        self.rescan();
+        if gone {
+            Ok(())
+        } else {
+            self.shared
+                .diagnostics
+                .log(&format!("Agent Server {} outlived SIGKILL", server.name));
+            Err(Error::AgentServerSurvived { name: server.name })
+        }
     }
 
     /// The Force Kill alert: SIGKILL to every process of a Discovered
@@ -390,9 +448,7 @@ impl Supervisor {
                         state.environment.problem = None;
                     }
                     Err(reason) => {
-                        state.environment.problem = Some(format!(
-                            "Couldn't read the environment ({reason}). Runs get Bunode's own."
-                        ));
+                        state.environment.problem = Some(reason);
                     }
                 }
                 state.environment.loaded_at = Some(SystemTime::now());
@@ -409,10 +465,9 @@ impl Supervisor {
         if let Some(path) = path
             && !env::is_executable(path)
         {
-            return Err(Error::Invalid(format!(
-                "{} is not an executable file.",
-                path.display()
-            )));
+            return Err(Error::NotExecutable {
+                path: path.display().to_string(),
+            });
         }
         let path = path.map(Path::to_path_buf);
         self.update_settings(|settings| match tool {
@@ -438,8 +493,9 @@ impl Supervisor {
                 .collect(),
             settings: SettingsState {
                 show_running_count: state.config.settings.show_running_count,
+                list_layout: state.config.settings.list_layout,
+                show_agent_servers: state.config.settings.show_agent_servers,
                 force_stop_after_secs: state.config.settings.force_stop_after_secs,
-                log_lines_kept: state.config.settings.log_lines_kept,
             },
             environment: EnvironmentState {
                 shell: self
@@ -508,6 +564,9 @@ impl Supervisor {
         state.detections.insert(project.id, detection);
         let added = project_state(&project, &state);
         drop(state);
+        if self.shared.refresh_launch_files(Some(project.id)) {
+            self.rescan();
+        }
         self.shared.notifier.notify();
         Ok(AddProjectOutcome::Added { project: added })
     }
@@ -574,7 +633,7 @@ impl Supervisor {
             .ok_or(Error::UnknownProject)?;
         let command = new.command.trim();
         if command.is_empty() {
-            return Err(Error::Invalid("Enter a command.".into()));
+            return Err(Error::EmptyCommand);
         }
         let folder = validate_folder(&project.path, new.folder.as_deref())?;
         let name = validate_service_name(project, &new.name, folder.as_deref(), None)?;
@@ -607,13 +666,42 @@ impl Supervisor {
         self.update_settings(|settings| settings.show_running_count = show)
     }
 
+    /// General › List.
+    pub fn set_list_layout(&self, layout: ListLayout) -> Result<()> {
+        self.update_settings(|settings| settings.list_layout = layout)
+    }
+
+    /// Projects › Show dev servers started by agents. Off, launch files
+    /// aren't read and Agent Servers are Discovered Processes again.
+    pub fn set_show_agent_servers(&self, show: bool) -> Result<()> {
+        self.update_settings(|settings| settings.show_agent_servers = show)?;
+        if show {
+            self.shared.refresh_launch_files(None);
+        } else {
+            let mut state = self.shared.lock();
+            state.launch_files.clear();
+            state.agent_servers.clear();
+        }
+        self.shared.notifier.notify();
+        self.rescan();
+        Ok(())
+    }
+
+    /// The popover opened: reads the launch files that changed since they
+    /// were last read, and looks for Agent Servers again if any did.
+    pub fn check_launch_files(&self) {
+        if self.shared.refresh_launch_files(None) {
+            self.rescan();
+        }
+    }
+
     /// Advanced › Force stop after: 3, 5, 10 or 30 seconds. Applies to Runs
     /// started from now on.
     pub fn set_force_stop_after(&self, seconds: u32) -> Result<()> {
         if !FORCE_STOP_CHOICES.contains(&seconds) {
-            return Err(Error::Invalid(format!(
-                "Force stop after must be one of {FORCE_STOP_CHOICES:?} seconds."
-            )));
+            return Err(Error::InvalidForceStopAfter {
+                choices: FORCE_STOP_CHOICES.to_vec(),
+            });
         }
         self.update_settings(|settings| settings.force_stop_after_secs = seconds)
     }
@@ -741,10 +829,9 @@ impl Supervisor {
             .iter()
             .any(|p| p.id != project_id && p.path == path)
         {
-            return Err(Error::Invalid(format!(
-                "{} is already a Project.",
-                path.display()
-            )));
+            return Err(Error::AlreadyAProject {
+                path: path.display().to_string(),
+            });
         }
         let mut config = state.config.clone();
         let project = config
@@ -755,6 +842,9 @@ impl Supervisor {
         state.config = config;
         state.detections.insert(project_id, detection);
         drop(state);
+        if self.shared.refresh_launch_files(Some(project_id)) {
+            self.rescan();
+        }
         self.shared.notifier.notify();
         Ok(())
     }
@@ -766,13 +856,13 @@ impl Supervisor {
         let (project, _) = find_service(&state.config, service_id)?;
         let command = edit.command.trim().to_owned();
         if command.is_empty() {
-            return Err(Error::Invalid("Enter a command.".into()));
+            return Err(Error::EmptyCommand);
         }
         if !edit.run_through_shell {
-            launch::parse_command(&command).map_err(Error::Invalid)?;
+            launch::parse_command(&command)?;
         }
         if edit.port == Some(0) {
-            return Err(Error::Invalid("Use a port from 1 to 65535.".into()));
+            return Err(Error::InvalidPort);
         }
         let folder = validate_folder(&project.path, edit.folder.as_deref())?;
         let project_id = project.id;
@@ -869,19 +959,24 @@ impl Supervisor {
         // One of Bunode's own Runs?
         let own = {
             let state = self.shared.lock();
-            state.runs.iter().find_map(|(id, run)| {
-                (run.status.is_live() && run.ports.contains(&port)).then(|| {
-                    let name = find_service(&state.config, *id)
-                        .map(|(p, s)| format!("{} › {}", p.display_name(), s.name))
-                        .unwrap_or_default();
-                    PortConflictOwner {
-                        pid: run.pid.unwrap_or(0),
-                        command: name,
-                        source: "Bunode".into(),
-                        service_id: Some(*id),
-                    }
+            state
+                .runs
+                .iter()
+                .find_map(|(id, run)| {
+                    (run.status.is_live() && run.ports.contains(&port)).then(|| {
+                        let name = find_service(&state.config, *id)
+                            .map(|(p, s)| format!("{} › {}", p.display_name(), s.name))
+                            .unwrap_or_default();
+                        PortConflictOwner {
+                            pid: run.pid.unwrap_or(0),
+                            command: name,
+                            source: Some("Bunode".into()),
+                            service_id: Some(*id),
+                            agent_server: false,
+                        }
+                    })
                 })
-            })
+                .or_else(|| agent_server_owner(&state.agent_servers, port))
         };
         let owner = own.or_else(|| {
             crate::discovery::port_owner(port).map(|o| PortConflictOwner {
@@ -889,6 +984,7 @@ impl Supervisor {
                 command: o.command,
                 source: o.source,
                 service_id: None,
+                agent_server: false,
             })
         });
         if owner.is_none() && !crate::discovery::port_in_use(port) {
@@ -939,65 +1035,13 @@ impl Supervisor {
 
     // MARK: - Logs
 
-    /// Up to `max` lines of the Service's current or last Run, from `from` on.
-    pub fn log_lines(&self, service_id: ServiceId, from: u64, max: u32) -> Vec<LogLine> {
-        let logs = self
-            .shared
-            .lock()
-            .runs
-            .get(&service_id)
-            .map(|run| run.logs.clone());
-        match logs {
-            Some(logs) => lock_logs(&logs).lines(from, max as usize),
-            None => Vec::new(),
-        }
-    }
-
-    /// Logs › Search: shows only lines containing `query`, ignoring case.
-    /// Returns at once; the matches arrive through snapshots, and new lines
-    /// that match are added as they come.
-    pub fn set_log_filter(&self, service_id: ServiceId, query: &str) {
-        let logs = {
-            let mut state = self.shared.lock();
-            if query.trim().is_empty() {
-                state.log_filters.remove(&service_id);
-            } else {
-                state.log_filters.insert(service_id, query.to_owned());
-            }
-            state.runs.get(&service_id).map(|run| run.logs.clone())
-        };
-        let Some(logs) = logs else { return };
-        let shared = self.shared.clone();
-        let query = query.to_owned();
-        self.runtime.spawn_blocking(move || {
-            lock_logs(&logs).set_filter(&query);
-            shared.notifier.notify();
-        });
-    }
-
-    /// Up to `max` lines matching the search, from match number `from` on.
-    pub fn log_matching_lines(&self, service_id: ServiceId, from: u64, max: u32) -> Vec<LogLine> {
-        let logs = self
-            .shared
-            .lock()
-            .runs
-            .get(&service_id)
-            .map(|run| run.logs.clone());
-        match logs {
-            Some(logs) => lock_logs(&logs).matching_lines(from, max as usize),
-            None => Vec::new(),
-        }
-    }
-
-    /// Logs › Export…: writes the full log of the Service's current or last
-    /// Run, not only the lines kept in memory, to `destination`.
-    pub fn export_log(&self, service_id: ServiceId, destination: &Path) -> Result<()> {
+    /// Logs › Open in Console: the newest file of the Service's current or
+    /// last Run, flushed, for the Console app to follow. `None` before a
+    /// Run, or when nothing reached the disk.
+    pub fn current_log_file(&self, service_id: ServiceId) -> Option<PathBuf> {
         let (run_number, file) = {
             let state = self.shared.lock();
-            let run = state
-                .runs
-                .get(&service_id)
-                .ok_or_else(|| Error::Invalid("This Service has no Runs yet.".into()))?;
+            let run = state.runs.get(&service_id)?;
             (run.run_number, run.file.clone())
         };
         if let Some(file) = file {
@@ -1005,36 +1049,8 @@ impl Supervisor {
         }
         self.shared
             .log_files
-            .export(service_id, run_number, destination)
-            .map(|_| ())
-            .map_err(|e| {
-                Error::Invalid(format!("Couldn't export to {}: {e}", destination.display()))
-            })
-    }
-
-    /// Logs › Clear: hides the lines shown so far. Files are not touched.
-    pub fn clear_logs(&self, service_id: ServiceId) {
-        let logs = self
-            .shared
-            .lock()
-            .runs
-            .get(&service_id)
-            .map(|run| run.logs.clone());
-        if let Some(logs) = logs {
-            lock_logs(&logs).clear();
-            self.shared.notifier.notify();
-        }
-    }
-
-    /// Advanced › Log lines kept: 5,000, 10,000 or 50,000 per Service, for
-    /// Runs started from now on.
-    pub fn set_log_lines_kept(&self, lines: u32) -> Result<()> {
-        if !LOG_LINES_CHOICES.contains(&lines) {
-            return Err(Error::Invalid(format!(
-                "Log lines kept must be one of {LOG_LINES_CHOICES:?}."
-            )));
-        }
-        self.update_settings(|settings| settings.log_lines_kept = lines)
+            .files_of_run(service_id, run_number)
+            .pop()
     }
 
     /// Stops the Service's Run: SIGTERM to its process group, SIGKILL after
@@ -1101,12 +1117,6 @@ impl Shared {
         }
         let project_id = project.id;
         let command = service.command.clone();
-        let logs = Arc::new(Mutex::new(LogBuffer::new(
-            state.config.settings.log_lines_kept as usize,
-        )));
-        if let Some(query) = state.log_filters.get(&service_id) {
-            lock_logs(&logs).set_filter(query);
-        }
 
         // Run numbers count every Run, including ones that fail to start.
         let mut config = state.config.clone();
@@ -1121,9 +1131,12 @@ impl Shared {
         // A failed save must not keep the Service from starting.
         let _ = self.store.save(&config);
         state.config = config;
+        let reporter = self.clone();
         let log = RunLog {
-            buffer: logs.clone(),
-            file: RunLogWriter::start(&self.log_files, service_id, run_number, logs.clone()),
+            file: RunLogWriter::start(&self.log_files, service_id, run_number, move |problem| {
+                reporter.diagnostics.log(&problem)
+            }),
+            announced: Announced::default(),
         };
         log.system(&format!("Run #{run_number}: {command}"));
         if let Some(port) = port_override {
@@ -1132,8 +1145,8 @@ impl Shared {
 
         let spec = match spec {
             Ok(spec) => spec,
-            Err(message) => {
-                log.system(&message);
+            Err(note) => {
+                log.system(&note.to_string());
                 state.runs.insert(
                     service_id,
                     RunEntry {
@@ -1142,8 +1155,7 @@ impl Shared {
                         pid: None,
                         stop_requested: false,
                         control: None,
-                        last_exit: Some(message),
-                        logs,
+                        last_exit: Some(note),
                         file: Some(log.file.clone()),
                         restart_after: false,
                         delete_after: false,
@@ -1151,6 +1163,7 @@ impl Shared {
                         quitting: false,
                         ended_by: Some(RunEnd::FailedToStart),
                         ports: Vec::new(),
+                        announced: Announced::default(),
                     },
                 );
                 drop(state);
@@ -1169,7 +1182,6 @@ impl Shared {
                 stop_requested: false,
                 control: Some(control),
                 last_exit: None,
-                logs: logs.clone(),
                 file: Some(log.file.clone()),
                 restart_after: false,
                 delete_after: false,
@@ -1177,6 +1189,7 @@ impl Shared {
                 quitting: false,
                 ended_by: None,
                 ports: Vec::new(),
+                announced: log.announced.clone(),
             },
         );
         drop(state);
@@ -1227,7 +1240,6 @@ impl Shared {
         self.save(&config)?;
         state.config = config;
         state.runs.remove(&service_id);
-        state.log_filters.remove(&service_id);
         drop(state);
         self.log_files.remove_service(service_id);
         if let Some(project_id) = project_id {
@@ -1256,7 +1268,37 @@ impl Shared {
         state.config = config;
         state.detections.remove(&project_id);
         state.removing_projects.remove(&project_id);
+        state.launch_files.forget(project_id);
         Ok(())
+    }
+
+    /// Reads the agent launch files of `project` (else of every Project)
+    /// that changed since they were last read, unless Agent Servers are
+    /// off. Whether any did.
+    fn refresh_launch_files(&self, project: Option<ProjectId>) -> bool {
+        let mut state = self.lock();
+        if !state.config.settings.show_agent_servers {
+            return false;
+        }
+        let roots: Vec<(ProjectId, PathBuf)> = state
+            .config
+            .projects
+            .iter()
+            .filter(|p| project.is_none_or(|id| id == p.id))
+            .map(|p| (p.id, p.path.clone()))
+            .collect();
+        let mut changed = false;
+        let mut problems = Vec::new();
+        for (id, root) in roots {
+            let (read, found) = state.launch_files.refresh(id, &root);
+            changed |= read;
+            problems.extend(found);
+        }
+        drop(state);
+        for line in problems {
+            self.diagnostics.log(&line);
+        }
+        changed
     }
 
     /// The runner of a Run was spawned: remember it on disk.
@@ -1327,13 +1369,11 @@ impl Shared {
         let line = match (&note, run.quitting) {
             (None, true) => "Stopped because Bunode quit".to_owned(),
             (None, false) => "Stopped".to_owned(),
-            (Some(note), _) => note.clone(),
+            (Some(note), _) => note.to_string(),
         };
-        let time = now_ms();
         if let Some(file) = &run.file {
-            file.line(time, LogStream::System, &line);
+            file.line(now_ms(), LogStream::System, &line);
         }
-        lock_logs(&run.logs).push_system(time, line);
         run.status = status;
         run.last_exit = note;
         run.pid = None;
@@ -1364,8 +1404,18 @@ impl Shared {
 async fn discover(shared: Arc<Shared>) {
     let scanner = Arc::new(Mutex::new(Scanner::default()));
     loop {
+        let watched;
+        let roots: Vec<(ProjectId, std::path::PathBuf)>;
         let ours = {
             let state = shared.lock();
+            let order: Vec<ProjectId> = state.config.projects.iter().map(|p| p.id).collect();
+            watched = state.launch_files.watched(&order);
+            roots = state
+                .config
+                .projects
+                .iter()
+                .map(|p| (p.id, p.path.clone()))
+                .collect();
             Ours {
                 groups: state
                     .runs
@@ -1381,7 +1431,7 @@ async fn discover(shared: Arc<Shared>) {
             scanning
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .scan(&ours)
+                .scan(&ours, &watched, &roots)
         })
         .await
         else {
@@ -1395,6 +1445,14 @@ async fn discover(shared: Arc<Shared>) {
             state.exiting.retain(|key| alive.contains(key));
             let mut changed = state.discovered != found;
             state.discovered = found;
+            // Switched off during the scan: what it found is stale.
+            let agent_servers = if state.config.settings.show_agent_servers {
+                scan.agent_servers
+            } else {
+                Vec::new()
+            };
+            changed |= state.agent_servers != agent_servers;
+            state.agent_servers = agent_servers;
             for run in state.runs.values_mut() {
                 let ports = match run.pid {
                     Some(pid) if run.status.is_live() => scan
@@ -1477,15 +1535,16 @@ fn validate_folder(project: &Path, folder: Option<&str>) -> Result<Option<PathBu
     let Some(folder) = folder.map(str::trim).filter(|f| !f.is_empty() && *f != ".") else {
         return Ok(None);
     };
-    let outside = || Error::Invalid("Choose the Project's folder or a folder inside it.".into());
+    let outside = || Error::OutsideProject;
     let root = fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
     let candidate = if Path::new(folder).is_absolute() {
         PathBuf::from(folder)
     } else {
         root.join(folder)
     };
-    let resolved = fs::canonicalize(&candidate)
-        .map_err(|_| Error::Invalid(format!("{} doesn't exist.", candidate.display())))?;
+    let resolved = fs::canonicalize(&candidate).map_err(|_| Error::Missing {
+        path: candidate.display().to_string(),
+    })?;
     let relative = resolved.strip_prefix(&root).map_err(|_| outside())?;
     if relative.as_os_str().is_empty() {
         return Ok(None);
@@ -1509,12 +1568,12 @@ fn validate_service_name(
 ) -> Result<String> {
     let name = name.trim();
     if name.is_empty() {
-        return Err(Error::Invalid("Enter a name.".into()));
+        return Err(Error::EmptyName);
     }
     if name.chars().count() > MAX_SERVICE_NAME_LENGTH {
-        return Err(Error::Invalid(format!(
-            "Use at most {MAX_SERVICE_NAME_LENGTH} characters."
-        )));
+        return Err(Error::NameTooLong {
+            max: MAX_SERVICE_NAME_LENGTH as u32,
+        });
     }
     let taken = project.services.iter().any(|s| {
         Some(s.id) != except
@@ -1522,10 +1581,9 @@ fn validate_service_name(
             && s.name.to_lowercase() == name.to_lowercase()
     });
     if taken {
-        return Err(Error::Invalid(format!(
-            "Name already used in {}",
-            project.display_name()
-        )));
+        return Err(Error::NameTaken {
+            project: project.display_name().to_owned(),
+        });
     }
     Ok(name.to_owned())
 }
@@ -1547,7 +1605,6 @@ fn effective_manager(
 }
 
 fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -> ServiceState {
-    let logs = run.map(|r| lock_logs(&r.logs).info()).unwrap_or_default();
     // A Service in a subfolder shows the folder's name first: "web › dev".
     let display_name = match service.folder.as_deref().and_then(Path::file_name) {
         Some(folder) => format!("{} › {}", folder.to_string_lossy(), service.name),
@@ -1566,16 +1623,22 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         run_number: run.map(|r| r.run_number),
         pid: run.and_then(|r| r.pid),
         last_exit: run.and_then(|r| r.last_exit.clone()),
-        log_first: logs.first,
-        log_count: logs.count,
-        log_dropped: logs.dropped,
-        log_match_first: logs.match_first,
-        log_match_count: logs.match_count,
-        log_filter_generation: logs.filter_generation,
         has_pending_config: run.is_some_and(|r| r.config_changed && r.status.is_live()),
         ended_by: run.and_then(|r| r.ended_by),
-        live_ports: run.map(|r| r.ports.clone()).unwrap_or_default(),
+        live_ports: run.map(|r| live_ports(service, r)).unwrap_or_default(),
     }
+}
+
+/// The Run's ports, the Service's port first, else the first one its
+/// output announced.
+fn live_ports(service: &Service, run: &RunEntry) -> Vec<u16> {
+    let mut ports = run.ports.clone();
+    let announced = run.announced.lock().unwrap_or_else(|e| e.into_inner());
+    crate::discovery::lead_with(
+        &mut ports,
+        service.port.into_iter().chain(announced.iter().copied()),
+    );
+    ports
 }
 
 fn project_state(project: &Project, state: &State) -> ProjectState {
@@ -1596,7 +1659,36 @@ fn project_state(project: &Project, state: &State) -> ProjectState {
             .iter()
             .map(|s| service_state(project, s, state.runs.get(&s.id)))
             .collect(),
+        agent_servers: state
+            .agent_servers
+            .iter()
+            .filter(|s| s.project_id == project.id)
+            .map(|s| AgentServerState {
+                project_id: s.project_id,
+                agent: s.agent.to_owned(),
+                name: s.name.clone(),
+                command: s.command.clone(),
+                pid: s.pid,
+                pgid: s.pgid,
+                live_ports: s.ports.clone(),
+                stopping: state.stopping_agents.contains(&s.pid),
+            })
+            .collect(),
     }
+}
+
+/// The Agent Server listening on `port`, as a port conflict's owner.
+fn agent_server_owner(servers: &[AgentServer], port: u16) -> Option<PortConflictOwner> {
+    servers
+        .iter()
+        .find(|s| s.ports.contains(&port))
+        .map(|s| PortConflictOwner {
+            pid: s.pid,
+            command: s.name.clone(),
+            source: Some(s.agent.into()),
+            service_id: None,
+            agent_server: true,
+        })
 }
 
 /// The Discovered Processes whose folder is inside `project`'s, unless a
@@ -1887,7 +1979,11 @@ mod tests {
         let settings = supervisor.snapshot().settings;
         assert!(settings.show_running_count);
         assert_eq!(settings.force_stop_after_secs, 5);
+        assert_eq!(settings.list_layout, ListLayout::Flat);
+        assert!(settings.show_agent_servers);
         supervisor.set_show_running_count(false).unwrap();
+        supervisor.set_show_agent_servers(false).unwrap();
+        supervisor.set_list_layout(ListLayout::ByProject).unwrap();
         supervisor.set_force_stop_after(10).unwrap();
         assert!(supervisor.set_force_stop_after(7).is_err());
         drop(supervisor);
@@ -1895,6 +1991,40 @@ mod tests {
         let settings = reloaded.snapshot().settings;
         assert!(!settings.show_running_count);
         assert_eq!(settings.force_stop_after_secs, 10);
+        assert_eq!(settings.list_layout, ListLayout::ByProject);
+        assert!(!settings.show_agent_servers);
+    }
+
+    #[test]
+    fn stopping_an_unknown_agent_server_fails() {
+        let data = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        assert!(matches!(
+            supervisor.stop_agent_server(999_999),
+            Err(Error::ProcessExited { pid: 999_999 })
+        ));
+    }
+
+    #[test]
+    fn a_port_held_by_an_agent_server_names_it() {
+        let servers = [AgentServer {
+            project_id: 1,
+            agent: "Claude",
+            name: "web".into(),
+            command: "npm run dev".into(),
+            pid: 4242,
+            start: 1,
+            pgid: 4242,
+            port: None,
+            ports: vec![3000, 3001],
+        }];
+        let owner = agent_server_owner(&servers, 3001).unwrap();
+        assert_eq!(owner.pid, 4242);
+        assert_eq!(owner.command, "web");
+        assert_eq!(owner.source.as_deref(), Some("Claude"));
+        assert!(owner.agent_server);
+        assert_eq!(owner.service_id, None);
+        assert_eq!(agent_server_owner(&servers, 3002), None);
     }
 
     fn wait_until(what: &str, done: impl Fn() -> bool) {
@@ -2129,6 +2259,9 @@ mod tests {
         let (supervisor, _) = open(data.path());
         let snapshot = supervisor.snapshot();
         assert!(snapshot.projects.is_empty());
-        assert!(snapshot.config_issue.unwrap().contains("couldn't be read"));
+        assert!(matches!(
+            snapshot.config_issue.unwrap().problem,
+            crate::snapshot::ConfigProblem::Unreadable { .. }
+        ));
     }
 }

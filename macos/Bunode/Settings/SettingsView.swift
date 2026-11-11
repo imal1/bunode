@@ -121,10 +121,67 @@ struct GeneralPane: View {
                     Text("Next to the menu bar icon.")
                 }
             }
+            Section("Display") {
+                LabeledContent {
+                    Picker("List", selection: Binding(
+                        get: { model.snapshot.settings.listLayout },
+                        set: { model.setListLayout($0) }
+                    )) {
+                        Text("Flat").tag(ListLayout.flat)
+                        Text("By Project").tag(ListLayout.byProject)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                } label: {
+                    Text("List")
+                    Text("How the menu bar list is arranged.")
+                }
+                LanguageRow()
+            }
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
         .controlSize(.small)
+    }
+}
+
+/// Settings › General › Language (design-handoff §2.3, ADR-0006): the
+/// choice applies after Bunode restarts.
+private struct LanguageRow: View {
+    private let preference: LanguagePreference
+    @State private var choice: AppLanguage
+
+    init(preference: LanguagePreference = LanguagePreference()) {
+        self.preference = preference
+        _choice = State(initialValue: preference.choice)
+    }
+
+    var body: some View {
+        let needsRestart = preference.needsRestart(for: choice)
+        LabeledContent {
+            HStack(spacing: 8) {
+                if needsRestart {
+                    Button("Restart Now") {
+                        NSApp.sendAction(#selector(AppDelegate.restart(_:)), to: nil, from: nil)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Picker("Language", selection: $choice) {
+                    Text("System").tag(AppLanguage.system)
+                    // Each language is always written in itself.
+                    Text(verbatim: "English").tag(AppLanguage.english)
+                    Text(verbatim: "简体中文").tag(AppLanguage.simplifiedChinese)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
+        } label: {
+            Text("Language")
+            Text(needsRestart ? "Restart Bunode to apply." : "Applies after Bunode restarts.")
+        }
+        .onChange(of: choice) { _, choice in preference.choice = choice }
     }
 }
 
@@ -151,18 +208,6 @@ struct AdvancedPane: View {
                 } label: {
                     Text("Force stop after")
                     Text("Stop asks nicely first, then force-quits.")
-                }
-                .pickerStyle(.menu)
-                Picker(selection: Binding(
-                    get: { model.snapshot.settings.logLinesKept },
-                    set: { model.setLogLinesKept($0) }
-                )) {
-                    ForEach([UInt32(5_000), 10_000, 50_000], id: \.self) { lines in
-                        Text(lines.formatted()).tag(lines)
-                    }
-                } label: {
-                    Text("Log lines kept")
-                    Text("Per Service. Export saves the full log.")
                 }
                 .pickerStyle(.menu)
                 LabeledContent {
@@ -208,7 +253,7 @@ private struct ShellEnvironmentRow: View {
             .disabled(environment.isLoading)
         } label: {
             Text("Shell environment")
-            if let problem = environment.problem {
+            if let problem = environment.problem?.message {
                 Text(problem)
                     .foregroundStyle(Color(nsColor: .systemRed))
                     .help(problem)

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::logs::{LogBuffer, LogStream};
+use crate::logs::LogStream;
 use crate::model::ServiceId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +26,8 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Limits {
         Limits {
-            file_bytes: 5 * 1024 * 1024,
+            // Console follows one file, so a Run rarely needs a second.
+            file_bytes: 50 * 1024 * 1024,
             service_bytes: 50 * 1024 * 1024,
         }
     }
@@ -72,17 +73,6 @@ impl LogFiles {
             .collect();
         files.sort();
         files
-    }
-
-    /// Writes the Run's files, one after the other, to `destination`.
-    pub fn export(&self, service: ServiceId, run: u64, destination: &Path) -> io::Result<u64> {
-        let mut out = BufWriter::new(File::create(destination)?);
-        let mut total = 0;
-        for file in self.files_of_run(service, run) {
-            total += io::copy(&mut File::open(file)?, &mut out)?;
-        }
-        out.flush()?;
-        Ok(total)
     }
 
     /// Deletes the oldest files until the Service's logs fit the limit.
@@ -148,13 +138,13 @@ pub struct RunLogWriter {
 const QUEUE: usize = 64 * 1024;
 
 impl RunLogWriter {
-    /// Starts the writer thread of Run `run` of `service`. Problems are
-    /// reported once, as a Bunode line in `logs`.
+    /// Starts the writer thread of Run `run` of `service`. A problem
+    /// writing is passed to `report`, once.
     pub fn start(
         files: &LogFiles,
         service: ServiceId,
         run: u64,
-        logs: Arc<Mutex<LogBuffer>>,
+        report: impl Fn(String) + Send + 'static,
     ) -> RunLogWriter {
         let (tx, rx) = mpsc::sync_channel(QUEUE);
         let skipped = Arc::new(Mutex::new(0));
@@ -162,7 +152,7 @@ impl RunLogWriter {
         let counted = skipped.clone();
         let spawned = thread::Builder::new()
             .name(format!("bunode-log-{service}-{run}"))
-            .spawn(move || write_loop(&files, service, run, &rx, &logs, &counted));
+            .spawn(move || write_loop(&files, service, run, &rx, &report, &counted));
         if spawned.is_err() {
             // Without a thread nothing is written; sends fail and are skipped.
         }
@@ -203,21 +193,28 @@ fn write_loop(
     service: ServiceId,
     run: u64,
     rx: &Receiver<Message>,
-    logs: &Mutex<LogBuffer>,
+    report: &dyn Fn(String),
     skipped: &Mutex<u64>,
 ) {
     let mut part = 0;
     let mut writer: Option<(BufWriter<File>, u64)> = None;
     let mut failed = false;
 
-    let report = |error: &io::Error| {
-        crate::supervisor::lock_logs(logs).push_system(
-            crate::supervisor::now_ms(),
-            format!("Couldn't write the log to disk ({error}). It is still kept in memory."),
-        );
-    };
-
-    while let Ok(message) = rx.recv() {
+    let mut next: Option<Message> = None;
+    loop {
+        let message = match next.take() {
+            Some(message) => message,
+            None => {
+                // Caught up: flush, so Console, which follows the file,
+                // shows every line as it comes.
+                if let Some((file, _)) = &mut writer {
+                    let _ = file.flush();
+                }
+                let Ok(message) = rx.recv() else { break };
+                message
+            }
+        };
+        next = rx.try_recv().ok();
         let (time_ms, stream, text) = match message {
             Message::Flush(done) => {
                 if let Some((file, _)) = &mut writer {
@@ -261,7 +258,9 @@ fn write_loop(
         if let Err(error) = result {
             failed = true;
             writer = None;
-            report(&error);
+            report(format!(
+                "Couldn't write the log of Service {service} Run #{run} to disk ({error})."
+            ));
         }
     }
     if let Some((mut file, _)) = writer {
@@ -318,9 +317,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 mod tests {
     use super::*;
 
-    fn buffer() -> Arc<Mutex<LogBuffer>> {
-        Arc::new(Mutex::new(LogBuffer::new(100)))
-    }
+    fn ignore(_: String) {}
 
     #[test]
     fn formats_utc_timestamps() {
@@ -330,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn rolls_over_and_exports_everything_in_order() {
+    fn rolls_over_and_keeps_everything_in_order() {
         let dir = tempfile::tempdir().unwrap();
         let files = LogFiles::new(
             dir.path(),
@@ -339,7 +336,7 @@ mod tests {
                 service_bytes: 1_000_000,
             },
         );
-        let writer = RunLogWriter::start(&files, 7, 3, buffer());
+        let writer = RunLogWriter::start(&files, 7, 3, ignore);
         for i in 0..200 {
             writer.line(0, LogStream::Stdout, &format!("line {i}"));
         }
@@ -347,10 +344,11 @@ mod tests {
         let parts = files.files_of_run(7, 3);
         assert!(parts.len() > 3, "{parts:?}");
 
-        let out = dir.path().join("export.log");
-        files.export(7, 3, &out).unwrap();
-        let exported = fs::read_to_string(&out).unwrap();
-        let lines: Vec<&str> = exported.lines().collect();
+        let text: String = parts
+            .iter()
+            .map(|part| fs::read_to_string(part).unwrap())
+            .collect();
+        let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 200);
         assert_eq!(lines[0], "1970-01-01T00:00:00.000Z out line 0");
         assert!(lines[199].ends_with("line 199"));
@@ -367,7 +365,7 @@ mod tests {
             },
         );
         for run in 1..=3 {
-            let writer = RunLogWriter::start(&files, 1, run, buffer());
+            let writer = RunLogWriter::start(&files, 1, run, ignore);
             for i in 0..100 {
                 writer.line(0, LogStream::Stdout, &format!("run {run} line {i}"));
             }
@@ -393,14 +391,15 @@ mod tests {
         let blocker = dir.path().join("not-a-folder");
         fs::write(&blocker, "").unwrap();
         let files = LogFiles::new(&blocker, Limits::default());
-        let logs = buffer();
-        let writer = RunLogWriter::start(&files, 1, 1, logs.clone());
+        let reports = Arc::new(Mutex::new(Vec::new()));
+        let collected = reports.clone();
+        let writer = RunLogWriter::start(&files, 1, 1, move |r| collected.lock().unwrap().push(r));
         writer.line(0, LogStream::Stdout, "first");
         writer.line(0, LogStream::Stdout, "second");
         writer.flush(Duration::from_secs(5));
-        let lines = logs.lock().unwrap().lines(0, 10);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].text.starts_with("Couldn't write the log to disk"));
+        let reports = reports.lock().unwrap();
+        assert_eq!(reports.len(), 1);
+        assert!(reports[0].starts_with("Couldn't write the log of Service 1 Run #1"));
         assert_eq!(writer.skipped(), 1);
     }
 }

@@ -2,7 +2,7 @@
 
 mod support;
 
-use bunode_core::{LogStream, RunStatus, ServiceEdit};
+use bunode_core::{RunStatus, ServiceEdit};
 use support::*;
 
 fn edit(command: &str, shell: bool) -> ServiceEdit {
@@ -15,12 +15,7 @@ fn edit(command: &str, shell: bool) -> ServiceEdit {
 }
 
 fn stdout_of(h: &Harness, id: u64) -> Vec<String> {
-    h.supervisor
-        .log_lines(id, 0, 100)
-        .into_iter()
-        .filter(|l| l.stream == LogStream::Stdout)
-        .map(|l| l.text)
-        .collect()
+    h.stdout(id)
 }
 
 #[test]
@@ -69,8 +64,7 @@ fn changes_while_running_apply_to_the_next_run() {
         s.status == RunStatus::Running && s.run_number == Some(2)
     });
     assert!(!next.has_pending_config);
-    let first = h.supervisor.log_lines(id, 0, 1);
-    assert_eq!(first[0].text, "Run #2: node server.js --changed");
+    assert_eq!(h.log(id)[0].1, "Run #2: node server.js --changed");
     h.supervisor.stop(id);
     h.wait(id, "Stopped", |s| s.status == RunStatus::Stopped);
 }

@@ -1,10 +1,12 @@
 //! Turns a Service's configuration into what `bunode-runner` executes.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::model::{Project, Service, Settings};
+use crate::snapshot::RunNote;
 
 /// Everything needed to start one Run.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,14 +19,13 @@ pub struct LaunchSpec {
 }
 
 /// Builds the launch spec of `service`. `base_env` is the environment Runs
-/// start from. Fails with a message for the user when the command can't be
-/// run.
+/// start from. Fails when the command can't be run.
 pub fn launch_spec(
     project: &Project,
     service: &Service,
     settings: &Settings,
     base_env: &[(OsString, OsString)],
-) -> Result<LaunchSpec, String> {
+) -> Result<LaunchSpec, RunNote> {
     let mut env: Vec<(OsString, OsString)> = base_env
         .iter()
         // Injected libraries of a debugged Bunode must not leak into Runs.
@@ -35,17 +36,22 @@ pub fn launch_spec(
     if !env.iter().any(|(k, _)| k == "FORCE_COLOR") {
         env.push(("FORCE_COLOR".into(), "1".into()));
     }
-    // Node.js and Bun picked in Settings come first in PATH.
+    // Node.js and Bun picked in Settings come first in PATH, for commands
+    // that run on them (ADR-0005).
     let custom_dirs: Vec<PathBuf> = [&settings.node_path, &settings.bun_path]
         .into_iter()
         .flatten()
         .filter_map(|tool| tool.parent().map(Path::to_path_buf))
         .collect();
-    if !custom_dirs.is_empty() {
-        let current = crate::env::get(&env, "PATH").map(|p| p.to_owned());
+    let cwd = match &service.folder {
+        Some(folder) => project.path.join(folder),
+        None => project.path.clone(),
+    };
+    let path = crate::env::get(&env, "PATH").map(OsStr::to_os_string);
+    if !custom_dirs.is_empty() && may_use_javascript_runtime(service, &cwd, path.as_deref()) {
         let dirs = custom_dirs
             .into_iter()
-            .chain(current.iter().flat_map(std::env::split_paths));
+            .chain(path.iter().flat_map(std::env::split_paths));
         if let Ok(path) = std::env::join_paths(dirs) {
             set_env(&mut env, "PATH".into(), path);
         }
@@ -63,14 +69,13 @@ pub fn launch_spec(
             .unwrap_or_else(|| "/bin/zsh".into());
         (shell, vec!["-c".to_owned(), service.command.clone()])
     } else {
-        let mut words = parse_command(&service.command)?;
+        let mut words = parse_command(&service.command).map_err(|e| match e {
+            crate::Error::UnmatchedQuote => RunNote::UnmatchedQuote,
+            crate::Error::EmptyCommand => RunNote::EmptyCommand,
+            other => unreachable!("parse_command doesn't return {other:?}"),
+        })?;
         let program = words.remove(0);
         (program, words)
-    };
-
-    let cwd = match &service.folder {
-        Some(folder) => project.path.join(folder),
-        None => project.path.clone(),
     };
 
     Ok(LaunchSpec {
@@ -84,13 +89,68 @@ pub fn launch_spec(
 
 /// Splits a command into the executable and its arguments, with shell-like
 /// quoting but no shell features (pipes, `&&`, globs, variables).
-pub fn parse_command(command: &str) -> Result<Vec<String>, String> {
-    let words = shell_words::split(command)
-        .map_err(|_| "The command has an unmatched quote.".to_owned())?;
+pub fn parse_command(command: &str) -> crate::Result<Vec<String>> {
+    let words = shell_words::split(command).map_err(|_| crate::Error::UnmatchedQuote)?;
     if words.is_empty() {
-        return Err("The command is empty.".into());
+        return Err(crate::Error::EmptyCommand);
     }
     Ok(words)
+}
+
+/// Whether `service` may run on Node.js or Bun. It doesn't when its
+/// executable is found to be something else: a native binary, or a script
+/// for another interpreter such as Python. A shell may run them anywhere,
+/// and a name not in `path` may be in a Runtime Path, so those count.
+fn may_use_javascript_runtime(service: &Service, cwd: &Path, path: Option<&OsStr>) -> bool {
+    if service.run_through_shell {
+        return true;
+    }
+    let Some(program) = shell_words::split(&service.command)
+        .ok()
+        .and_then(|words| words.into_iter().next())
+    else {
+        return true;
+    };
+    let program = Path::new(&program);
+    let name = program.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if crate::discovery::is_runtime_or_launcher(name)
+        || program
+            .components()
+            .any(|c| c.as_os_str() == "node_modules")
+    {
+        return true;
+    }
+    let file = if program.components().count() > 1 {
+        Some(cwd.join(program))
+    } else {
+        path.into_iter()
+            .flat_map(std::env::split_paths)
+            .map(|dir| dir.join(program))
+            .find(|file| file.is_file())
+    };
+    file.is_none_or(|file| runs_on_javascript_or_shell(&file))
+}
+
+/// Whether the script at `file` names Node.js, Bun or a shell in its `#!`
+/// line. Native binaries and files that can't be read don't.
+fn runs_on_javascript_or_shell(file: &Path) -> bool {
+    let mut head = [0; 256];
+    let Ok(read) = std::fs::File::open(file).and_then(|mut f| f.read(&mut head)) else {
+        return false;
+    };
+    let Some(line) = head[..read].strip_prefix(b"#!") else {
+        return false;
+    };
+    let line = String::from_utf8_lossy(line.split(|&b| b == b'\n').next().unwrap_or_default());
+    let mut words = line.split_whitespace();
+    let mut interpreter = words.next().and_then(|w| w.rsplit('/').next());
+    if interpreter == Some("env") {
+        interpreter = words.find(|w| !w.starts_with('-') && !w.contains('='));
+    }
+    matches!(
+        interpreter,
+        Some("node" | "bun" | "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish")
+    )
 }
 
 pub fn set_env(env: &mut Vec<(OsString, OsString)>, key: OsString, value: OsString) {
@@ -175,8 +235,14 @@ mod tests {
     #[test]
     fn rejects_unparsable_commands() {
         let settings = Settings::default();
-        assert!(launch_spec(&project(), &service("node 'oops"), &settings, &[]).is_err());
-        assert!(launch_spec(&project(), &service("   "), &settings, &[]).is_err());
+        assert_eq!(
+            launch_spec(&project(), &service("node 'oops"), &settings, &[]),
+            Err(RunNote::UnmatchedQuote)
+        );
+        assert_eq!(
+            launch_spec(&project(), &service("   "), &settings, &[]),
+            Err(RunNote::EmptyCommand)
+        );
     }
 
     #[test]
@@ -204,6 +270,63 @@ mod tests {
             path,
             OsString::from("/opt/node/bin:/opt/bun/bin:/usr/bin:/bin")
         );
+    }
+
+    #[test]
+    fn runtime_paths_apply_to_node_and_bun_commands_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = |name: &str, first_line: &str| {
+            std::fs::write(dir.path().join(name), format!("{first_line}\necho hi\n")).unwrap();
+        };
+        script("server.js", "#!/usr/bin/env node");
+        script("tsx", "#!/usr/bin/env -S node --no-warnings");
+        script("dev.sh", "#!/bin/sh");
+        script("serve.py", "#!/usr/bin/env python3");
+        let bin = dir.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::copy("/bin/ls", bin.join("tool")).unwrap();
+        let project = Project {
+            path: dir.path().into(),
+            ..project()
+        };
+        let settings = Settings {
+            node_path: Some("/opt/node/bin/node".into()),
+            ..Settings::default()
+        };
+        let base_path = format!("/usr/bin:{}", bin.display());
+        let path_of = |command: &str, shell: bool| {
+            let mut service = service(command);
+            service.run_through_shell = shell;
+            let spec =
+                launch_spec(&project, &service, &settings, &env(&[("PATH", &base_path)])).unwrap();
+            crate::env::get(&spec.env, "PATH").unwrap().to_owned()
+        };
+        let custom = OsString::from(format!("/opt/node/bin:{base_path}"));
+        let untouched = OsString::from(&base_path);
+        for command in [
+            "node x.js",
+            "bun dev",
+            "pnpm dev",
+            "/usr/local/bin/node x.js",
+            // Not in PATH, so it may be in the Runtime Path.
+            "vite --port 3000",
+            "./node_modules/.bin/vite",
+            "./server.js",
+            "./tsx watch src",
+            "./dev.sh",
+        ] {
+            assert_eq!(path_of(command, false), custom, "{command}");
+        }
+        for command in [
+            "'/bin/ls' -l",
+            "tool --no-sandbox",
+            "./bin/tool",
+            "./serve.py",
+            "python3 -m http.server",
+        ] {
+            assert_eq!(path_of(command, false), untouched, "{command}");
+        }
+        assert_eq!(path_of("tool | tee log && npm run dev", true), custom);
     }
 
     #[test]

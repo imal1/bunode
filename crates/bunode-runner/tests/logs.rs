@@ -1,4 +1,5 @@
-//! Run output reaches the Run's bounded log (requirements §2.2, §3.4).
+//! Run output reaches the Run's log file, which Console shows
+//! (requirements §3.4).
 
 mod support;
 
@@ -17,78 +18,63 @@ fn collects_stdout_stderr_and_system_lines() {
         r#"node -e "console.log('to stdout'); console.error('\x1b[31mto stderr\x1b[0m')""#,
     );
     h.supervisor.start(id).unwrap();
-    let done = h.wait(id, "Stopped", |s| s.status == RunStatus::Stopped);
-    assert_eq!(done.log_count, 4, "{done:?}");
+    h.wait(id, "Stopped", |s| s.status == RunStatus::Stopped);
 
-    let lines = h.supervisor.log_lines(id, 0, 100);
-    let summary: Vec<(LogStream, &str)> =
-        lines.iter().map(|l| (l.stream, l.text.as_str())).collect();
-    assert_eq!(summary[0].0, LogStream::System);
-    assert!(summary[0].1.starts_with("Run #1: node -e"));
-    assert!(summary.contains(&(LogStream::Stdout, "to stdout")));
-    assert!(summary.contains(&(LogStream::Stderr, "to stderr")));
-    assert_eq!(summary[3], (LogStream::System, "Exited"));
-    let stderr = lines
-        .iter()
-        .find(|l| l.stream == LogStream::Stderr)
-        .unwrap();
-    assert_eq!(stderr.spans.len(), 1, "the color survives as a span");
-
-    h.supervisor.clear_logs(id);
-    assert_eq!(h.state(id).log_count, 0);
-    assert!(h.supervisor.log_lines(id, 0, 100).is_empty());
+    let log = h.log(id);
+    assert_eq!(log.len(), 4, "{log:?}");
+    assert_eq!(log[0].0, LogStream::System);
+    assert!(log[0].1.starts_with("Run #1: node -e"));
+    assert!(log.contains(&(LogStream::Stdout, "to stdout".into())));
+    // Colors don't reach the file.
+    assert!(log.contains(&(LogStream::Stderr, "to stderr".into())));
+    assert_eq!(log[3], (LogStream::System, "Exited".into()));
 }
 
 #[test]
-fn search_filters_and_follows_new_lines() {
+fn the_current_log_file_is_the_runs_newest() {
     require_tool("node");
     let h = Harness::new();
-    let id = h.service("flood", "node flood.js 1000");
-    h.supervisor.set_log_filter(id, "LINE 99");
+    let id = h.service("flood", "node flood.js 10");
+    assert_eq!(h.supervisor.current_log_file(id), None);
     h.supervisor.start(id).unwrap();
-    let done = h.wait(id, "the flood to end", |s| {
-        !s.status.is_live() && s.log_match_count == 11
-    });
-    let matches = h
-        .supervisor
-        .log_matching_lines(id, done.log_match_first, 100);
-    let mut texts: Vec<&str> = matches.iter().map(|l| l.text.as_str()).collect();
-    texts.sort();
-    assert_eq!(texts[0], "line 99");
-    assert!(texts.contains(&"line 999"));
-
-    let generation = done.log_filter_generation;
-    h.supervisor.set_log_filter(id, "");
-    h.wait(id, "the search to go away", |s| {
-        s.log_filter_generation != generation
-    });
-    assert_eq!(h.state(id).log_match_count, 0);
+    h.wait(id, "the flood to end", |s| !s.status.is_live());
+    let file = h.supervisor.current_log_file(id).unwrap();
+    assert!(file.ends_with("run-1-000.log"), "{file:?}");
+    assert!(h.stdout(id).contains(&"line 1".to_owned()));
 }
 
 #[test]
-fn export_saves_the_full_log_not_just_what_memory_keeps() {
+fn a_live_run_s_lines_are_on_disk_as_they_come() {
     require_tool("node");
     let h = Harness::new();
-    h.supervisor.set_log_lines_kept(5_000).unwrap();
-    let id = h.service("flood", "node flood.js 12000");
+    // Prints once, then stays up without printing anything else.
+    let id = h.service(
+        "node-http",
+        r#"node -e "console.log('up'); setInterval(() => {}, 1000)""#,
+    );
     h.supervisor.start(id).unwrap();
-    let done = h.wait(id, "the flood to end", |s| !s.status.is_live());
-    assert_eq!(done.log_count, 5_000);
-
-    h.supervisor.clear_logs(id);
-    let out = h.scratch.path().join("flood-run1.log");
-    h.supervisor.export_log(id, &out).unwrap();
-    let exported = std::fs::read_to_string(&out).unwrap();
-    let lines: Vec<&str> = exported.lines().collect();
-    // Every line, Bunode's two included, even after Clear.
-    assert_eq!(lines.len(), 12_002);
-    assert!(lines[0].contains(" bunode Run #1: node flood.js 12000"));
-    assert!(lines.iter().any(|l| l.ends_with(" err line 12000")));
-    assert!(lines.iter().any(|l| l.ends_with(" out line 1")));
+    h.wait(id, "Running", |s| s.status == RunStatus::Running);
+    let file = loop {
+        if let Some(file) = h.supervisor.current_log_file(id) {
+            break file;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    // Read the file directly, without the flush current_log_file does.
+    let deadline = Instant::now() + TIMEOUT;
+    while !std::fs::read_to_string(&file)
+        .unwrap_or_default()
+        .contains(" out up")
+    {
+        assert!(Instant::now() < deadline, "the line never reached the disk");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    h.supervisor.stop(id);
+    h.wait(id, "Stopped", |s| s.status == RunStatus::Stopped);
 }
 
 #[test]
-fn a_flood_of_output_stays_bounded_and_coalesced() {
+fn a_flood_of_output_reaches_the_file_in_order_and_coalesced() {
     require_tool("node");
     let h = Harness::new();
     let id = h.service("flood", "node flood.js 200000");
@@ -99,33 +85,32 @@ fn a_flood_of_output_stays_bounded_and_coalesced() {
     let done = h.wait(id, "the flood to end", |s| !s.status.is_live());
     let elapsed = started.elapsed();
     let changes = h.changes.0.load(Ordering::SeqCst) - before;
-
     assert_eq!(done.status, RunStatus::Stopped, "{done:?}");
-    // 200,000 lines plus the two system lines; the default keeps 10,000.
-    assert_eq!(done.log_count, 10_000);
-    assert_eq!(done.log_count + done.log_dropped, 200_002);
-    // stdout and stderr are separate pipes read side by side, so either may
-    // finish first; the one that finished last still has its final line.
-    // Within each stream the order is kept, and Bunode's line comes last.
-    let kept = h.supervisor.log_lines(id, 0, 10_000);
-    assert!(
-        kept.iter()
-            .any(|l| l.text == "line 199999" || l.text == "line 200000")
-    );
+
+    let log = h.log(id);
+    let skipped = log
+        .iter()
+        .any(|(_, text)| text.ends_with("because the disk could not keep up."));
+    if !skipped {
+        // 200,000 lines plus Bunode's two.
+        assert_eq!(log.len(), 200_002);
+    }
+    // stdout and stderr are separate pipes read side by side, so they
+    // interleave; within each stream the order is kept.
     for stream in [LogStream::Stdout, LogStream::Stderr] {
-        let numbers: Vec<u64> = kept
+        let numbers: Vec<u64> = log
             .iter()
-            .filter(|l| l.stream == stream)
-            .filter_map(|l| l.text.strip_prefix("line ")?.parse().ok())
+            .filter(|(s, _)| *s == stream)
+            .filter_map(|(_, text)| text.strip_prefix("line ")?.parse().ok())
             .collect();
         assert!(
             numbers.windows(2).all(|w| w[0] < w[1]),
             "{stream:?} out of order"
         );
     }
-    assert_eq!(kept.last().unwrap().stream, LogStream::System);
+    assert_eq!(log.last().unwrap().0, LogStream::System);
 
-    // At most one report per 100 ms, not one per line.
+    // Lines don't change the snapshot: a handful of reports, not one per line.
     let allowed = elapsed.as_millis() as u64 / 100 + 5;
     assert!(changes <= allowed, "{changes} reports in {elapsed:?}");
 }

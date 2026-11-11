@@ -13,10 +13,10 @@
 
 | # | 决定 | 本版状态 | 落在本文 |
 |---|---|---|---|
-| C1 | Popover 是唯一主界面，不做主窗口，始终无 Dock 图标（[ADR-0004](adr/0004-menu-bar-first-no-main-window.md)）。Settings 只有 General / Projects / Advanced | 不变 | 全文 |
+| C1 | Popover 是唯一主界面，不做主窗口，平时无 Dock 图标（[ADR-0004](adr/0004-menu-bar-first-no-main-window.md)）；Settings 打开期间显示 App 菜单栏与 Dock 图标（[ADR-0009](adr/0009-app-menu-bar-while-settings-is-open.md)）。Settings 只有 General / Projects / Advanced | 不变 | 全文 |
 | C2 | 设计里的 `Use login shell` 改为 Service 级 `Run through shell`（即需求的 Shell Mode，用于管道、`&&`、通配符）。登录 shell 环境只在全局抓取（Advanced › Shell environment） | 不变。新画布又写成 `Use login shell`，以本条为准 | §2.2 Service 视图 |
 | C3 | General 的 `Restart Services that crash` 是新 Service 的默认值；Service 级开关覆盖它；改全局不改写已有 Service | 不变 | §2.3 General |
-| C4 | MVP 日志补：隐式自动滚动、丢弃行数提示、`Export…`。级别过滤放到第二阶段 | 不变。新画布未画 `Export…`，仍要做 | §2.2 Logs、§7 |
+| C4 | MVP 日志补：隐式自动滚动、丢弃行数提示、`Export…`。级别过滤放到第二阶段 | **已取消**（2026-11-11）。日志改在控制台里看，没有 Logs 视图（[ADR-0008](adr/0008-logs-open-in-console.md)） | §2.2 Logs、§7 |
 | C5 | 已登记 Project 目录里的 Discovered Process，在该 Project 下显示只读的 External 行 | **已取消**（2026-11-09）。没有 Project 标题行后无处安放，统一进 Other processes | §2.2 Home |
 | C6 | Projects 行可改包管理器，多锁文件时显示警告 | **待拍板**（§11） | §2.3 Projects |
 | C7 | 补 `Failed` 状态，行备注 `Failed` | 保留状态。**“置灰”改为红色色块**，与 Crashed 相同 | §5.1 |
@@ -218,7 +218,7 @@ agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launc
 - 默认：第一个 Project，它第一个未使用的推荐脚本，命令按 §5.2 生成。新 Service 默认无 Port、`Run through shell` 关、`Restart if it crashes` 取 General 默认（C3）。
 - Service 名不再手填：取脚本名，手填命令时取最后一个词。冲突处理见 §6.2。
 
-**Logs 视图**（Service 视图里点 Logs）
+**Logs 视图**（Service 视图里点 Logs）——**已取消**（2026-11-11）：Service 视图的 Logs 行尾是 `arrow.up.forward.app` 图标，点击在控制台中打开日志文件，tooltip `Open in Console`；没有文件时 toast `No log file yet.`（[ADR-0008](adr/0008-logs-open-in-console.md)）。以下保留作历史记录。
 
 - 顶栏：Back（返回 Service 视图，不是 Home）+ 标题 / 副标题 `Logs · Run #14` 或 `Logs · No Runs yet` + `Restart`（运行中）或 `Start`（主按钮）。
 - 搜索框：高 28，圆角 7，背景 `fill-subtle`，左 13 pt 放大镜，placeholder `Search`。外边距 0/2/6。
@@ -268,7 +268,7 @@ agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launc
 - `English` 和 `简体中文` 两项永远用各自的语言写，不翻译；`System` 跟当前界面语言（中文 `跟随系统`）。
 - 选择后写入本 App 的 `AppleLanguages`（`System` 删除这个键），界面不立即变。
 - 选中的语言和当前界面语言不同时，帮助文字换成 `Restart Bunode to apply.`，行右侧控件前多一个 `Restart Now` 按钮（`.bordered`，`.controlSize(.small)`）。选回当前语言时恢复原样。
-- `Restart Now`：没有 Run 时直接退出并重新打开。有 Run 时先弹 §2.4 的重启确认，所有 Run 停止后再退出（ADR-0003）。重新打开由退出前派生的 `/bin/sh -c 'sleep 1; open -b <bundle id>'` 完成，它不是 Run，不受 lifeline 约束。
+- `Restart Now`：没有 Run 时直接退出并重新打开。有 Run 时先弹 §2.4 的重启确认，所有 Run 停止后再退出（ADR-0003）。重新打开由退出前派生的 `/bin/sh -c` 完成：约一秒后等 Bunode 进程消失，再 `open` 本 App 的路径（不用 bundle id，免得打开另一份拷贝）。它不是 Run，不受 lifeline 约束。
 
 **Projects**
 
@@ -287,7 +287,7 @@ agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launc
 | Env | Node.js · 路径（mono） | 版本 `22.11.0` + `Change…` | `NSOpenPanel` 选可执行文件 |
 | Env | Bun · 路径（mono） | 版本 `1.2.4` + `Change…` | 同上 |
 | Stop | Force stop after · `Stop asks nicely first, then force-quits.` | 弹出菜单 `5 s` | 选项 3 / 5 / 10 / 30 s，默认 5（需求 §3.2-7） |
-| Stop | Log lines kept · `Per Service. Export saves the full log.` | 弹出菜单 `10,000` | 选项 5,000 / 10,000 / 50,000，默认 10,000 |
+| Stop | ~~Log lines kept~~ | — | **已取消**（2026-11-11，ADR-0008）：日志不再保留在内存里 |
 | Stop | Diagnostics · `Supervisor and runner logs.` | `Open` | Finder 打开 `~/Library/Logs/Bunode` |
 
 > 画布里弹出菜单是“点一下轮换下一个值”的假控件，落地必须是真正的 `Picker(.menu)`。
@@ -767,7 +767,7 @@ Settings
   "Stop %d and Remove" · "Remove" · "Removed %@. Files untouched."
   "Shell environment" · "%d variables from %@ · %@" · "Reload" · "Reloading" · "Environment reloaded. New Runs get it."
   "Node.js" · "Bun" · "Force stop after" · "Stop asks nicely first, then force-quits."
-  "Log lines kept" · "Per Service. Export saves the full log." · "Diagnostics" · "Supervisor and runner logs." · "Open"
+  "Diagnostics" · "Supervisor and runner logs." · "Open"
   "List" · "How the menu bar list is arranged." · "Flat" · "By Project"
   "Language" · "Applies after Bunode restarts." · "System" · "English" · "简体中文" · "Restart Bunode to apply." · "Restart Now"
   "Show dev servers started by agents" · "Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here."

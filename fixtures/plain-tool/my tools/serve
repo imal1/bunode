@@ -1,0 +1,5 @@
+#!/bin/sh
+# A dev tool that is neither Node.js nor Bun: says hello, then serves HTTP
+# on a free port until it is stopped.
+echo "plain tool started $*"
+exec python3 -u -m http.server 0 --bind 127.0.0.1

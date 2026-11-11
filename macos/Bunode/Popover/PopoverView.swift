@@ -153,13 +153,11 @@ struct PopoverView: View {
     private var screen: some View {
         switch router.screen {
         case .home:
-            HomeView(model: model, router: router, openSettings: openSettings)
+            HomeView(model: model, router: router, toaster: toaster, openSettings: openSettings)
         case .addService(let projectID):
             AddServiceView(model: model, projectID: projectID, router: router, toaster: toaster)
         case .service(let serviceID):
             ServiceView(model: model, serviceID: serviceID, router: router, toaster: toaster)
-        case .logs(let serviceID):
-            LogsView(model: model, serviceID: serviceID, router: router, toaster: toaster)
         case .processes(let focus):
             OtherProcessesView(model: model, router: router, toaster: toaster, focus: focus)
         }

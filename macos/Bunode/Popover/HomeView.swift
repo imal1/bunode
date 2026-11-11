@@ -1,14 +1,22 @@
 import SwiftUI
 
 /// Home (design-handoff §2.2): every Project, in registration order, with
-/// its Services in creation order.
+/// its Services in creation order; flat, or under a heading per Project.
 struct HomeView: View {
     let model: AppModel
     let router: PopoverRouter
+    let toaster: Toaster
     let openSettings: (SettingsPane?, Bool) -> Void
 
-    /// The Service row with keyboard focus.
-    @FocusState private var focusedService: UInt64?
+    /// A row the keyboard can focus.
+    enum Row: Hashable {
+        case service(UInt64)
+        /// By the launcher's PID.
+        case agentServer(UInt32)
+    }
+
+    /// The row with keyboard focus.
+    @FocusState private var focusedRow: Row?
     /// The list itself: it takes the keyboard when the popover opens, so no
     /// row is selected until an arrow key picks one (design-handoff §9).
     @FocusState private var listFocused: Bool
@@ -19,7 +27,7 @@ struct HomeView: View {
                 .background {
                     // ⌘R restarts the focused row's Service (design-handoff §9).
                     Button("Restart") {
-                        if let id = focusedService, let service = model.service(id), model.status(of: service) == .running {
+                        if case .service(let id)? = focusedRow, let service = model.service(id), model.status(of: service) == .running {
                             model.restart(id)
                         }
                     }
@@ -43,19 +51,20 @@ struct HomeView: View {
             } else {
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.snapshot.projects, id: \.id) { project in
-                            ForEach(project.services, id: \.id) { service in
-                                ServiceRow(model: model, project: project, service: service, isFocused: focusedService == service.id) {
-                                    router.push(.service(service.id))
+                        if isGrouped {
+                            let groups = Self.groups(model.snapshot.projects)
+                            ForEach(groups, id: \.id) { project in
+                                if project.id != groups.first?.id {
+                                    Divider()
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
                                 }
-                                .focusable()
-                                .focusEffectDisabled()
-                                .focused($focusedService, equals: service.id)
-                                if model.rowNotice?.serviceID == service.id {
-                                    // Lined up with the row's text column.
-                                    RowNoticeView(model: model, router: router)
-                                        .padding(EdgeInsets(top: 2, leading: 50, bottom: 6, trailing: 8))
-                                }
+                                ProjectHeader(title: project.name)
+                                rows(of: project, showsProjectName: false)
+                            }
+                        } else {
+                            ForEach(model.snapshot.projects, id: \.id) { project in
+                                rows(of: project, showsProjectName: true)
                             }
                         }
                     }
@@ -71,12 +80,17 @@ struct HomeView: View {
                 .onKeyPress(.upArrow) { move(by: -1) }
                 .onKeyPress(.downArrow) { move(by: 1) }
                 .onKeyPress(.return) {
-                    guard let id = focusedService else { return .ignored }
+                    guard case .service(let id)? = focusedRow else { return .ignored }
                     router.push(.service(id))
                     return .handled
                 }
                 .onKeyPress(.space) {
-                    guard let id = focusedService, let service = model.service(id) else { return .ignored }
+                    if case .agentServer(let pid)? = focusedRow {
+                        guard let server = agentServer(pid) else { return .ignored }
+                        stop(server)
+                        return .handled
+                    }
+                    guard case .service(let id)? = focusedRow, let service = model.service(id) else { return .ignored }
                     let status = model.status(of: service)
                     if status == .running || model.notResponding.contains(id) {
                         model.stop(id)
@@ -97,23 +111,86 @@ struct HomeView: View {
         .onChange(of: router.openCount, focusList)
     }
 
-    /// Service rows in the order Home shows them.
-    private var rowOrder: [UInt64] {
-        model.snapshot.projects.flatMap { $0.services.map(\.id) }
+    private var isGrouped: Bool { model.snapshot.settings.listLayout == .byProject }
+
+    /// The Projects that get a heading: those with a row to show.
+    static func groups(_ projects: [ProjectState]) -> [ProjectState] {
+        projects.filter { !$0.services.isEmpty || !$0.agentServers.isEmpty }
+    }
+
+    /// A Project's rows, each with its warning bar if it has one.
+    @ViewBuilder
+    private func rows(of project: ProjectState, showsProjectName: Bool) -> some View {
+        ForEach(project.services, id: \.id) { service in
+            ServiceRow(
+                model: model,
+                project: project,
+                service: service,
+                showsProjectName: showsProjectName,
+                isFocused: focusedRow == .service(service.id)
+            ) {
+                router.push(.service(service.id))
+            }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedRow, equals: .service(service.id))
+            if model.rowNotice?.serviceID == service.id {
+                // Lined up with the row's text column.
+                RowNoticeView(model: model, router: router)
+                    .padding(EdgeInsets(top: 2, leading: 50, bottom: 6, trailing: 8))
+            }
+        }
+        ForEach(project.agentServers, id: \.pid) { server in
+            AgentServerRow(
+                project: project,
+                server: server,
+                isFocused: focusedRow == .agentServer(server.pid)
+            ) {
+                stop(server)
+            }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedRow, equals: .agentServer(server.pid))
+        }
+    }
+
+    /// Rows in the order Home shows them.
+    private var rowOrder: [Row] { Self.rowOrder(model.snapshot.projects) }
+
+    /// Each Project's Services, then its Agent Servers.
+    static func rowOrder(_ projects: [ProjectState]) -> [Row] {
+        projects.flatMap { project in
+            project.services.map { Row.service($0.id) } + project.agentServers.map { Row.agentServer($0.pid) }
+        }
+    }
+
+    private func agentServer(_ pid: UInt32) -> AgentServerState? {
+        model.snapshot.projects.lazy.flatMap(\.agentServers).first { $0.pid == pid }
+    }
+
+    /// Stops an Agent Server without asking; a toast if it outlives
+    /// SIGKILL.
+    private func stop(_ server: AgentServerState) {
+        guard !server.stopping else { return }
+        Task {
+            if let problem = await model.stopAgentServer(server) {
+                toaster.show(problem)
+            }
+        }
     }
 
     private func focusList() {
-        focusedService = nil
+        focusedRow = nil
         listFocused = true
     }
 
     private func move(by step: Int) -> KeyPress.Result {
-        focusedService = Self.focus(after: focusedService, in: rowOrder, step: step)
+        focusedRow = Self.focus(after: focusedRow, in: rowOrder, step: step)
         return .handled
     }
 
-    /// ↑ / ↓ between Service rows, stopping at the ends.
-    static func focus(after current: UInt64?, in order: [UInt64], step: Int) -> UInt64? {
+    /// ↑ / ↓ between rows, stopping at the ends.
+    static func focus<ID: Equatable>(after current: ID?, in order: [ID], step: Int) -> ID? {
         guard !order.isEmpty else { return nil }
         guard let current, let index = order.firstIndex(of: current) else {
             return step > 0 ? order.first : order.last
@@ -161,6 +238,25 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 30)
+    }
+}
+
+/// A Project's name over its rows in the grouped list (design-handoff
+/// §2.2, §4): not focusable, so ↑ / ↓ skip it; VoiceOver reads it as a
+/// heading.
+private struct ProjectHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(verbatim: title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(EdgeInsets(top: 6, leading: 8, bottom: 2, trailing: 8))
+            .frame(maxWidth: .infinity, alignment: .bottomLeading)
+            .frame(height: 24)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -227,6 +323,8 @@ struct ServiceRow: View {
     let model: AppModel
     let project: ProjectState
     let service: ServiceState
+    /// Flat list: the title names the Project. Under its heading it doesn't.
+    let showsProjectName: Bool
     /// The list's keyboard selection is on this row.
     let isFocused: Bool
     /// Opens the Service view.
@@ -281,7 +379,7 @@ struct ServiceRow: View {
                 StatusTile(style: service.dotStyle(status: status))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text(verbatim: service.title(projectName: project.name))
+                        Text(verbatim: service.title(projectName: showsProjectName ? project.name : nil))
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -353,7 +451,7 @@ struct ServiceRow: View {
     private var tooltip: String {
         var lines = [service.command, project.runPath(folder: service.folder).abbreviatingWithTilde]
         if status.dotStyle == .failed, let lastExit = service.lastExit {
-            lines.append(lastExit)
+            lines.append(lastExit.message)
         }
         return lines.joined(separator: "\n")
     }
@@ -364,6 +462,103 @@ struct ServiceRow: View {
             label += String(localized: ", port \(String(port))")
         }
         return label
+    }
+}
+
+/// A dev server an agent started from its launch settings in the Project's
+/// root (an Agent Server, ADR-0007). Bunode only watches it and can stop
+/// it: the row opens nothing and has no badge.
+private struct AgentServerRow: View {
+    let project: ProjectState
+    let server: AgentServerState
+    let isFocused: Bool
+    let stop: () -> Void
+
+    @State private var isHovered = false
+
+    private var folder: String { project.path.abbreviatingWithTilde }
+
+    private var statusText: String {
+        server.stopping ? String(localized: "Stopping…") : String(localized: "Running")
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content
+            RowAction(
+                hasButton: !server.stopping,
+                offersStop: true,
+                isRevealed: isHovered || isFocused,
+                label: String(localized: "Stop \(server.name)"),
+                showsArrow: false,
+                action: stop
+            )
+            .padding(.trailing, 6)
+        }
+        .hoverHighlight(cornerRadius: 9, isActive: isFocused)
+        .onHover { isHovered = $0 }
+        .help([server.name, server.command, folder, String(localized: "Started by \(server.agent)")].joined(separator: "\n"))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityActions {
+            if !server.stopping {
+                Button(action: stop) { Text("Stop") }
+            }
+        }
+        .contextMenu {
+            if !server.stopping {
+                Button("Stop", action: stop)
+                Divider()
+            }
+            if let port = server.livePorts.first {
+                Button("Open in Browser") {
+                    if let url = URL(string: "http://localhost:\(port)") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+            Button("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.path)])
+            }
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: 10) {
+            StatusTile(style: server.stopping ? .busy : .running)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(verbatim: server.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    PortPill(ports: server.livePorts)
+                }
+                HStack(spacing: 0) {
+                    Text(verbatim: folder)
+                        .truncationMode(.middle)
+                    HStack(spacing: 0) {
+                        Text(verbatim: " · ")
+                        Text(verbatim: statusText)
+                    }
+                    .fixedSize()
+                }
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 6))
+        .frame(height: 46)
+    }
+
+    private var accessibilityLabel: String {
+        var label = "\(server.name), \(statusText)"
+        if let port = server.livePorts.first {
+            label += String(localized: ", port \(String(port))")
+        }
+        return label + String(localized: ", started by \(server.agent)")
     }
 }
 
@@ -394,6 +589,8 @@ private struct RowAction: View {
     let offersStop: Bool
     let isRevealed: Bool
     let label: String
+    /// The arrow at rest; rows that open nothing go without it.
+    var showsArrow = true
     let action: () -> Void
 
     /// Tab can land on the button itself.
@@ -406,7 +603,7 @@ private struct RowAction: View {
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.tertiary)
-                .opacity(showsButton ? 0 : 1)
+                .opacity(showsButton || !showsArrow ? 0 : 1)
             if hasButton {
                 Button(action: action) {
                     Group {
@@ -466,7 +663,7 @@ struct RowNoticeView: View {
                 ) {
                     Button("Cancel") { model.dismissNotice() }
                         .buttonStyle(.borderless)
-                    if let owner, owner.serviceId == nil {
+                    if let owner, owner.serviceId == nil, !owner.agentServer {
                         Button("Show Process") {
                             router.push(.processes(focus: owner.pid))
                         }
@@ -500,7 +697,7 @@ struct RowNoticeView: View {
         guard let owner else {
             return String(localized: "Port \(String(port)) is used by another program. Bunode won’t stop it.")
         }
-        return String(localized: "Port \(String(port)) is used by “\(owner.command)” from \(owner.source). Bunode won’t stop it.")
+        return String(localized: "Port \(String(port)) is used by “\(owner.command)” from \(sourceName(owner.source)). Bunode won’t stop it.")
     }
 
     private func locate(_ project: ProjectState) {

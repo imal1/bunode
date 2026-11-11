@@ -207,8 +207,8 @@ fn quitting_stops_every_run_and_says_why() {
     for id in [a, b] {
         let ended = h.wait(id, "stopped", |s| s.status == RunStatus::Stopped);
         assert_eq!(ended.ended_by, Some(RunEnd::BunodeQuit));
-        let last = h.supervisor.log_lines(id, 0, 100).pop().unwrap();
-        assert_eq!(last.text, "Stopped because Bunode quit");
+        let last = h.log(id).pop().unwrap();
+        assert_eq!(last.1, "Stopped because Bunode quit");
     }
     assert_eq!(h.supervisor.stop_all(), 0);
 
