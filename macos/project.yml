@@ -9,8 +9,10 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    # Filled in by `make project` from Cargo.toml and the commit count
+    # (scripts/version.sh). Generate the project with make, not xcodegen alone.
+    MARKETING_VERSION: "${BUNODE_VERSION}"
+    CURRENT_PROJECT_VERSION: "${BUNODE_BUILD}"
     SWIFT_VERSION: "6.0"
     # Development builds are signed ad hoc ("Sign to Run Locally"), so no
     # Apple developer account is needed. Notarized releases come later.

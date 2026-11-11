@@ -6,8 +6,12 @@ DERIVED_DATA  := build/DerivedData
 PROJECT       := macos/Bunode.xcodeproj
 APP           := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/Bunode.app
 XCODEBUILD    := xcodebuild -project $(PROJECT) -scheme Bunode -derivedDataPath $(DERIVED_DATA)
+# One version for the crates and the app: Cargo.toml (scripts/version.sh).
+VERSION       := $(shell scripts/version.sh)
+BUILD         := $(shell scripts/version.sh --build)
+ZIP           := build/Bunode-$(VERSION).zip
 
-.PHONY: all app rust project run test test-rust test-app soak lint clean
+.PHONY: all app rust project run dist version test test-rust test-app soak lint clean
 
 all: app
 
@@ -17,7 +21,7 @@ rust:
 
 ## project: generate macos/Bunode.xcodeproj (needs the Rust build)
 project: rust
-	xcodegen generate --spec macos/project.yml
+	BUNODE_VERSION=$(VERSION) BUNODE_BUILD=$(BUILD) xcodegen generate --spec macos/project.yml
 
 ## app: build Bunode.app
 app: project
@@ -27,6 +31,15 @@ app: project
 ## run: build and launch Bunode.app
 run: app
 	open "$(APP)"
+
+## dist: zip Bunode.app for a GitHub release
+dist: app
+	ditto -c -k --keepParent "$(APP)" "$(ZIP)"
+	@echo "Built $(ZIP)"
+
+## version: print the version and build number
+version:
+	@echo "$(VERSION) ($(BUILD))"
 
 ## test: run the Rust and the Swift tests
 test: test-rust test-app
