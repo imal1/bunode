@@ -7,7 +7,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use nix::sys::signal::{Signal, killpg};
+use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -21,6 +21,7 @@ use crate::launch::LaunchSpec;
 use crate::logs::LogStream;
 use crate::model::ServiceId;
 use crate::snapshot::{RunNote, RunStatus};
+use crate::tree::RunTree;
 
 /// Longer lines are split; nobody reads a 64 KB line in a log view.
 const MAX_LINE_BYTES: usize = 16 * 1024;
@@ -208,13 +209,14 @@ pub(crate) async fn drive(
                 _ => break,
             },
             request = control.recv(), if controls_open => match request {
+                // Not end of file: the lifeline stays open for a `kill`.
                 Some(Control::Stop) => {
-                    let _ = write.shutdown().await;
+                    let _ = write.write_all(b"stop\n").await;
                 }
                 Some(Control::Kill) => {
                     let _ = write.write_all(b"kill\n").await;
                     if let Some(group) = group {
-                        let _ = killpg(group, Signal::SIGKILL);
+                        RunTree::new(group.as_raw()).signal(Signal::SIGKILL);
                     }
                     runner_deadline.get_or_insert(Instant::now() + RUNNER_KILL_GRACE);
                 }
@@ -229,16 +231,16 @@ pub(crate) async fn drive(
                 runner_deadline = None;
                 let _ = runner.start_kill();
                 if let Some(group) = group {
-                    let _ = killpg(group, Signal::SIGKILL);
+                    RunTree::new(group.as_raw()).signal(Signal::SIGKILL);
                 }
             },
         }
     }
 
     let status = runner.wait().await;
-    // The runner normally leaves an empty group behind. If it was killed
-    // itself, end the group here; a process group's ID is never reused
-    // while the group exists, so signalling it is safe.
+    // The runner normally leaves nothing behind. If it was killed itself,
+    // end the Run here; a process group's ID is never reused while the
+    // group exists, so signalling it is safe.
     if let Some(group) = group {
         let _ = end_group(group, spec.stop_timeout).await;
     }
@@ -255,26 +257,28 @@ pub(crate) async fn drive(
     })
 }
 
-/// Ends a process group: SIGTERM, then SIGKILL after `timeout`. Returns
-/// whether the group is gone, waiting up to a second after SIGKILL.
+/// Ends a process group and its descendants outside it (ADR-0009):
+/// SIGTERM, then SIGKILL after `timeout`. Returns whether all of it is
+/// gone, waiting up to a second after SIGKILL.
 pub(super) async fn end_group(group: Pid, timeout: Duration) -> bool {
-    let alive = || killpg(group, None).is_ok();
-    if !alive() {
+    let mut tree = RunTree::new(group.as_raw());
+    tree.refresh();
+    if tree.is_gone() {
         return true;
     }
-    let _ = killpg(group, Signal::SIGTERM);
+    tree.signal(Signal::SIGTERM);
     let deadline = Instant::now() + timeout;
-    while alive() && Instant::now() < deadline {
+    while !tree.is_gone() && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    if alive() {
-        let _ = killpg(group, Signal::SIGKILL);
+    if !tree.is_gone() {
+        tree.signal(Signal::SIGKILL);
         let deadline = Instant::now() + Duration::from_secs(1);
-        while alive() && Instant::now() < deadline {
+        while !tree.is_gone() && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
     }
-    !alive()
+    tree.is_gone()
 }
 
 /// Spawns the runner with a fresh lifeline on its standard input.
@@ -369,6 +373,7 @@ async fn read_line(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nix::sys::signal::killpg;
     use std::os::unix::process::CommandExt;
 
     #[test]

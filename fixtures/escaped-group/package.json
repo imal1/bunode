@@ -1,0 +1,7 @@
+{
+  "name": "escaped-group",
+  "private": true,
+  "scripts": {
+    "dev": "node launcher.js"
+  }
+}

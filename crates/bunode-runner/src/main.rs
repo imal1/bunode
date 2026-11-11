@@ -6,7 +6,9 @@
 //! When the lifeline closes, because Bunode asked for a stop, quit, crashed
 //! or was killed, the runner sends SIGTERM to the whole group, escalates to
 //! SIGKILL after the stop timeout, and exits. When the command exits on its
-//! own, the runner ends whatever is left of its group.
+//! own, the runner ends whatever is left of its group. Descendants that left
+//! the group (pnpm 12 runs scripts in a new one) are signalled with it
+//! (ADR-0009).
 //!
 //! The command's standard output and error are the runner's own, which
 //! Bunode reads directly; its standard input is `/dev/null`.
@@ -22,8 +24,8 @@
 //!
 //! - runner → Bunode: `started PID` (PID is also the process group),
 //!   `spawn-failed MESSAGE`, `exited code N` or `exited signal N`.
-//! - Bunode → runner: `kill` force-kills the group at once. End of file
-//!   stops the group gracefully.
+//! - Bunode → runner: `stop` stops the group gracefully, as does end of
+//!   file; `kill` force-kills it at once.
 
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Write};
@@ -36,9 +38,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use nix::errno::Errno;
-use nix::sys::signal::{Signal, killpg};
-use nix::unistd::Pid;
+use bunode_core::tree::RunTree;
+use nix::sys::signal::Signal;
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
@@ -166,7 +167,7 @@ fn main() -> ExitCode {
             return ExitCode::from(127);
         }
     };
-    let group = Pid::from_raw(child.id() as i32);
+    let mut tree = RunTree::new(child.id() as i32);
     report.line(&format!("started {}", child.id()));
     diagnostics.log(&format!("started {} as group {}", args.program, child.id()));
 
@@ -194,8 +195,8 @@ fn main() -> ExitCode {
     }
     drop(tx);
 
-    let status = supervise(group, &rx, args.stop_timeout, &diagnostics);
-    end_group(group, args.stop_timeout, &diagnostics);
+    let status = supervise(&mut tree, &rx, args.stop_timeout, &diagnostics);
+    end_group(&mut tree, &rx, args.stop_timeout, &diagnostics);
 
     match status {
         Some(Ok(status)) => {
@@ -214,7 +215,7 @@ fn main() -> ExitCode {
 /// Waits for the group leader to exit, stopping or killing the group when
 /// asked. Returns the leader's exit status.
 fn supervise(
-    group: Pid,
+    tree: &mut RunTree,
     rx: &mpsc::Receiver<Event>,
     stop_timeout: Duration,
     diagnostics: &Diagnostics,
@@ -226,8 +227,7 @@ fn supervise(
             Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
                 Ok(event) => event,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    diagnostics.log(&format!("group {group} outlived SIGTERM; SIGKILL"));
-                    signal_group(group, Signal::SIGKILL);
+                    signal(tree, Signal::SIGKILL, "outlived SIGTERM", diagnostics);
                     deadline = Some(Instant::now() + KILL_GRACE);
                     continue;
                 }
@@ -237,65 +237,102 @@ fn supervise(
         match event {
             Event::Exited(status) => return Some(status),
             Event::Stop if deadline.is_none() => {
-                diagnostics.log(&format!("stopping: SIGTERM to group {group}"));
-                signal_group(group, Signal::SIGTERM);
+                signal(tree, Signal::SIGTERM, "stopping", diagnostics);
                 deadline = Some(Instant::now() + stop_timeout);
             }
             Event::Stop => {}
             Event::Kill => {
-                diagnostics.log(&format!("force kill: SIGKILL to group {group}"));
-                signal_group(group, Signal::SIGKILL);
+                signal(tree, Signal::SIGKILL, "force kill", diagnostics);
                 deadline = Some(Instant::now() + KILL_GRACE);
             }
         }
     }
 }
 
-/// After the leader exited, ends whatever is left of its group: SIGTERM,
+/// After the leader exited, ends whatever is left of the Run: SIGTERM,
 /// then SIGKILL after the stop timeout.
-fn end_group(group: Pid, stop_timeout: Duration, diagnostics: &Diagnostics) {
-    if group_is_gone(group) {
+fn end_group(
+    tree: &mut RunTree,
+    rx: &mpsc::Receiver<Event>,
+    stop_timeout: Duration,
+    diagnostics: &Diagnostics,
+) {
+    tree.refresh();
+    if tree.is_gone() {
         return;
     }
-    diagnostics.log(&format!("command exited; ending the rest of group {group}"));
-    signal_group(group, Signal::SIGTERM);
-    if wait_until_gone(group, stop_timeout) {
+    signal(
+        tree,
+        Signal::SIGTERM,
+        "command exited; ending the rest",
+        diagnostics,
+    );
+    if wait_until_gone(tree, rx, stop_timeout, diagnostics) {
         return;
     }
-    signal_group(group, Signal::SIGKILL);
-    wait_until_gone(group, KILL_GRACE);
+    signal(
+        tree,
+        Signal::SIGKILL,
+        "the rest outlived SIGTERM",
+        diagnostics,
+    );
+    wait_until_gone(tree, rx, KILL_GRACE, diagnostics);
 }
 
-fn signal_group(group: Pid, signal: Signal) {
-    let _ = killpg(group, signal);
+/// Signals the group and its descendants outside it, and says so.
+fn signal(tree: &mut RunTree, sig: Signal, why: &str, diagnostics: &Diagnostics) {
+    tree.signal(sig);
+    let escaped = tree.escaped();
+    let outside = if escaped.is_empty() {
+        String::new()
+    } else {
+        format!(" and {escaped:?} outside it")
+    };
+    diagnostics.log(&format!(
+        "{why}: {} to group {}{outside}",
+        sig.as_str(),
+        tree.group()
+    ));
 }
 
-fn group_is_gone(group: Pid) -> bool {
-    killpg(group, None) == Err(Errno::ESRCH)
-}
-
-fn wait_until_gone(group: Pid, timeout: Duration) -> bool {
+/// Waits up to `timeout` for nothing of the Run to be left. A force kill
+/// asked for meanwhile is done at once: only the runner still knows the
+/// members outside the group whose parent is gone.
+fn wait_until_gone(
+    tree: &mut RunTree,
+    rx: &mpsc::Receiver<Event>,
+    timeout: Duration,
+    diagnostics: &Diagnostics,
+) -> bool {
     let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        if group_is_gone(group) {
-            return true;
+    while !tree.is_gone() {
+        if Instant::now() >= deadline {
+            return false;
         }
-        thread::sleep(POLL);
+        match rx.recv_timeout(POLL) {
+            Ok(Event::Kill) => signal(tree, Signal::SIGKILL, "force kill", diagnostics),
+            Err(mpsc::RecvTimeoutError::Disconnected) => thread::sleep(POLL),
+            _ => {}
+        }
     }
-    group_is_gone(group)
+    true
 }
 
-/// Reads the lifeline until it closes. `kill` force-kills; end of file (or
-/// any read error) stops.
+/// Reads the lifeline until it closes. `kill` force-kills; `stop` and end
+/// of file (or any read error) stop.
 fn watch_lifeline(lifeline: UnixStream, tx: &mpsc::Sender<Event>) {
     for line in BufReader::new(lifeline).lines() {
         match line {
-            Ok(line) if line.trim() == "kill" => {
-                if tx.send(Event::Kill).is_err() {
+            Ok(line) => {
+                let event = match line.trim() {
+                    "kill" => Event::Kill,
+                    "stop" => Event::Stop,
+                    _ => continue,
+                };
+                if tx.send(event).is_err() {
                     return;
                 }
             }
-            Ok(_) => {}
             Err(_) => break,
         }
     }
