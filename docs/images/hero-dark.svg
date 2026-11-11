@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360">
+<rect width="1280" height="360" rx="24" fill="#161B22"/>
+<polygon points="1120.0,20.0 1180.6,55.0 1180.6,125.0 1120.0,160.0 1059.4,125.0 1059.4,55.0" fill="none" stroke="#7BD88F" stroke-opacity="0.22" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1190.0,184.0 1229.8,207.0 1229.8,253.0 1190.0,276.0 1150.2,253.0 1150.2,207.0" fill="none" stroke="#7BD88F" stroke-opacity="0.18" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1040.0,226.0 1069.4,243.0 1069.4,277.0 1040.0,294.0 1010.6,277.0 1010.6,243.0" fill="none" stroke="#7BD88F" stroke-opacity="0.14" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1215.0,48.0 1234.1,59.0 1234.1,81.0 1215.0,92.0 1195.9,81.0 1195.9,59.0" fill="none" stroke="#7BD88F" stroke-opacity="0.10" stroke-width="3" stroke-linejoin="round"/>
+<g transform="translate(70 50) scale(0.25390625)"><rect x="100" y="100" width="824" height="824" rx="185" fill="#1C1C1E" stroke="#FFFFFF1A" stroke-width="4"/><g transform="translate(100 100) scale(29.428571428571427)"><path d="M14 6.5 20.5 10.25v7.5L14 21.5l-6.5-3.75v-7.5z" fill="none" stroke="#7BD88F" stroke-width="1.8" stroke-linejoin="round"/><circle cx="14" cy="14" r="2.6" fill="#F5D76E"/></g></g>
+<text x="360" y="158" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="84" font-weight="700" fill="#E6EDF3" text-anchor="start">Bunode</text>
+<text x="362" y="212" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="28" font-weight="400" fill="#9198A1" text-anchor="start">Your Node.js &amp; Bun dev servers,</text>
+<text x="362" y="248" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="28" font-weight="400" fill="#9198A1" text-anchor="start">one click away in the macOS menu bar.</text>
+<rect x="362" y="276" width="133" height="32" rx="16" fill="#12261E"/>
+<text x="428.6" y="297" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#7BD88F" text-anchor="middle">Start &amp; Stop</text>
+<rect x="505.2" y="276" width="73" height="32" rx="16" fill="#12261E"/>
+<text x="541.7" y="297" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#7BD88F" text-anchor="middle">Ports</text>
+<rect x="588.2" y="276" width="159" height="32" rx="16" fill="#12261E"/>
+<text x="667.7" y="297" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#7BD88F" text-anchor="middle">Logs in Console</text>
+<rect x="757.2" y="276" width="133" height="32" rx="16" fill="#12261E"/>
+<text x="823.8000000000001" y="297" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#7BD88F" text-anchor="middle">Crash states</text>
+<rect x="900.4000000000001" y="276" width="193" height="32" rx="16" fill="#12261E"/>
+<text x="997.1000000000001" y="297" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#7BD88F" text-anchor="middle">Nothing left behind</text>
+</svg>

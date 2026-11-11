@@ -1,0 +1,36 @@
+name: Bug report
+description: Something in Bunode doesn't work as it should.
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Bunode did instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Bunode version
+      description: The popover footer, or About Bunode in the Bunode menu while Settings is open. For example 0.1.0 (64).
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 26.1, Apple Silicon
+    validations:
+      required: true
+  - type: textarea
+    id: service
+    attributes:
+      label: The Service
+      description: Its command, package manager and Node.js or Bun version, if it is about a Service.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The end of ~/Library/Logs/Bunode/supervisor.log (Settings › Advanced › Diagnostics) around the time it happened.
+      render: text
