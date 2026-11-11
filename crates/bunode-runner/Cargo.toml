@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+bunode-core.workspace = true
 nix = { version = "0.31", features = ["signal", "process"] }
 signal-hook = "0.4"
 

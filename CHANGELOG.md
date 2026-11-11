@@ -6,6 +6,10 @@ To release: `scripts/version.sh --set X.Y.Z` turns **Unreleased** into a dated s
 
 ## [Unreleased]
 
+### Fixed
+
+- A Service whose command starts its server in a new process group, like `pnpm dev` with pnpm 12, now shows the server's port, and Stop, Force Stop, a crash of Bunode or a killed runner end the server too ([ADR-0010](docs/adr/0010-a-run-is-its-group-and-its-descendants.md)).
+
 ## [0.1.0] - 2026-11-11
 
 The first release.

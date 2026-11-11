@@ -22,6 +22,7 @@ pub mod snapshot;
 pub mod store;
 pub mod supervisor;
 pub mod sys;
+pub mod tree;
 pub mod workspace;
 
 pub use discovery::DiscoveredProcess;

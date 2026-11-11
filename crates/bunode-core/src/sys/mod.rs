@@ -34,6 +34,15 @@ pub fn all_pids() -> Vec<i32> {
     platform::all_pids()
 }
 
+/// Every process on the machine, by PID.
+pub fn processes() -> std::collections::HashMap<i32, ProcessInfo> {
+    all_pids()
+        .into_iter()
+        .filter_map(process)
+        .map(|p| (p.pid, p))
+        .collect()
+}
+
 /// The process's arguments, `argv[0]` first. Only readable for the
 /// user's own processes.
 pub fn arguments(pid: i32) -> Option<Vec<String>> {

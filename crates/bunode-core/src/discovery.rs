@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::agent::{self, AgentServer, Watched};
 use crate::model::ProjectId;
 use crate::sys::{self, ProcessInfo};
+use crate::tree;
 
 /// A Discovered Process: a Node or Bun process tree started outside
 /// Bunode, shown as one item (`npm run dev` and the Vite it started).
@@ -155,11 +156,7 @@ impl Scanner {
     ) -> Scan {
         let uid = sys::current_uid();
         let me = std::process::id() as i32;
-        let infos: HashMap<i32, ProcessInfo> = sys::all_pids()
-            .into_iter()
-            .filter_map(sys::process)
-            .map(|p| (p.pid, p))
-            .collect();
+        let infos = sys::processes();
 
         // Forget processes that are gone.
         self.details
@@ -254,17 +251,22 @@ impl Scanner {
             .collect();
         found.sort_by_key(|p| (p.start, p.pid));
 
-        // The ports of Bunode's own Runs and of the Agent Servers: every
-        // process of each group.
+        // The ports of Bunode's own Runs: every process of each, in its
+        // group or not (ADR-0010).
         let mut group_ports: HashMap<i32, Vec<u16>> = HashMap::new();
-        // The listening processes of the Agent Servers' groups.
+        for &group in &ours.groups {
+            let ports = tree::members(group, &infos)
+                .into_iter()
+                .flat_map(sys::listening_ports)
+                .collect();
+            group_ports.insert(group, ports);
+        }
+        // The Agent Servers': every process of each group, and the ones
+        // that listen.
         let mut listeners: HashMap<i32, Vec<i32>> = HashMap::new();
-        for info in infos
-            .values()
-            .filter(|p| ours.groups.contains(&p.pgid) || agent_groups.contains(&p.pgid))
-        {
+        for info in infos.values().filter(|p| agent_groups.contains(&p.pgid)) {
             let ports = sys::listening_ports(info.pid);
-            if !ports.is_empty() && agent_groups.contains(&info.pgid) {
+            if !ports.is_empty() {
                 listeners.entry(info.pgid).or_default().push(info.pid);
             }
             group_ports.entry(info.pgid).or_default().extend(ports);
@@ -316,11 +318,7 @@ pub struct PortOwner {
 /// of the user, so it is for a Start, not for a loop.
 pub fn port_owner(port: u16) -> Option<PortOwner> {
     let uid = sys::current_uid();
-    let infos: HashMap<i32, ProcessInfo> = sys::all_pids()
-        .into_iter()
-        .filter_map(sys::process)
-        .map(|p| (p.pid, p))
-        .collect();
+    let infos = sys::processes();
     let owner = infos
         .values()
         .filter(|p| p.uid == uid)
