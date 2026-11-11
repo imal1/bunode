@@ -100,7 +100,7 @@ MVP 阶段 Supervisor 内嵌在 App 进程中；`bunode-core` 保持与 UI 无�
 
 - **命令**：`start(service)`、`stop(run)` 等调用立即返回，结果通过状态事件回传。
 - **状态**：Rust 通过单一回调推送 Run 状态变化，约每 100 ms 合并一次，不逐条推送。
-- **日志**：日志保存在 Rust 的有界环形缓冲区；Rust 只通知“该 Run 有 N 条新日志”，Swift 按可见区域范围拉取。
+- **日志**：Rust 把 Run 的输出写成文件，Swift 只拿文件路径交给控制台（3.4）。
 
 关键要求：
 
@@ -281,35 +281,19 @@ Discovered Process 统一在 Other processes 中查看并标出端口，位于�
 
 ### 3.4 实时日志（P0）
 
-支持查看 Run 的标准输出和标准错误。
+日志在 macOS 控制台（Console.app）里看，Bunode 自己不再有日志页（[ADR-0008](adr/0008-logs-open-in-console.md)）。Service 视图的 Logs 一行把当前或上一次 Run 的日志文件交给控制台打开，控制台跟随文件实时刷新，搜索、复制、存储都用控制台的。
 
-功能：
-
-- 实时滚动显示日志。
-- stdout/stderr 区分。
-- 时间戳。
-- 关键词搜索。
-- 自动滚动：停在底部时跟随新日志；用户向上滚动即暂停，回到底部恢复（不单独设开关）。
-- 清空当前显示。
-- 复制日志。
-- 导出日志文件。
-- 支持 ANSI 颜色。
-- 日志级别过滤（第二阶段）。
-
-**性能要求**
-
-- 日志采用有界缓冲区（M0：每个 Run 在内存中保留最近约一万行）。
-- 大量日志持续输出不能导致 GUI 卡死。
-- 使用虚拟化列表渲染，按可见区域拉取。
-- 批量更新 UI，禁止每条日志引发一次界面刷新。
-- 日志必须支持背压或丢弃策略，并提示丢弃了多少行。
-- 磁盘日志文件需要限制大小并支持滚动归档（M1）。
-- 外部发现的进程不保证可以追溯历史 stdout/stderr，不得虚构日志内容。
+- 每个 Run 写一个纯文本文件：`<数据目录>/Logs/service-<id>/run-<n>-<part>.log`，每行 `{UTC 时间戳} {out|err|bunode} {内容}`，ANSI 颜色码去掉。
+- 写盘不拖慢 Run；写盘线程一空闲就 flush，控制台看到的就是实时输出。磁盘跟不上时跳过并在文件末尾注明跳过了多少行。
+- 单个文件 50 MB 后换新文件（控制台仍停在旧文件，需要回 Bunode 再点一次）。每个 Service 的日志总量超过 50 MB 时删最旧的文件。
+- 还没有 Run 时提示“还没有日志文件”。
+- 外部发现的进程不保证可以追溯历史 stdout/stderr，不得虚构日志内容。Agent Server 没有日志（3.10）。
 
 ### 3.5 端口管理（P0）
 
 - 自动检测 Run 及 Discovered Process 监听的 TCP 端口。
 - 支持一个服务同时监听多个端口。
+- 监听多个端口时，行上显示、Open in Browser 打开的是主端口：Service 设置了端口就用它，否则用输出里第一个 `http(s)://主机:端口` 中正在监听的那个（dev server 启动时都会打印 `Local: http://localhost:9000`）。都没有时按端口号从小到大。dev 工具常另开辅助端口（如 code-inspector 的 :5678），不能按大小挑。
 - 展示端口状态。
 - 点击端口打开对应 localhost 地址。
 - 启动前检查预期端口冲突。
@@ -392,6 +376,8 @@ Claude 等 agent 会按自己的启动配置在 Project 根目录里跑开发服
 2. 启动器进程的 cwd 与某个已登记 Project 的根目录完全相等。worktree 和子目录不算。
 3. 启动器的 argv 与该 Project 的 agent 配置里某一项匹配。
 
+**归属**：默认归启动器所在的 Project。配置可能先 `cd` 到别的 Project 再启动（`bash -c "cd ../web && npm start"`），所以组内监听端口的进程 cwd 等于另一个已登记 Project 的根目录时，归那个 Project。还没监听端口时先显示在启动器的 Project 下。
+
 用户关心的是 agent 内部的服务状态，以及能否在外部停止它。所以占用同一端口、但不是 agent 启动的进程不算 Agent Server。在 Bunode 里启动的同名命令也不算，因为 agent 不监管它。
 
 **Agent 适配表**（首版只有 Claude）
@@ -410,7 +396,7 @@ Claude 等 agent 会按自己的启动配置在 Project 根目录里跑开发服
 
 **显示**
 
-- 只在服务运行时出现，外观与 Service 行相同：标题是配置里的 `name`，第二行 `{path} · Running`，有端口时显示端口胶囊。
+- 只在服务运行时出现，外观与 Service 行相同：标题是配置里的 `name`，第二行 `{path} · Running`，有端口时显示端口胶囊。配置写了 `port` 且正在监听时，胶囊和 Open in Browser 用它，其余端口排在后面（dev 工具常另开调试端口，如 umi 的 :5678）。
 - 没有徽标。tooltip 多一行 `Started by Claude`，写具体的 agent 名。
 - 两种列表模式（4.2）里都跟所属 Project 放在一起。
 
@@ -454,7 +440,7 @@ Claude 等 agent 会按自己的启动配置在 Project 根目录里跑开发服
 - **Home**：平铺的 Service 列表，一条命令一行，所属 Project 显示在第二行，同 Project 相邻。每行显示状态和端口，悬停或键盘聚焦时显示启停按钮。另有 `Add Service`、Other processes 入口、Settings 与 Quit。Settings › General 可切换为按 Project 分组：每个 Project 一个只写名字的小标题，组内行标题去掉 Project 名前缀。Agent Server（3.10）以普通行的样子跟所属 Project 放在一起。
 - **Service**：点 Service 行进入。命令、目录、端口、自动重启、Shell Mode、环境变量；自动保存，运行中修改提示“下次 Run 生效”；删除 Service。
 - **New Service**：点 Home 的 `Add Service` 进入，选择 Project，从 `package.json` 的常用 scripts 选择或手填命令。
-- **Logs**：单个 Service 的实时日志、搜索、清空、复制、导出。
+- **Logs**：Service 视图里的一行，点击在控制台中打开日志（3.4），没有单独的页面。
 - **Other processes**：Discovered Process 列表，仅查看与 SIGTERM。位于已登记 Project 目录中的进程也在这里（3.3）。
 
 ### 4.3 Settings 窗口
@@ -478,7 +464,6 @@ Claude 等 agent 会按自己的启动配置在 Project 根目录里跑开发服
 
 - 运行环境（重新加载登录 shell 环境、默认 node/bun 路径）。
 - 进程停止超时。
-- 日志保留行数。
 - 诊断日志。
 
 外观跟随系统，不单独设置。完整布局、状态与文案见 [`design-handoff.md`](design-handoff.md)。

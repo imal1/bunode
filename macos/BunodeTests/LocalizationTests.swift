@@ -29,6 +29,8 @@ struct LocalizationTests {
             ("Started by %@", "由 %@ 启动"),
             ("Open in Browser", "在浏览器中打开"), ("Show in Finder", "在访达中显示"),
             ("Couldn’t stop %@.", "无法停止 %@。"), ("Stopping…", "正在停止…"),
+            ("Open in Console", "在控制台中打开"), ("No log file yet.", "还没有日志文件。"),
+            ("Couldn’t open Console.", "无法打开控制台。"),
             // design-handoff §6.6
             ("Add Service", "添加服务"), ("Settings", "设置"), ("Quit", "退出"),
             ("Start", "启动"), ("Stop", "停止"), ("Restart", "重启"), ("Run", "运行"),

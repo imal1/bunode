@@ -210,18 +210,6 @@ struct AdvancedPane: View {
                     Text("Stop asks nicely first, then force-quits.")
                 }
                 .pickerStyle(.menu)
-                Picker(selection: Binding(
-                    get: { model.snapshot.settings.logLinesKept },
-                    set: { model.setLogLinesKept($0) }
-                )) {
-                    ForEach([UInt32(5_000), 10_000, 50_000], id: \.self) { lines in
-                        Text(lines.formatted()).tag(lines)
-                    }
-                } label: {
-                    Text("Log lines kept")
-                    Text("Per Service. Export saves the full log.")
-                }
-                .pickerStyle(.menu)
                 LabeledContent {
                     Button("Open") {
                         let folder = AppModel.defaultDiagnosticsDirectory

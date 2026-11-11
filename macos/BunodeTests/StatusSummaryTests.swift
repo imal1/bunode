@@ -198,7 +198,7 @@ struct KeyboardTests {
 
     @Test func openingThePopoverStartsAtHome() {
         let router = PopoverRouter()
-        router.push(.logs(3))
+        router.push(.service(3))
         let before = router.openCount
         router.reset()
         #expect(router.screen == .home)

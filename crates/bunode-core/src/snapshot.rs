@@ -167,7 +167,8 @@ pub struct AgentServerState {
     /// The agent's launcher, which leads the process group.
     pub pid: u32,
     pub pgid: u32,
-    /// The TCP ports any process of the group listens on.
+    /// The TCP ports any process of the group listens on, the
+    /// configuration's `port` first.
     pub live_ports: Vec<u16>,
     /// Bunode is ending its process group.
     pub stopping: bool,

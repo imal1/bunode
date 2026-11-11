@@ -179,19 +179,31 @@ struct RunEntry {
     ended_by: Option<RunEnd>,
     /// The TCP ports the Run's process group listens on, from the last scan.
     ports: Vec<u16>,
+    /// The ports the Run's output announced, first one first.
+    announced: Announced,
 }
+
+/// Ports a Run's output announced (`http://localhost:9000`), at most a few.
+pub(crate) type Announced = Arc<Mutex<Vec<u16>>>;
 
 /// Where a Run's output goes: memory for the Logs view, and its file.
 #[derive(Clone)]
 pub(crate) struct RunLog {
     pub(crate) buffer: Arc<Mutex<LogBuffer>>,
     pub(crate) file: RunLogWriter,
+    pub(crate) announced: Announced,
 }
 
 impl RunLog {
     pub(crate) fn line(&self, stream: LogStream, line: crate::ansi::StyledLine) {
         let time = now_ms();
         self.file.line(time, stream, &line.text);
+        if let Some(port) = crate::discovery::announced_port(&line.text) {
+            let mut announced = self.announced.lock().unwrap_or_else(|e| e.into_inner());
+            if announced.len() < 16 && !announced.contains(&port) {
+                announced.push(port);
+            }
+        }
         lock_logs(&self.buffer).push(stream, time, line);
     }
 
@@ -1108,6 +1120,24 @@ impl Supervisor {
             })
     }
 
+    /// Logs › Open in Console: the newest file of the Service's current or
+    /// last Run, flushed, for the Console app to follow. `None` before a
+    /// Run, or when nothing reached the disk.
+    pub fn current_log_file(&self, service_id: ServiceId) -> Option<PathBuf> {
+        let (run_number, file) = {
+            let state = self.shared.lock();
+            let run = state.runs.get(&service_id)?;
+            (run.run_number, run.file.clone())
+        };
+        if let Some(file) = file {
+            file.flush(Duration::from_secs(2));
+        }
+        self.shared
+            .log_files
+            .files_of_run(service_id, run_number)
+            .pop()
+    }
+
     /// Logs › Clear: hides the lines shown so far. Files are not touched.
     pub fn clear_logs(&self, service_id: ServiceId) {
         let logs = self
@@ -1220,6 +1250,7 @@ impl Shared {
         let log = RunLog {
             buffer: logs.clone(),
             file: RunLogWriter::start(&self.log_files, service_id, run_number, logs.clone()),
+            announced: Announced::default(),
         };
         log.system(&format!("Run #{run_number}: {command}"));
         if let Some(port) = port_override {
@@ -1247,6 +1278,7 @@ impl Shared {
                         quitting: false,
                         ended_by: Some(RunEnd::FailedToStart),
                         ports: Vec::new(),
+                        announced: Announced::default(),
                     },
                 );
                 drop(state);
@@ -1273,6 +1305,7 @@ impl Shared {
                 quitting: false,
                 ended_by: None,
                 ports: Vec::new(),
+                announced: log.announced.clone(),
             },
         );
         drop(state);
@@ -1491,10 +1524,17 @@ async fn discover(shared: Arc<Shared>) {
     let scanner = Arc::new(Mutex::new(Scanner::default()));
     loop {
         let watched;
+        let roots: Vec<(ProjectId, std::path::PathBuf)>;
         let ours = {
             let state = shared.lock();
             let order: Vec<ProjectId> = state.config.projects.iter().map(|p| p.id).collect();
             watched = state.launch_files.watched(&order);
+            roots = state
+                .config
+                .projects
+                .iter()
+                .map(|p| (p.id, p.path.clone()))
+                .collect();
             Ours {
                 groups: state
                     .runs
@@ -1510,7 +1550,7 @@ async fn discover(shared: Arc<Shared>) {
             scanning
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .scan(&ours, &watched)
+                .scan(&ours, &watched, &roots)
         })
         .await
         else {
@@ -1711,8 +1751,20 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         log_filter_generation: logs.filter_generation,
         has_pending_config: run.is_some_and(|r| r.config_changed && r.status.is_live()),
         ended_by: run.and_then(|r| r.ended_by),
-        live_ports: run.map(|r| r.ports.clone()).unwrap_or_default(),
+        live_ports: run.map(|r| live_ports(service, r)).unwrap_or_default(),
     }
+}
+
+/// The Run's ports, the Service's port first, else the first one its
+/// output announced.
+fn live_ports(service: &Service, run: &RunEntry) -> Vec<u16> {
+    let mut ports = run.ports.clone();
+    let announced = run.announced.lock().unwrap_or_else(|e| e.into_inner());
+    crate::discovery::lead_with(
+        &mut ports,
+        service.port.into_iter().chain(announced.iter().copied()),
+    );
+    ports
 }
 
 fn project_state(project: &Project, state: &State) -> ProjectState {
@@ -2089,6 +2141,7 @@ mod tests {
             pid: 4242,
             start: 1,
             pgid: 4242,
+            port: None,
             ports: vec![3000, 3001],
         }];
         let owner = agent_server_owner(&servers, 3001).unwrap();

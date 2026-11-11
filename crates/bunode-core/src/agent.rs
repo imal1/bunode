@@ -20,6 +20,9 @@ pub struct LaunchConfig {
     pub runtime_executable: String,
     #[serde(default)]
     pub runtime_args: Vec<String>,
+    /// The port the server is meant to listen on.
+    #[serde(default)]
+    pub port: Option<u16>,
 }
 
 impl LaunchConfig {
@@ -106,8 +109,36 @@ pub struct AgentServer {
     pub pid: u32,
     pub start: u64,
     pub pgid: u32,
-    /// TCP ports any process of the group listens on.
+    /// The configuration's `port`.
+    pub port: Option<u16>,
+    /// TCP ports any process of the group listens on, `port` first.
     pub ports: Vec<u16>,
+}
+
+impl AgentServer {
+    /// Takes in what the scan found listening in the server's group:
+    /// `ports` (sorted), with the configuration's `port` moved to the
+    /// front, and the working directories of the listening processes. A
+    /// configuration may `cd` into a sibling Project (`bash -c "cd ../web
+    /// && npm start"`), so the server belongs to the Project whose root a
+    /// listening process runs in, and to the launcher's Project otherwise.
+    pub(crate) fn settle(
+        &mut self,
+        mut ports: Vec<u16>,
+        listener_cwds: &[&str],
+        roots: &[(ProjectId, PathBuf)],
+    ) {
+        crate::discovery::lead_with(&mut ports, self.port);
+        self.ports = ports;
+        if let Some(id) = listener_cwds.iter().find_map(|cwd| {
+            roots
+                .iter()
+                .find(|(_, root)| root.as_path() == Path::new(cwd))
+                .map(|(id, _)| *id)
+        }) {
+            self.project_id = id;
+        }
+    }
 }
 
 /// The Agent Servers in `infos`: Projects in `watched` order, then their
@@ -165,6 +196,7 @@ pub(crate) fn detect(
                     pid: info.pid as u32,
                     start: info.start,
                     pgid: info.pgid as u32,
+                    port: config.port,
                     ports: Vec::new(),
                 },
             ));
@@ -463,6 +495,43 @@ mod tests {
         );
         // A Project nobody watches has none.
         assert_eq!(table.detect(&[watched(2, "/code/blog")]).len(), 1);
+    }
+
+    #[test]
+    fn a_server_lists_its_configured_port_first() {
+        let mut table = Table::new();
+        table.launch(200, "/code/shop", &["npm", "run", "dev"]);
+        let mut server =
+            detect(&table.infos, &table.details, &[watched(7, "/code/shop")]).remove(0);
+        assert_eq!(server.port, Some(3001));
+        server.settle(vec![3001, 5678], &[], &[]);
+        assert_eq!(server.ports, [3001, 5678]);
+        server.settle(vec![2000, 3001, 5678], &[], &[]);
+        assert_eq!(server.ports, [3001, 2000, 5678]);
+        // Not listening on it (yet): sorted.
+        server.settle(vec![5678, 9000], &[], &[]);
+        assert_eq!(server.ports, [5678, 9000]);
+    }
+
+    #[test]
+    fn a_server_belongs_to_the_project_it_listens_in() {
+        let mut table = Table::new();
+        table.launch(200, "/code/shop", &["npm", "run", "dev"]);
+        let mut server =
+            detect(&table.infos, &table.details, &[watched(7, "/code/shop")]).remove(0);
+        let roots = [
+            (7, PathBuf::from("/code/shop")),
+            (8, PathBuf::from("/code/blog")),
+        ];
+        // Not listening yet: the launcher's Project.
+        server.settle(vec![], &[], &roots);
+        assert_eq!(server.project_id, 7);
+        // Listening in a folder that is no Project's root: still the launcher's.
+        server.settle(vec![3001], &["/code/blog/web"], &roots);
+        assert_eq!(server.project_id, 7);
+        // Listening in a sibling Project's root.
+        server.settle(vec![3001], &["/code/blog"], &roots);
+        assert_eq!(server.project_id, 8);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 
 /// The app's view of the Supervisor: its latest snapshot, and the commands
@@ -291,50 +291,24 @@ final class AppModel {
 
     // MARK: - Logs
 
-    func logLines(_ serviceID: UInt64, from: UInt64, max: UInt32) -> [LogLine] {
-        core.logLines(serviceId: serviceID, from: from, max: max)
-    }
-
-    func logMatchingLines(_ serviceID: UInt64, from: UInt64, max: UInt32) -> [LogLine] {
-        core.logMatchingLines(serviceId: serviceID, from: from, max: max)
-    }
-
-    /// Logs › Search; filtering happens in the core, off the main thread.
-    func setLogFilter(_ serviceID: UInt64, _ query: String) {
-        core.setLogFilter(serviceId: serviceID, query: query)
-    }
-
-    /// Logs › Export…: the full log of the current or last Run.
-    func exportLog(_ serviceID: UInt64, to url: URL) async -> String? {
+    /// Logs: hands the newest file of the Service's current or last Run to
+    /// Console, which follows it as it grows. A problem to show, if any.
+    func openLogInConsole(_ serviceID: UInt64) async -> String? {
         let core = self.core
-        let path = url.path(percentEncoded: false)
-        let result = await Task.detached {
-            Result { try core.exportLog(serviceId: serviceID, destination: path) }
-        }.value
-        if case .failure(let error) = result {
-            return error.userMessage
+        let path = await Task.detached { core.currentLogFile(serviceId: serviceID) }.value
+        guard let path else { return String(localized: "No log file yet.") }
+        let file = URL(fileURLWithPath: path)
+        let workspace = NSWorkspace.shared
+        guard let console = workspace.urlForApplication(withBundleIdentifier: "com.apple.Console") else {
+            workspace.activateFileViewerSelecting([file])
+            return nil
         }
-        return nil
-    }
-
-    /// `api-dev-run14.log`
-    nonisolated static func exportFileName(project: String, service: String, run: UInt64?) -> String {
-        let safe = { (name: String) in
-            name.map { "/:\\".contains($0) || $0.isWhitespace ? "-" : String($0) }.joined()
+        do {
+            try await workspace.open([file], withApplicationAt: console, configuration: NSWorkspace.OpenConfiguration())
+            return nil
+        } catch {
+            return String(localized: "Couldn’t open Console.")
         }
-        let run = run.map { "-run\($0)" } ?? ""
-        return "\(safe(project))-\(safe(service))\(run).log"
-    }
-
-    func clearLogs(_ serviceID: UInt64) {
-        core.clearLogs(serviceId: serviceID)
-        refresh()
-    }
-
-    /// Advanced › Log lines kept.
-    func setLogLinesKept(_ lines: UInt32) {
-        try? core.setLogLinesKept(lines: lines)
-        refresh()
     }
 
     /// Advanced › Force stop after, in seconds.

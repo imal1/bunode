@@ -3,9 +3,10 @@
 //! never claimed as a Service's Run, never signalled in bulk.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::agent::{self, AgentServer, Watched};
+use crate::model::ProjectId;
 use crate::sys::{self, ProcessInfo};
 
 /// A Discovered Process: a Node or Bun process tree started outside
@@ -144,8 +145,14 @@ impl Scanner {
     /// One scan. `ours` are the process groups and runners of Bunode's own
     /// Runs, which are never listed; the ports each of those groups listens
     /// on are returned alongside. The Agent Servers of `watched` are
-    /// returned too, and their processes aren't Discovered Processes.
-    pub fn scan(&mut self, ours: &Ours, watched: &[Watched]) -> Scan {
+    /// returned too, and their processes aren't Discovered Processes;
+    /// `roots` are every Project's, to tell which one each belongs to.
+    pub fn scan(
+        &mut self,
+        ours: &Ours,
+        watched: &[Watched],
+        roots: &[(ProjectId, PathBuf)],
+    ) -> Scan {
         let uid = sys::current_uid();
         let me = std::process::id() as i32;
         let infos: HashMap<i32, ProcessInfo> = sys::all_pids()
@@ -250,23 +257,31 @@ impl Scanner {
         // The ports of Bunode's own Runs and of the Agent Servers: every
         // process of each group.
         let mut group_ports: HashMap<i32, Vec<u16>> = HashMap::new();
+        // The listening processes of the Agent Servers' groups.
+        let mut listeners: HashMap<i32, Vec<i32>> = HashMap::new();
         for info in infos
             .values()
             .filter(|p| ours.groups.contains(&p.pgid) || agent_groups.contains(&p.pgid))
         {
-            group_ports
-                .entry(info.pgid)
-                .or_default()
-                .extend(sys::listening_ports(info.pid));
+            let ports = sys::listening_ports(info.pid);
+            if !ports.is_empty() && agent_groups.contains(&info.pgid) {
+                listeners.entry(info.pgid).or_default().push(info.pid);
+            }
+            group_ports.entry(info.pgid).or_default().extend(ports);
         }
         for ports in group_ports.values_mut() {
             ports.sort_unstable();
             ports.dedup();
         }
         for server in &mut agent_servers {
-            server.ports = group_ports
-                .remove(&(server.pgid as i32))
-                .unwrap_or_default();
+            let group = server.pgid as i32;
+            let mut pids = listeners.remove(&group).unwrap_or_default();
+            pids.sort_unstable();
+            let cwds: Vec<&str> = pids
+                .iter()
+                .filter_map(|pid| details.get(pid).and_then(|d| d.cwd.as_deref()))
+                .collect();
+            server.settle(group_ports.remove(&group).unwrap_or_default(), &cwds, roots);
         }
         Scan {
             discovered: found,
@@ -362,6 +377,41 @@ pub fn probe_port(port: u16) -> Vec<String> {
 /// The first free port after `port`, for `Use :N`.
 pub fn next_free_port(port: u16) -> Option<u16> {
     (port.checked_add(1)?..=port.saturating_add(200)).find(|&p| !port_in_use(p))
+}
+
+/// Moves the first of `preferred` that is in `ports` to the front: the
+/// port a row shows and Open in Browser opens. Dev tools often listen on
+/// a helper port too (code-inspector's :5678), which may sort first.
+pub(crate) fn lead_with(ports: &mut Vec<u16>, preferred: impl IntoIterator<Item = u16>) {
+    if let Some(i) = preferred
+        .into_iter()
+        .find_map(|port| ports.iter().position(|&p| p == port))
+    {
+        let port = ports.remove(i);
+        ports.insert(0, port);
+    }
+}
+
+/// The port of the first `http(s)://host:port` in `text`, the way dev
+/// servers say where they listen ("Local: http://localhost:5173/").
+pub(crate) fn announced_port(text: &str) -> Option<u16> {
+    text.match_indices("://").find_map(|(i, _)| {
+        if !text[..i].ends_with("http") && !text[..i].ends_with("https") {
+            return None;
+        }
+        let rest = &text[i + 3..];
+        let host_end = if rest.starts_with('[') {
+            rest.find(']')? + 1
+        } else {
+            rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
+                .unwrap_or(rest.len())
+        };
+        let port = rest[host_end..].strip_prefix(':')?;
+        let end = port
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(port.len());
+        port[..end].parse().ok()
+    })
 }
 
 /// What one scan found.
@@ -482,5 +532,48 @@ mod tests {
             source(&[&info(3, "my-runner")]).as_deref(),
             Some("my-runner")
         );
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_port_a_dev_server_announces() {
+        assert_eq!(
+            announced_port("  ➜  Local:   http://localhost:5173/"),
+            Some(5173)
+        );
+        assert_eq!(
+            announced_port("║  > Local: http://localhost:9000  ║"),
+            Some(9000)
+        );
+        assert_eq!(
+            announced_port("Url: http://[::]:6099/webui?token=x"),
+            Some(6099)
+        );
+        assert_eq!(announced_port("on https://127.0.0.1:8443"), Some(8443));
+        assert_eq!(announced_port("see https://github.com/x:y"), None);
+        assert_eq!(
+            announced_port("see https://example.com then http://0.0.0.0:3000"),
+            Some(3000)
+        );
+        assert_eq!(announced_port("redis://localhost:6379"), None);
+        assert_eq!(announced_port("http://localhost:99999"), None);
+        assert_eq!(announced_port("no url"), None);
+    }
+
+    #[test]
+    fn the_preferred_port_leads() {
+        let mut ports = vec![5678, 9000];
+        lead_with(&mut ports, [9000]);
+        assert_eq!(ports, [9000, 5678]);
+        let mut ports = vec![5678, 9000];
+        lead_with(&mut ports, [3000, 9000]);
+        assert_eq!(ports, [9000, 5678]);
+        let mut ports = vec![5678, 9000];
+        lead_with(&mut ports, [3000]);
+        assert_eq!(ports, [5678, 9000]);
     }
 }

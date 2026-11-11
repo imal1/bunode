@@ -16,7 +16,7 @@
 | C1 | Popover 是唯一主界面，不做主窗口，始终无 Dock 图标（[ADR-0004](adr/0004-menu-bar-first-no-main-window.md)）。Settings 只有 General / Projects / Advanced | 不变 | 全文 |
 | C2 | 设计里的 `Use login shell` 改为 Service 级 `Run through shell`（即需求的 Shell Mode，用于管道、`&&`、通配符）。登录 shell 环境只在全局抓取（Advanced › Shell environment） | 不变。新画布又写成 `Use login shell`，以本条为准 | §2.2 Service 视图 |
 | C3 | General 的 `Restart Services that crash` 是新 Service 的默认值；Service 级开关覆盖它；改全局不改写已有 Service | 不变 | §2.3 General |
-| C4 | MVP 日志补：隐式自动滚动、丢弃行数提示、`Export…`。级别过滤放到第二阶段 | 不变。新画布未画 `Export…`，仍要做 | §2.2 Logs、§7 |
+| C4 | MVP 日志补：隐式自动滚动、丢弃行数提示、`Export…`。级别过滤放到第二阶段 | **已取消**（2026-11-11）。日志改在控制台里看，没有 Logs 视图（[ADR-0008](adr/0008-logs-open-in-console.md)） | §2.2 Logs、§7 |
 | C5 | 已登记 Project 目录里的 Discovered Process，在该 Project 下显示只读的 External 行 | **已取消**（2026-11-09）。没有 Project 标题行后无处安放，统一进 Other processes | §2.2 Home |
 | C6 | Projects 行可改包管理器，多锁文件时显示警告 | **待拍板**（§11） | §2.3 Projects |
 | C7 | 补 `Failed` 状态，行备注 `Failed` | 保留状态。**“置灰”改为红色色块**，与 Crashed 相同 | §5.1 |
@@ -218,7 +218,7 @@ agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launc
 - 默认：第一个 Project，它第一个未使用的推荐脚本，命令按 §5.2 生成。新 Service 默认无 Port、`Run through shell` 关、`Restart if it crashes` 取 General 默认（C3）。
 - Service 名不再手填：取脚本名，手填命令时取最后一个词。冲突处理见 §6.2。
 
-**Logs 视图**（Service 视图里点 Logs）
+**Logs 视图**（Service 视图里点 Logs）——**已取消**（2026-11-11）：Service 视图的 Logs 行尾是 `arrow.up.forward.app` 图标，点击在控制台中打开日志文件，tooltip `Open in Console`；没有文件时 toast `No log file yet.`（[ADR-0008](adr/0008-logs-open-in-console.md)）。以下保留作历史记录。
 
 - 顶栏：Back（返回 Service 视图，不是 Home）+ 标题 / 副标题 `Logs · Run #14` 或 `Logs · No Runs yet` + `Restart`（运行中）或 `Start`（主按钮）。
 - 搜索框：高 28，圆角 7，背景 `fill-subtle`，左 13 pt 放大镜，placeholder `Search`。外边距 0/2/6。

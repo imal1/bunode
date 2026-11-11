@@ -12,5 +12,5 @@ registered as a Project.
 | `crash/` | `immediately.js` exits with code 1 at once; `later.js` runs for half a second, then throws |
 | `flood/` | `flood.js [N]` prints N lines (default: forever) as fast as it can, every 10th to stderr, every 7th colored |
 | `monorepo-npm/`, `monorepo-yarn/`, `monorepo-pnpm/`, `monorepo-bun/` | The same monorepo declared each package manager's way: `apps/web` (script `where` prints its folder) and `packages/ui` |
-| `multi-port/` | `server.js` listens on `$PORT` and on a second free port, and prints both |
+| `multi-port/` | `server.js` listens on `$PORT` and on a second free port, prints both, then announces the higher one as `Local: http://localhost:N/` |
 | `plain-tool/` | No `package.json`. `my tools/serve` is a shell script, not Node or Bun: prints `plain tool started` and its arguments, then serves HTTP on a free port with `python3` |

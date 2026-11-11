@@ -622,6 +622,13 @@ impl BunodeCore {
             .export_log(service_id, std::path::Path::new(&destination))?)
     }
 
+    /// Logs › Open in Console: the newest file of the current or last Run.
+    pub fn current_log_file(&self, service_id: u64) -> Option<String> {
+        self.supervisor
+            .current_log_file(service_id)
+            .map(|p| p.display().to_string())
+    }
+
     /// Logs › Clear: hides the lines shown so far.
     pub fn clear_logs(&self, service_id: u64) {
         self.supervisor.clear_logs(service_id);

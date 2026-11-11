@@ -32,6 +32,8 @@ fn finds_every_port_of_a_run_and_forgets_them_when_it_ends() {
         .collect();
     expected.sort_unstable();
 
+    // The announced port leads, though it sorts last.
+    expected.reverse();
     let found = h.wait(id, "both ports", |s| s.live_ports == expected);
     assert_eq!(found.live_ports.len(), 2);
 

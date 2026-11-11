@@ -88,6 +88,20 @@ fn export_saves_the_full_log_not_just_what_memory_keeps() {
 }
 
 #[test]
+fn the_current_log_file_is_the_runs_newest() {
+    require_tool("node");
+    let h = Harness::new();
+    let id = h.service("flood", "node flood.js 10");
+    assert_eq!(h.supervisor.current_log_file(id), None);
+    h.supervisor.start(id).unwrap();
+    h.wait(id, "the flood to end", |s| !s.status.is_live());
+    let file = h.supervisor.current_log_file(id).unwrap();
+    assert!(file.ends_with("run-1-000.log"), "{file:?}");
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.lines().any(|l| l.ends_with(" out line 1")), "{text}");
+}
+
+#[test]
 fn a_flood_of_output_stays_bounded_and_coalesced() {
     require_tool("node");
     let h = Harness::new();

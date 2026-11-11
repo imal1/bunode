@@ -11,4 +11,4 @@ Bunode runs as an agent app (`LSUIElement`): no Dock icon and no app menu bar, e
 
 ## Consequences
 
-The popover is fixed at 340 pt wide, so dense data from the requirements (CPU and memory columns, process trees, logs side by side) does not fit and moves to a later phase. Logs are viewed one Service at a time inside the popover. If a main window comes back later, it reads the same Supervisor state and can reuse the popover's views, and this ADR should be superseded.
+The popover is fixed at 340 pt wide, so dense data from the requirements (CPU and memory columns, process trees, logs side by side) does not fit and moves to a later phase. Logs are viewed one Service at a time inside the popover (superseded: they open in Console, [ADR-0008](0008-logs-open-in-console.md)). If a main window comes back later, it reads the same Supervisor state and can reuse the popover's views, and this ADR should be superseded.

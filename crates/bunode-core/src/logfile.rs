@@ -26,7 +26,8 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Limits {
         Limits {
-            file_bytes: 5 * 1024 * 1024,
+            // Console follows one file, so a Run rarely needs a second.
+            file_bytes: 50 * 1024 * 1024,
             service_bytes: 50 * 1024 * 1024,
         }
     }
@@ -217,7 +218,21 @@ fn write_loop(
         );
     };
 
-    while let Ok(message) = rx.recv() {
+    let mut next: Option<Message> = None;
+    loop {
+        let message = match next.take() {
+            Some(message) => message,
+            None => {
+                // Caught up: flush, so Console, which follows the file,
+                // shows every line as it comes.
+                if let Some((file, _)) = &mut writer {
+                    let _ = file.flush();
+                }
+                let Ok(message) = rx.recv() else { break };
+                message
+            }
+        };
+        next = rx.try_recv().ok();
         let (time_ms, stream, text) = match message {
             Message::Flush(done) => {
                 if let Some((file, _)) = &mut writer {

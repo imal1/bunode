@@ -812,6 +812,16 @@
         }
       }
     },
+    "Couldn’t open Console.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开控制台。"
+          }
+        }
+      }
+    },
     "Couldn’t stop %@.": {
       "localizations": {
         "zh-Hans": {
@@ -1351,6 +1361,16 @@
         }
       }
     },
+    "No log file yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有日志文件。"
+          }
+        }
+      }
+    },
     "No other Node or Bun processes.": {
       "localizations": {
         "zh-Hans": {
@@ -1447,6 +1467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "在浏览器中打开 :%@"
+          }
+        }
+      }
+    },
+    "Open in Console": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在控制台中打开"
           }
         }
       }
