@@ -181,7 +181,7 @@ private struct ProjectRow: View {
     /// removing is the destructive choice.
     private func confirmRemove() {
         let running = model.runningCount(in: project)
-        let alert = NSAlert()
+        let alert = NSAlert.withAppIcon()
         alert.messageText = String(localized: "Remove “\(project.name)”?")
         alert.informativeText = AppModel.removalMessage(for: project, running: running)
         alert.addButton(withTitle: String(localized: "Cancel"))

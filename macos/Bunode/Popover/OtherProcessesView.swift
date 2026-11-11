@@ -72,7 +72,7 @@ struct OtherProcessesView: View {
 
     private func confirmForceKill(_ process: DiscoveredProcess) {
         let name = process.command.split(separator: " ").first.map(String.init) ?? "node"
-        let alert = NSAlert()
+        let alert = NSAlert.withAppIcon()
         alert.messageText = String(localized: "Force kill \(name) (PID \(String(process.pid)))?")
         alert.informativeText = String(localized: "Bunode didn’t start this process. It did not exit 5 s after SIGTERM. Force killing it may lose unsaved work.")
         let details = [process.command, process.cwd?.abbreviatingWithTilde, String(localized: "started from \(sourceName(process.source))")]

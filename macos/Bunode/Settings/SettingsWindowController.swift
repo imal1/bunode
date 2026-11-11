@@ -22,6 +22,9 @@ final class SettingsWindowController {
         }
         let window = self.window ?? makeWindow()
         self.window = window
+        // While Settings is open Bunode is a regular app: the app menu bar
+        // (About, ⌘Q…) and a Dock icon, so ⌘Tab finds the window (ADR-0009).
+        _ = NSApp.setActivationPolicy(.regular)
         // An agent app is not active by default; without this the window
         // would open behind the frontmost app.
         NSApp.activate()
@@ -48,6 +51,16 @@ final class SettingsWindowController {
         window.setContentSize(Self.contentSize)
         window.isReleasedWhenClosed = false
         window.center()
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { _ in
+            // Back to a menu bar-only agent app.
+            MainActor.assumeIsolated {
+                _ = NSApp.setActivationPolicy(.accessory)
+            }
+        }
         return window
     }
 }

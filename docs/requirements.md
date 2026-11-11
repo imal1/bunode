@@ -33,7 +33,7 @@ Bunode 是一款专为 macOS 设计的轻量级 Node.js / Bun 原生图形化进
 |CPU 架构|Apple Silicon 优先，兼容 Intel|
 |运行时|Node.js、Bun|
 |包管理器|npm、pnpm、yarn、Bun|
-|产品形态|macOS 原生菜单栏 App（Popover 为主界面，另有 Settings 窗口，无 Dock 图标）|
+|产品形态|macOS 原生菜单栏 App（Popover 为主界面，另有 Settings 窗口；仅 Settings 打开时有 Dock 图标）|
 |网络依赖|核心功能完全离线|
 |浏览器|不依赖浏览器，不使用 WebView|
 |数据存储|本地 JSON 配置文件|
@@ -340,7 +340,7 @@ Discovered Process 统一在 Other processes 中查看并标出端口，位于�
 
 Popover 与 Settings 窗口共用同一状态来源（Supervisor），避免状态不同步。
 
-**Dock 图标**：始终不显示（`LSUIElement`）。
+**Dock 图标**：平时不显示（`LSUIElement`）；Settings 窗口打开期间显示 Dock 图标和 App 菜单栏（About、Hide、Help 等），关闭后恢复（[ADR-0009](adr/0009-app-menu-bar-while-settings-is-open.md)）。
 
 ### 3.8 自动启动与恢复（P1）
 

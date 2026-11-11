@@ -13,7 +13,7 @@
 
 | # | 决定 | 本版状态 | 落在本文 |
 |---|---|---|---|
-| C1 | Popover 是唯一主界面，不做主窗口，始终无 Dock 图标（[ADR-0004](adr/0004-menu-bar-first-no-main-window.md)）。Settings 只有 General / Projects / Advanced | 不变 | 全文 |
+| C1 | Popover 是唯一主界面，不做主窗口，平时无 Dock 图标（[ADR-0004](adr/0004-menu-bar-first-no-main-window.md)）；Settings 打开期间显示 App 菜单栏与 Dock 图标（[ADR-0009](adr/0009-app-menu-bar-while-settings-is-open.md)）。Settings 只有 General / Projects / Advanced | 不变 | 全文 |
 | C2 | 设计里的 `Use login shell` 改为 Service 级 `Run through shell`（即需求的 Shell Mode，用于管道、`&&`、通配符）。登录 shell 环境只在全局抓取（Advanced › Shell environment） | 不变。新画布又写成 `Use login shell`，以本条为准 | §2.2 Service 视图 |
 | C3 | General 的 `Restart Services that crash` 是新 Service 的默认值；Service 级开关覆盖它；改全局不改写已有 Service | 不变 | §2.3 General |
 | C4 | MVP 日志补：隐式自动滚动、丢弃行数提示、`Export…`。级别过滤放到第二阶段 | **已取消**（2026-11-11）。日志改在控制台里看，没有 Logs 视图（[ADR-0008](adr/0008-logs-open-in-console.md)） | §2.2 Logs、§7 |

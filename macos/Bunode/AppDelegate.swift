@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 : (String(localized: "Quit Bunode?"),
                    String(localized: "\(count) Services are running. Bunode stops every Run before it quits, so it never leaves processes behind."),
                    String(localized: "Stop \(count) Services and Quit"))
-            let alert = NSAlert()
+            let alert = NSAlert.withAppIcon()
             alert.messageText = title
             alert.informativeText = text
             alert.addButton(withTitle: confirm)
@@ -122,5 +122,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSettings(pane: SettingsPane?, addProject: Bool) {
         statusItem?.closePopover()
         settingsWindow?.show(pane: pane, addProject: addProject)
+    }
+
+    // MARK: App and Help menus
+
+    /// The standard About panel: icon, name, `Version 0.1.0 (42)` from the
+    /// bundle (scripts/version.sh), the copyright and a link to the repository.
+    @objc func showAbout(_ sender: Any?) {
+        let credits = NSMutableAttributedString(
+            string: String(localized: "A menu bar home for your Node.js and Bun dev servers."),
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
+        )
+        credits.append(NSAttributedString(string: "\n"))
+        credits.append(NSAttributedString(
+            string: "github.com/imal1/bunode",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .link: MainMenu.repository]
+        ))
+        let centered = NSMutableParagraphStyle()
+        centered.alignment = .center
+        credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
+        NSApp.activate()
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits, .applicationIcon: AppIcon.image])
+    }
+
+    @objc func openRepository(_ sender: Any?) {
+        NSWorkspace.shared.open(MainMenu.repository)
+    }
+
+    /// The GitHub release of this version; its notes come from CHANGELOG.md.
+    @objc func openReleaseNotes(_ sender: Any?) {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        NSWorkspace.shared.open(MainMenu.repository.appending(path: "releases/tag/v\(version)"))
+    }
+
+    @objc func reportIssue(_ sender: Any?) {
+        NSWorkspace.shared.open(MainMenu.repository.appending(path: "issues/new"))
     }
 }
