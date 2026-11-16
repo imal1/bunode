@@ -6,7 +6,7 @@ DERIVED_DATA  := build/DerivedData
 PROJECT       := macos/Bunode.xcodeproj
 APP           := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/Bunode.app
 XCODEBUILD    := xcodebuild -project $(PROJECT) -scheme Bunode -derivedDataPath $(DERIVED_DATA)
-# One version for the crates and the app: Cargo.toml (scripts/version.sh).
+# 0.1.N, N being the commit count (scripts/version.sh).
 VERSION       := $(shell scripts/version.sh)
 BUILD         := $(shell scripts/version.sh --build)
 ZIP           := build/Bunode-$(VERSION).zip

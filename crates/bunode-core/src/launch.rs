@@ -184,6 +184,7 @@ mod tests {
             port: None,
             run_through_shell: false,
             env: Default::default(),
+            start_with_bunode: false,
             runs: 0,
         }
     }

@@ -85,6 +85,9 @@ pub struct Service {
     pub run_through_shell: bool,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Start a Run each time Bunode itself starts (requirements §3.8).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub start_with_bunode: bool,
     /// How many Runs this Service has had; the next Run is `runs + 1`.
     #[serde(default)]
     pub runs: u64,

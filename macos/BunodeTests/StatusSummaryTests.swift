@@ -31,7 +31,7 @@ struct StatusSummaryTests {
 private func service(command: String = "x", port: UInt16? = nil, live: [UInt16] = [], endedBy: RunEnd? = nil) -> ServiceState {
     ServiceState(
         id: 1, projectId: 1, name: "dev", displayName: "dev", command: command, folder: nil,
-        port: port, runThroughShell: false, status: .running, runNumber: 1, pid: 10,
+        port: port, runThroughShell: false, startWithBunode: false, startupConflict: nil, status: .running, runNumber: 1, pid: 10,
         lastExit: nil, hasPendingConfig: false, endedBy: endedBy,
         livePorts: live
     )

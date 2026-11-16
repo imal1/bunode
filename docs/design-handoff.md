@@ -204,7 +204,7 @@ agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launc
 - 端口冲突提示（如有，外边距 0/2/10，见 §5.3）。
 - 可滚动内容，三张卡片（卡片：左右外边距 2，下 10，圆角 10，背景 `card-bg`；卡片内行：最小高 38，padding 4/12，间距 10，行间 1 pt `separator`）：
   1. `Command`（输入框 180 宽 mono）· `Folder`（路径 11 pt mono 省略 + `Change…`）· `Port`（副标题 `Checked before each start`，输入框 64 宽右对齐，placeholder `none`）
-  2. `Restart if it crashes`（开关，`Pauses after 3 crashes in 60 s`）· `Run through shell`（开关，`For pipes, && and globs`，默认关，C2）· `Environment`（`2 variables` / `None · .env files are not read` + `Edit…`）
+  2. `Restart if it crashes`（开关，`Pauses after 3 crashes in 60 s`）· `Run through shell`（开关，`For pipes, && and globs`，默认关，C2）· `Start with Bunode`（开关，`Each time Bunode opens`，默认关，2026-11-16 加，需求 §3.8；单独保存，不出现“下次 Run 生效”横条）· `Environment`（`2 variables` / `None · .env files are not read` + `Edit…`）
   3. `Logs` 整行按钮：右侧 `N lines`（12，`label-secondary`）+ 9 pt chevron
 - “已保存，下次 Run 生效”横条（见 §5.4）：外边距 0/2/10，padding 0/4/0/10，最小高 32，圆角 8。
 - `Delete Service…` 文字按钮（12 pt，`status-error-text`，外边距 2/10/6）或其内联确认卡片（外边距 0/2/6，padding 10，圆角 9）。
@@ -256,7 +256,7 @@ agent（首版只有 Claude 桌面 App）按 Project 根目录的 `.claude/launc
 
 | 分组 | 行 | 控件 | 默认 |
 |---|---|---|---|
-| App | Open at login · `Bunode lives in the menu bar.` | Switch | **Off**（首次启动不自动注册登录项，由用户自己打开） |
+| App | Open at login · `Bunode lives in the menu bar.` | Switch | **Off**（首次启动不自动注册登录项，由用户自己打开）。开关显示 macOS 登录项的真实状态；注册或注销失败时帮助文字换成红色的原因（`Couldn’t add Bunode to Login Items: …`）；等待用户允许时下面多一行 `Needs your approval` · `Allow Bunode under Login Items in System Settings.` + `Open System Settings` 按钮。回到 Settings 窗口时重新读取状态 |
 | App | Show running count · `Next to the menu bar icon.` | Switch | On |
 | Runs | Restart Services that crash · `Up to 3 times a minute, then it waits for you.` | Switch | On（C3：只作新 Service 的默认值） |
 | Runs | Notify on crash · `One notification per crash.` | Switch | On |
@@ -633,6 +633,9 @@ UI 只读 Supervisor 推导的状态（`ServiceState`：`id`、`project_id`、`n
 | `Language` · `Applies after Bunode restarts.` · `System` | `语言` · `重启 Bunode 后生效。` · `跟随系统` |
 | `Restart Bunode to apply.` · `Restart Now` | `重启 Bunode 后生效。` · `立即重启` |
 | `Show dev servers started by agents` | `显示 agent 启动的开发服务` |
+| `Open at login` · `Bunode lives in the menu bar.` | `登录时启动 Bunode` · `Bunode 常驻菜单栏。` |
+| `Start with Bunode` · `Each time Bunode opens` | `随 Bunode 启动` · `每次打开 Bunode 时启动一次` |
+| `Didn’t start with Bunode: port %@ was used by “%@” from %@.` | `未随 Bunode 启动：端口 %@ 当时被“%@”（来自 %@）占用。` |
 | `Servers an agent such as Claude starts from its launch settings in a Project's folder. You can stop them here.` | `由 Claude 等 agent 按其启动配置在项目目录中运行的服务，可在此停止。` |
 | `Restart Bunode?` · `Stop %d Services and Restart` | `重启 Bunode？` · `停止 %d 个服务并重启` |
 | `Quit Bunode?` · `Stop %d Services and Quit` | `退出 Bunode？` · `停止 %d 个服务并退出` |

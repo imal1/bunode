@@ -2300,6 +2300,116 @@
           }
         }
       }
+    },
+    "Open at login": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录时启动 Bunode"
+          }
+        }
+      }
+    },
+    "Bunode lives in the menu bar.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bunode 常驻菜单栏。"
+          }
+        }
+      }
+    },
+    "Needs your approval": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要你的允许"
+          }
+        }
+      }
+    },
+    "Allow Bunode under Login Items in System Settings.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“系统设置”的“登录项”中允许 Bunode。"
+          }
+        }
+      }
+    },
+    "Open System Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开系统设置"
+          }
+        }
+      }
+    },
+    "Couldn’t add Bunode to Login Items: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法将 Bunode 添加到登录项：%@"
+          }
+        }
+      }
+    },
+    "Couldn’t remove Bunode from Login Items: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法从登录项中移除 Bunode：%@"
+          }
+        }
+      }
+    },
+    "Start with Bunode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随 Bunode 启动"
+          }
+        }
+      }
+    },
+    "Each time Bunode opens": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次打开 Bunode 时启动一次"
+          }
+        }
+      }
+    },
+    "Didn’t start with Bunode: port %@ was used by another program.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未随 Bunode 启动：端口 %@ 当时被其他程序占用。"
+          }
+        }
+      }
+    },
+    "Didn’t start with Bunode: port %@ was used by “%@” from %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未随 Bunode 启动：端口 %@ 当时被“%@”（来自 %@）占用。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

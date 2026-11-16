@@ -186,6 +186,11 @@ pub struct ServiceState {
     pub folder: Option<String>,
     pub port: Option<u16>,
     pub run_through_shell: bool,
+    /// A Run starts each time Bunode itself starts.
+    pub start_with_bunode: bool,
+    /// Bunode started and was to start this Service, but its Port was
+    /// taken. Kept until the Service starts or the user dismisses it.
+    pub startup_conflict: Option<PortConflict>,
     pub status: RunStatus,
     /// The current Run's number, else the last one's; `None` before the
     /// first Run.
@@ -261,6 +266,26 @@ pub enum StartOutcome {
         /// The first free port after it, for `Use :N`.
         suggestion: Option<u16>,
     },
+}
+
+/// A Port that was taken when a Service was to start with Bunode.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PortConflict {
+    pub port: u16,
+    /// Who held it, when it was one of the user's processes.
+    pub owner: Option<PortConflictOwner>,
+    /// The first free port after it, for `Use :N`.
+    pub suggestion: Option<u16>,
+}
+
+impl From<PortConflict> for StartOutcome {
+    fn from(conflict: PortConflict) -> StartOutcome {
+        StartOutcome::PortInUse {
+            port: conflict.port,
+            owner: conflict.owner,
+            suggestion: conflict.suggestion,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

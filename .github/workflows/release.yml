@@ -1,11 +1,16 @@
 name: Release
 
-# Push a tag vX.Y.Z (scripts/version.sh --set X.Y.Z first) to build a
-# universal Bunode.app and publish it as a GitHub release, with that
-# version's CHANGELOG.md section as the notes.
+# Push the tag scripts/version.sh --release made (v0.1.N, N being the
+# commit count) to build a universal Bunode.app and publish it as a GitHub
+# release, with that version's CHANGELOG.md section as the notes. A tag
+# with a suffix (v0.1.N-pre.1, from any branch) publishes a pre-release
+# of that commit, with the Unreleased section as the notes. So does
+# running this workflow by hand on a branch: it tags the branch's head
+# v0.1.N-pre.<run number> itself.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -20,16 +25,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # The build number is the commit count.
+          # The version's last number is the commit count.
           fetch-depth: 0
 
-      - name: Check the tag matches Cargo.toml
+      - name: Check the tag is this commit's version
+        if: github.event_name == 'push'
         run: |
-          version=$(scripts/version.sh)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME, but Cargo.toml says $version"
-            exit 1
-          fi
+          tag=$(scripts/version.sh --tag)
+          case "$GITHUB_REF_NAME" in
+            "$tag" | "$tag"-*) ;;
+            *)
+              echo "::error::Tag $GITHUB_REF_NAME, but this commit is $tag (scripts/version.sh --release tags the right one)"
+              exit 1
+              ;;
+          esac
 
       - name: Install tools
         run: |
@@ -46,17 +55,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(scripts/version.sh)
-          awk -v v="$version" '
+          # A pre-release has no section of its own yet.
+          section=$version
+          tag=$GITHUB_REF_NAME
+          kind=(--verify-tag)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            # Run by hand: the release makes the tag, on this commit.
+            tag="v$version-pre.$GITHUB_RUN_NUMBER"
+            kind=(--target "$GITHUB_SHA")
+          fi
+          if [ "$tag" != "v$version" ]; then
+            section=Unreleased
+            kind+=(--prerelease)
+          fi
+          awk -v v="$section" '
             $0 ~ "^## \\[" v "\\]" { on = 1; next }
             on && /^## \[/ { exit }
             on && /^\[[^]]+\]: / { exit }
             on { print }
           ' CHANGELOG.md > notes.md
+          # A tag pushed without a CHANGELOG section gets the commits since
+          # the last release as its notes.
+          generate=()
+          if ! grep -q '[^[:space:]]' notes.md; then
+            generate=(--generate-notes)
+          fi
           cat >> notes.md <<'EOF'
 
           ### Install
 
           Unzip, move **Bunode.app** to Applications and open it. This build is not notarized yet, so the first time, Control-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Bunode.app`.
           EOF
-          gh release create "$GITHUB_REF_NAME" "build/Bunode-$version.zip" \
-            --title "Bunode $version" --notes-file notes.md
+          gh release create "$tag" "build/Bunode-$version.zip" \
+            --title "Bunode ${tag#v}" --notes-file notes.md "${kind[@]}" "${generate[@]}"

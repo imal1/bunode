@@ -39,6 +39,7 @@ struct SettingsView: View {
     let model: AppModel
     @Bindable var navigation: SettingsNavigation
     @State private var toaster = Toaster()
+    @State private var loginItem = LoginItemModel()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -66,7 +67,7 @@ struct SettingsView: View {
                 .accessibilityAddTraits(.isHeader)
             switch pane {
             case .general:
-                GeneralPane(model: model)
+                GeneralPane(model: model, loginItem: loginItem)
             case .projects:
                 ProjectsPane(model: model, navigation: navigation, toaster: toaster)
             case .advanced:
@@ -109,10 +110,32 @@ private struct SettingsSidebar: View {
 
 struct GeneralPane: View {
     let model: AppModel
+    let loginItem: LoginItemModel
 
     var body: some View {
         Form {
             Section("App") {
+                Toggle(isOn: Binding(
+                    get: { loginItem.isOn },
+                    set: { loginItem.set($0) }
+                )) {
+                    Text("Open at login")
+                    if let problem = loginItem.problem {
+                        Text(problem)
+                            .foregroundStyle(Color(nsColor: .systemRed))
+                            .help(problem)
+                    } else {
+                        Text("Bunode lives in the menu bar.")
+                    }
+                }
+                if loginItem.status == .needsApproval {
+                    LabeledContent {
+                        Button("Open System Settings") { loginItem.openSystemSettings() }
+                    } label: {
+                        Text("Needs your approval")
+                        Text("Allow Bunode under Login Items in System Settings.")
+                    }
+                }
                 Toggle(isOn: Binding(
                     get: { model.snapshot.settings.showRunningCount },
                     set: { model.setShowRunningCount($0) }
@@ -143,6 +166,14 @@ struct GeneralPane: View {
         .formStyle(.grouped)
         .toggleStyle(.switch)
         .controlSize(.small)
+        // The user may have changed the login item in System Settings.
+        .onAppear { loginItem.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            loginItem.refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            loginItem.refresh()
+        }
     }
 }
 

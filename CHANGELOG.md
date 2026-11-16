@@ -1,10 +1,19 @@
 # Changelog
 
-Every notable change to Bunode. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/). A release's notes on GitHub are its section below.
+Every notable change to Bunode. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions are `0.1.N`, N being the number of commits up to the release (0.1.0 and 0.1.1 came before this). A release's notes on GitHub are its section below.
 
-To release: `scripts/version.sh --set X.Y.Z` turns **Unreleased** into a dated section, then commit and push the tag `vX.Y.Z`; the Release workflow builds the app and publishes it.
+To release: `scripts/version.sh --release` turns **Unreleased** into a dated section, commits and tags it; pushing the tag makes the Release workflow build the app and publish it.
 
 ## [Unreleased]
+
+### Added
+
+- Open at login in Settings › General: macOS opens Bunode in the menu bar when you log in. Off until you turn it on.
+- Start with Bunode on each Service: the Service gets a Run every time Bunode opens, whether you opened it or macOS did. A Service whose port is taken or whose command can't start says so on its own row, and the others still start.
+
+### Changed
+
+- Versions are now `0.1.N`, where N counts the commits, so every build has its own version and each release is higher than the last.
 
 ## [0.1.1] - 2026-11-16
 

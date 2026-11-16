@@ -28,9 +28,9 @@ use crate::model::{Config, ListLayout, PackageManager, Project, ProjectId, Servi
 use crate::package::{self, Detection};
 use crate::snapshot::{
     AddProjectOutcome, AgentServerState, ConfigIssue, EnvironmentProblem, EnvironmentState,
-    NewService, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus,
-    ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome,
-    Tool, ToolState,
+    NewService, PortConflict, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote,
+    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot,
+    StartOutcome, Tool, ToolState,
 };
 use crate::store::ConfigStore;
 
@@ -126,6 +126,8 @@ struct State {
     environment: EnvironmentInfo,
     /// `Use :N`: the `PORT` of a Service's next Run only.
     port_overrides: HashMap<ServiceId, u16>,
+    /// Services that were to start with Bunode and found their Port taken.
+    startup_conflicts: HashMap<ServiceId, PortConflict>,
     /// Projects to remove once their last live Run has ended.
     removing_projects: std::collections::HashSet<ProjectId>,
     /// Node and Bun processes Bunode did not start, from the last scan.
@@ -222,6 +224,15 @@ impl Supervisor {
             .iter()
             .map(|p| (p.id, package::detect(&p.path)))
             .collect();
+        // The Services to start with Bunode are the ones chosen before
+        // this launch: one switched on from now on waits for the next.
+        let chosen: Vec<ServiceId> = config
+            .projects
+            .iter()
+            .flat_map(|p| &p.services)
+            .filter(|s| s.start_with_bunode)
+            .map(|s| s.id)
+            .collect();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("bunode-supervisor")
@@ -253,6 +264,7 @@ impl Supervisor {
                         tools_lookup: 0,
                     },
                     port_overrides: HashMap::new(),
+                    startup_conflicts: HashMap::new(),
                     removing_projects: Default::default(),
                     discovered: Vec::new(),
                     exiting: Default::default(),
@@ -274,11 +286,11 @@ impl Supervisor {
             }),
             runtime,
         };
-        supervisor.reload_environment();
+        let environment = supervisor.load_environment();
         supervisor.shared.refresh_launch_files(None);
         let shared = supervisor.shared.clone();
         supervisor.runtime.spawn(discover(shared));
-        if !leftover.is_empty() {
+        let cleanup = (!leftover.is_empty()).then(|| {
             let shared = supervisor.shared.clone();
             supervisor.runtime.spawn_blocking(move || {
                 shared.diagnostics.log(&format!(
@@ -288,8 +300,21 @@ impl Supervisor {
                 for line in leftovers::clean_up(&leftover, Duration::from_secs(3)) {
                     shared.diagnostics.log(&line);
                 }
-            });
-        }
+            })
+        });
+        // Services that start with Bunode wait for both: a leftover Run
+        // may still hold their port, and before the login shell answers
+        // PATH is the app's own. Both give up after a few seconds.
+        let shared = supervisor.shared.clone();
+        supervisor.runtime.spawn(async move {
+            if let Some(cleanup) = cleanup {
+                let _ = cleanup.await;
+            }
+            if let Some(environment) = environment {
+                let _ = environment.await;
+            }
+            let _ = tokio::task::spawn_blocking(move || shared.start_with_bunode(&chosen)).await;
+        });
         supervisor
     }
 
@@ -424,16 +449,21 @@ impl Supervisor {
     /// Reads the login shell's environment again, in the background. New
     /// Runs get it; running ones keep theirs.
     pub fn reload_environment(&self) {
+        self.load_environment();
+    }
+
+    /// The task reading the environment; `None` when one is already at it.
+    fn load_environment(&self) -> Option<tokio::task::JoinHandle<()>> {
         {
             let mut state = self.shared.lock();
             if state.environment.loading {
-                return;
+                return None;
             }
             state.environment.loading = true;
         }
         self.shared.notifier.notify();
         let shared = self.shared.clone();
-        self.runtime.spawn(async move {
+        Some(self.runtime.spawn(async move {
             let captured = match &shared.login_shell {
                 Some(shell) => {
                     env::capture(shell, shared.environment_timeout, &shared.spawn_lock).await
@@ -456,7 +486,7 @@ impl Supervisor {
             resolve_tools(&shared).await;
             shared.lock().environment.loading = false;
             shared.notifier.notify();
-        });
+        }))
     }
 
     /// Advanced › Node.js / Bun › Change…: use this executable instead of
@@ -647,13 +677,14 @@ impl Supervisor {
             port: None,
             run_through_shell: false,
             env: Default::default(),
+            start_with_bunode: false,
             runs: 0,
         };
         let project = config
             .project_mut(project_id)
             .ok_or(Error::UnknownProject)?;
         project.services.push(service.clone());
-        let added = service_state(project, &service, None);
+        let added = service_state(project, &service, None, None);
         self.shared.save(&config)?;
         state.config = config;
         drop(state);
@@ -892,6 +923,42 @@ impl Supervisor {
         Ok(())
     }
 
+    /// The Service view's Start with Bunode: whether a Run starts each time
+    /// Bunode itself starts. Nothing starts or stops now, and a live Run
+    /// has nothing to apply.
+    pub fn set_start_with_bunode(&self, service_id: ServiceId, start: bool) -> Result<()> {
+        let mut state = self.shared.lock();
+        let project_id = find_service(&state.config, service_id)?.0.id;
+        let mut config = state.config.clone();
+        let service = config
+            .project_mut(project_id)
+            .and_then(|p| p.services.iter_mut().find(|s| s.id == service_id))
+            .ok_or(Error::UnknownService)?;
+        if service.start_with_bunode == start {
+            return Ok(());
+        }
+        service.start_with_bunode = start;
+        self.shared.save(&config)?;
+        state.config = config;
+        drop(state);
+        self.shared.notifier.notify();
+        Ok(())
+    }
+
+    /// Takes away the note that the Service's Port was taken when Bunode
+    /// started.
+    pub fn dismiss_startup_conflict(&self, service_id: ServiceId) {
+        let dismissed = self
+            .shared
+            .lock()
+            .startup_conflicts
+            .remove(&service_id)
+            .is_some();
+        if dismissed {
+            self.shared.notifier.notify();
+        }
+    }
+
     /// Deletes a Service from Bunode. A live Run is stopped first; the
     /// configuration goes once the Supervisor has seen the Run end. The
     /// Project's files are never touched; the Service's own log files are.
@@ -935,9 +1002,9 @@ impl Supervisor {
             find_service(&state.config, service_id)?.1.port
         };
         if let Some(port) = port
-            && let Some(conflict) = self.port_conflict(port)
+            && let Some(conflict) = self.shared.port_conflict(port)
         {
-            return Ok(conflict);
+            return Ok(conflict.into());
         }
         self.shared.start(service_id)?;
         Ok(StartOutcome::Started)
@@ -946,55 +1013,12 @@ impl Supervisor {
     /// Port conflict › Use :N: starts this one Run with `PORT=N`. The
     /// Service's own Port stays as it is.
     pub fn start_with_port(&self, service_id: ServiceId, port: u16) -> Result<StartOutcome> {
-        if let Some(conflict) = self.port_conflict(port) {
-            return Ok(conflict);
+        if let Some(conflict) = self.shared.port_conflict(port) {
+            return Ok(conflict.into());
         }
         self.shared.lock().port_overrides.insert(service_id, port);
         self.shared.start(service_id)?;
         Ok(StartOutcome::Started)
-    }
-
-    /// Whether `port` is free for this Mac's user; the conflict when not.
-    fn port_conflict(&self, port: u16) -> Option<StartOutcome> {
-        // One of Bunode's own Runs?
-        let own = {
-            let state = self.shared.lock();
-            state
-                .runs
-                .iter()
-                .find_map(|(id, run)| {
-                    (run.status.is_live() && run.ports.contains(&port)).then(|| {
-                        let name = find_service(&state.config, *id)
-                            .map(|(p, s)| format!("{} › {}", p.display_name(), s.name))
-                            .unwrap_or_default();
-                        PortConflictOwner {
-                            pid: run.pid.unwrap_or(0),
-                            command: name,
-                            source: Some("Bunode".into()),
-                            service_id: Some(*id),
-                            agent_server: false,
-                        }
-                    })
-                })
-                .or_else(|| agent_server_owner(&state.agent_servers, port))
-        };
-        let owner = own.or_else(|| {
-            crate::discovery::port_owner(port).map(|o| PortConflictOwner {
-                pid: o.pid,
-                command: o.command,
-                source: o.source,
-                service_id: None,
-                agent_server: false,
-            })
-        });
-        if owner.is_none() && !crate::discovery::port_in_use(port) {
-            return None;
-        }
-        Some(StartOutcome::PortInUse {
-            port,
-            owner,
-            suggestion: crate::discovery::next_free_port(port),
-        })
     }
 
     /// Whether something listens on `port`; the port conflict bar goes
@@ -1098,6 +1122,84 @@ impl Drop for Supervisor {
 }
 
 impl Shared {
+    /// Bunode has just started: starts a Run of every Service that was set
+    /// to start with it, once. Each is on its own: one that can't start doesn't
+    /// keep the others from starting, and none is tried again.
+    fn start_with_bunode(self: &Arc<Self>, chosen: &[ServiceId]) {
+        // Without the ones switched off or deleted in the meantime.
+        let services: Vec<(ServiceId, Option<u16>)> = self
+            .lock()
+            .config
+            .projects
+            .iter()
+            .flat_map(|p| &p.services)
+            .filter(|s| s.start_with_bunode && chosen.contains(&s.id))
+            .map(|s| (s.id, s.port))
+            .collect();
+        if services.is_empty() {
+            return;
+        }
+        self.diagnostics
+            .log(&format!("Starting {} Services with Bunode", services.len()));
+        for (service_id, port) in services {
+            if let Some(port) = port
+                && let Some(conflict) = self.port_conflict(port)
+            {
+                self.diagnostics.log(&format!(
+                    "Service {service_id} didn't start with Bunode: port {port} is taken"
+                ));
+                self.lock().startup_conflicts.insert(service_id, conflict);
+                self.notifier.notify();
+                continue;
+            }
+            // A Service deleted since is the only way this fails.
+            let _ = self.start(service_id);
+        }
+    }
+
+    /// Whether `port` is free for this Mac's user; the conflict when not.
+    fn port_conflict(&self, port: u16) -> Option<PortConflict> {
+        // One of Bunode's own Runs?
+        let own = {
+            let state = self.lock();
+            state
+                .runs
+                .iter()
+                .find_map(|(id, run)| {
+                    (run.status.is_live() && run.ports.contains(&port)).then(|| {
+                        let name = find_service(&state.config, *id)
+                            .map(|(p, s)| format!("{} › {}", p.display_name(), s.name))
+                            .unwrap_or_default();
+                        PortConflictOwner {
+                            pid: run.pid.unwrap_or(0),
+                            command: name,
+                            source: Some("Bunode".into()),
+                            service_id: Some(*id),
+                            agent_server: false,
+                        }
+                    })
+                })
+                .or_else(|| agent_server_owner(&state.agent_servers, port))
+        };
+        let owner = own.or_else(|| {
+            crate::discovery::port_owner(port).map(|o| PortConflictOwner {
+                pid: o.pid,
+                command: o.command,
+                source: o.source,
+                service_id: None,
+                agent_server: false,
+            })
+        });
+        if owner.is_none() && !crate::discovery::port_in_use(port) {
+            return None;
+        }
+        Some(PortConflict {
+            port,
+            owner,
+            suggestion: crate::discovery::next_free_port(port),
+        })
+    }
+
     /// Starts a Run of the Service, unless one is already live.
     fn start(self: &Arc<Self>, service_id: ServiceId) -> Result<()> {
         let mut state = self.lock();
@@ -1109,6 +1211,7 @@ impl Shared {
             return Ok(());
         }
         let port_override = state.port_overrides.remove(&service_id);
+        state.startup_conflicts.remove(&service_id);
         let (project, service) = find_service(&state.config, service_id)?;
         let mut spec =
             launch::launch_spec(project, service, &state.config.settings, &state.base_env);
@@ -1240,6 +1343,7 @@ impl Shared {
         self.save(&config)?;
         state.config = config;
         state.runs.remove(&service_id);
+        state.startup_conflicts.remove(&service_id);
         drop(state);
         self.log_files.remove_service(service_id);
         if let Some(project_id) = project_id {
@@ -1604,7 +1708,12 @@ fn effective_manager(
         .unwrap_or_else(|| detection_of(project, detections).manager)
 }
 
-fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -> ServiceState {
+fn service_state(
+    project: &Project,
+    service: &Service,
+    run: Option<&RunEntry>,
+    startup_conflict: Option<&PortConflict>,
+) -> ServiceState {
     // A Service in a subfolder shows the folder's name first: "web › dev".
     let display_name = match service.folder.as_deref().and_then(Path::file_name) {
         Some(folder) => format!("{} › {}", folder.to_string_lossy(), service.name),
@@ -1619,6 +1728,8 @@ fn service_state(project: &Project, service: &Service, run: Option<&RunEntry>) -
         folder: service.folder.as_ref().map(|f| f.display().to_string()),
         port: service.port,
         run_through_shell: service.run_through_shell,
+        start_with_bunode: service.start_with_bunode,
+        startup_conflict: startup_conflict.cloned(),
         status: run.map_or(RunStatus::Stopped, |r| r.status),
         run_number: run.map(|r| r.run_number),
         pid: run.and_then(|r| r.pid),
@@ -1657,7 +1768,14 @@ fn project_state(project: &Project, state: &State) -> ProjectState {
         services: project
             .services
             .iter()
-            .map(|s| service_state(project, s, state.runs.get(&s.id)))
+            .map(|s| {
+                service_state(
+                    project,
+                    s,
+                    state.runs.get(&s.id),
+                    state.startup_conflicts.get(&s.id),
+                )
+            })
             .collect(),
         agent_servers: state
             .agent_servers
@@ -2140,6 +2258,34 @@ mod tests {
         assert_eq!(service.command, "vite --port 4321");
         assert_eq!(service.folder.as_deref(), Some("apps/web"));
         assert_eq!(service.port, Some(4321));
+        assert!(!service.has_pending_config);
+    }
+
+    #[test]
+    fn start_with_bunode_is_off_until_chosen_and_kept() {
+        let data = tempfile::tempdir().unwrap();
+        let code = tempfile::tempdir().unwrap();
+        let (supervisor, _) = open(data.path());
+        let project = added_project(&supervisor, code.path());
+        let id = supervisor
+            .add_service(project.id, new_service("dev", "bun run dev"))
+            .unwrap()
+            .id;
+        let saved = || fs::read_to_string(data.path().join("config.json")).unwrap();
+        assert!(!supervisor.snapshot().projects[0].services[0].start_with_bunode);
+        // A configuration from before the setting has no such field, and
+        // reads as off.
+        assert!(!saved().contains("startWithBunode"));
+
+        supervisor.set_start_with_bunode(id, true).unwrap();
+        assert!(saved().contains("\"startWithBunode\": true"));
+        assert!(supervisor.set_start_with_bunode(id + 100, true).is_err());
+        drop(supervisor);
+
+        let (reloaded, _) = open(data.path());
+        let service = reloaded.snapshot().projects[0].services[0].clone();
+        assert!(service.start_with_bunode);
+        assert_eq!(service.command, "bun run dev", "the rest is as it was");
         assert!(!service.has_pending_config);
     }
 

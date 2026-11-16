@@ -346,8 +346,14 @@ Popover 与 Settings 窗口共用同一状态来源（Supervisor），避免状�
 
 支持：
 
-- macOS 登录时启动 Bunode（默认关闭，由用户在 Settings 中开启）。
-- 登录时自动启动指定 Service。
+- macOS 登录时启动 Bunode（默认关闭，由用户在 Settings › General 中开启）。用 macOS 原生登录项（`SMAppService.mainApp`），语义是用户登录后打开菜单栏 App，不是登录前运行的系统服务；开关显示系统里的真实状态，注册失败或等待用户在系统设置中允许时说明原因。它只决定是否打开 App，不启动或停止任何 Service。
+- 每次 Bunode 启动时启动指定 Service（Service 视图的 `Start with Bunode`，默认关闭）。与上一项互相独立：不论 Bunode 是登录时自动打开、手动打开、升级后重新打开还是切换语言后重启，每个勾选的 Service 在这次启动中启动一次；一次性 Service 也可勾选。规则：
+  - 在遗留 Run 清理完、登录 shell 环境读完之后才启动（读取失败时沿用 Bunode 自身环境，见 3.9），两者都有超时，不无限等待。
+  - 只认启动那一刻已保存的勾选。Bunode 运行中勾选不立即启动，取消不停止当前 Run，也不产生“下次 Run 生效”的提示。
+  - 各 Service 独立启动，一个失败不影响其他；不保证顺序，不等待就绪。
+  - 走与手动 Start 相同的流程和校验。目录缺失、命令无法启动时该 Service 为 Failed 并带原因；端口被占用时该 Service 行下保留一条说明，直到用户处理。多个失败同时可见。不弹窗，不自动换端口，不自动重试。
+  - 用户手动停止后本次不再拉起；下次启动仍按勾选启动，不恢复上次的运行状态。
+  - Discovered Process 和 Agent Server 没有这个开关。
 - Bunode 意外退出后清理遗留 Run（见 3.2）。
 - 项目异常退出时按策略重启。
 
@@ -447,7 +453,7 @@ Claude 等 agent 会按自己的启动配置在 Project 根目录里跑开发服
 
 **General**
 
-- 开机启动。
+- 登录时启动 Bunode（3.8）。
 - 是否在菜单栏图标旁显示运行数量。
 - 自动重启的全局默认值（3.1）。
 - 崩溃通知。

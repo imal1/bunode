@@ -62,6 +62,7 @@ A **Project** is a folder you register. A **Service** is something in it you run
 |---|---|
 | **Projects** | Add a folder in Settings and give it a short alias. npm, pnpm, Yarn and Bun are detected from the lockfile, with a picker when there are several. |
 | **Services** | Pick from the `package.json` scripts (common ones like `dev` and `start` first) or type any command. Monorepo packages from `workspaces` and `pnpm-workspace.yaml` are listed too. |
+| **At login** | Open Bunode when you log in, and have the Services you pick start each time Bunode opens. Both are off until you turn them on. |
 | **Runs** | Start, Stop, Restart. Short-lived scripts such as `build` are told apart from long-running servers. Stop sends SIGTERM first and force-quits after a timeout you set. |
 | **Environment** | Services run with your login shell's environment, so `nvm`, `fnm`, `volta` and your `PATH` work as they do in Terminal. |
 | **Ports** | Detected per Run, with Open in Browser. A busy port is caught before Start. |

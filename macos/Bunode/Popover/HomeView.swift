@@ -138,6 +138,11 @@ struct HomeView: View {
                 // Lined up with the row's text column.
                 RowNoticeView(model: model, router: router)
                     .padding(EdgeInsets(top: 2, leading: 50, bottom: 6, trailing: 8))
+            } else if let conflict = service.startupConflict {
+                // One under each Service that has one: they don't replace
+                // each other.
+                StartupConflictView(model: model, serviceID: service.id, conflict: conflict)
+                    .padding(EdgeInsets(top: 2, leading: 50, bottom: 6, trailing: 8))
             }
         }
         ForEach(project.agentServers, id: \.pid) { server in
@@ -709,6 +714,39 @@ struct RowNoticeView: View {
                 NSSound.beep()
             }
         }
+    }
+}
+
+/// The warning bar under a Service that was to start with Bunode and found
+/// its Port taken (requirements §3.8). It says what happened at launch, so
+/// it stays until the Service starts or the user dismisses it; nothing is
+/// tried again and no other port is picked.
+struct StartupConflictView: View {
+    let model: AppModel
+    let serviceID: UInt64
+    let conflict: PortConflict
+
+    var body: some View {
+        InlineNotice(
+            text: Self.text(conflict),
+            detail: conflict.suggestion.map { String(localized: "Sets PORT=\(String($0)) for this Run. Tools that ignore PORT need their own flag.") },
+            verticalPadding: 8
+        ) {
+            Button("Cancel") { model.dismissStartupConflict(serviceID) }
+                .buttonStyle(.borderless)
+            if let suggestion = conflict.suggestion {
+                Button("Use :\(String(suggestion))") { model.start(serviceID, port: suggestion) }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    /// `Didn’t start with Bunode: port 4321 was used by “astro dev” from Terminal.`
+    static func text(_ conflict: PortConflict) -> String {
+        guard let owner = conflict.owner else {
+            return String(localized: "Didn’t start with Bunode: port \(String(conflict.port)) was used by another program.")
+        }
+        return String(localized: "Didn’t start with Bunode: port \(String(conflict.port)) was used by “\(owner.command)” from \(sourceName(owner.source)).")
     }
 }
 

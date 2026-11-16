@@ -27,6 +27,19 @@
 - [ ] `Remove…`：没有 Run 时按钮为 `Remove`，有 Run 时为 `Stop 1 and Remove`；默认按钮是 Cancel（直接回车即取消）；确认后显示 Toast，Finder 里项目文件仍在
 - [ ] 在 Finder 里把一个已登记的项目文件夹改名：Home 和 Settings 出现警告；点该 Project 下某个 Service 的 Start，出现 `~/… is missing.` 和 `Locate…`；选中改名后的文件夹即恢复
 
+## 2a. 登录时启动与随 Bunode 启动（#36 #37）
+
+先把 Bunode.app 放进“应用程序”再做这一节；做完记得关掉 `Open at login`。
+
+- [ ] Settings › General 第一行是 `Open at login`，首次为关；用 Tab 能走到，VoiceOver 读出 `Open at login`
+- [ ] 打开它：系统设置 › 通用 › 登录项与扩展 里出现 Bunode；Bunode 没有退出，Service 的状态没有变化
+- [ ] 注销再登录：Bunode 出现在菜单栏，没有弹出 Settings 或 Popover
+- [ ] 在系统设置里把 Bunode 从登录项移除，回到 Settings 窗口：开关变回关
+- [ ] 关掉 `Open at login` 后注销再登录：Bunode 没有启动
+- [ ] 在一个 Service 的视图里打开 `Start with Bunode`：它没有立刻启动，也没有出现 `Saved. Applies on the next Run.`；对一个正在运行的 Service 开、关都不影响它
+- [ ] 退出 Bunode 再手动打开（`Open at login` 为关）：勾选的 Service 自动启动一次，没勾选的不动；点 Stop 后不再被拉起；再点菜单栏图标不会重复启动
+- [ ] 给两个勾选的 Service 各设一个已被占用的 Port，再加一个命令不存在的，重新打开 Bunode：前两个行下各有一条 `Didn’t start with Bunode: port …`，第三个为 Failed，其余勾选的 Service 正常运行；没有弹窗
+
 ## 3. Service 的添加、编辑与删除（#3 #11 #12）
 
 - [ ] 点 Project 小标题的 `+` 打开 New Service：显示脚本胶囊，默认选中第一个未被使用的脚本；pnpm 项目生成 `pnpm dev`、npm 项目生成 `npm run dev`
