@@ -31,9 +31,9 @@ pub use logs::LogStream;
 pub use model::{ListLayout, PackageManager};
 pub use snapshot::{
     AddProjectOutcome, AgentServerState, ConfigIssue, ConfigProblem, EnvironmentProblem,
-    EnvironmentState, NewService, PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote,
-    RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot,
-    StartOutcome, Tool, ToolState,
+    EnvironmentState, NewService, PortConflict, PortConflictOwner, ProjectScripts, ProjectState,
+    RunEnd, RunNote, RunStatus, ScriptGroup, ScriptOption, ServiceEdit, ServiceState,
+    SettingsState, Snapshot, StartOutcome, Tool, ToolState,
 };
 pub use supervisor::{FORCE_STOP_CHOICES, Listener, Supervisor, SupervisorOptions};
 

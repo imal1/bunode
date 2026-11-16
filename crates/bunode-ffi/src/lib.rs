@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use bunode_core::{
     AddProjectOutcome, AgentServerState, ConfigIssue, ConfigProblem, DiscoveredProcess,
-    EnvironmentProblem, EnvironmentState, ListLayout, NewService, PackageManager,
+    EnvironmentProblem, EnvironmentState, ListLayout, NewService, PackageManager, PortConflict,
     PortConflictOwner, ProjectScripts, ProjectState, RunEnd, RunNote, RunStatus, ScriptGroup,
     ScriptOption, ServiceEdit, ServiceState, SettingsState, Snapshot, StartOutcome, Tool,
     ToolState,
@@ -145,6 +145,8 @@ pub struct ServiceState {
     pub folder: Option<String>,
     pub port: Option<u16>,
     pub run_through_shell: bool,
+    pub start_with_bunode: bool,
+    pub startup_conflict: Option<PortConflict>,
     pub status: RunStatus,
     pub run_number: Option<u64>,
     pub pid: Option<u32>,
@@ -248,6 +250,13 @@ pub enum StartOutcome {
         owner: Option<PortConflictOwner>,
         suggestion: Option<u16>,
     },
+}
+
+#[uniffi::remote(Record)]
+pub struct PortConflict {
+    pub port: u16,
+    pub owner: Option<PortConflictOwner>,
+    pub suggestion: Option<u16>,
 }
 
 #[uniffi::remote(Record)]
@@ -447,6 +456,17 @@ impl BunodeCore {
     /// Saves the Service view's settings; a live Run gets them next time.
     pub fn update_service(&self, service_id: u64, edit: ServiceEdit) -> Result<(), CoreError> {
         Ok(self.supervisor.update_service(service_id, edit)?)
+    }
+
+    /// The Service view's Start with Bunode. Nothing starts or stops now.
+    pub fn set_start_with_bunode(&self, service_id: u64, start: bool) -> Result<(), CoreError> {
+        Ok(self.supervisor.set_start_with_bunode(service_id, start)?)
+    }
+
+    /// Takes away the note that the Service's Port was taken when Bunode
+    /// started.
+    pub fn dismiss_startup_conflict(&self, service_id: u64) {
+        self.supervisor.dismiss_startup_conflict(service_id)
     }
 
     /// Deletes a Service, stopping its Run first. Returns at once.

@@ -39,6 +39,10 @@ struct LocalizationTests {
             ("Folder missing", "目录不存在"), ("Running…", "运行中…"), ("Done", "已完成"),
             ("Other processes", "其他进程"), ("%lld started outside Bunode", "%lld 个在 Bunode 外启动"),
             ("None right now", "暂无"),
+            // Open at login and Start with Bunode (#36, #37)
+            ("Open at login", "登录时启动 Bunode"), ("Start with Bunode", "随 Bunode 启动"),
+            ("Couldn’t add Bunode to Login Items: %@", "无法将 Bunode 添加到登录项：%@"),
+            ("Didn’t start with Bunode: port %@ was used by another program.", "未随 Bunode 启动：端口 %@ 当时被其他程序占用。"),
             // Typed errors and how a Run ended
             ("Exited with code %@", "已退出，代码 %@"), ("%@ wasn't found in PATH.", "在 PATH 中找不到 %@。"),
             ("The command has an unmatched quote.", "命令中的引号不成对。"),

@@ -153,6 +153,25 @@ final class AppModel {
         }
     }
 
+    /// The Service view's Start with Bunode: a Run each time Bunode itself
+    /// starts. Nothing starts or stops now. Returns why it couldn't be saved.
+    func setStartWithBunode(_ serviceID: UInt64, _ start: Bool) -> String? {
+        do {
+            try core.setStartWithBunode(serviceId: serviceID, start: start)
+            refresh()
+            return nil
+        } catch {
+            return error.userMessage
+        }
+    }
+
+    /// Takes away the bar saying the Service's Port was taken when Bunode
+    /// started.
+    func dismissStartupConflict(_ serviceID: UInt64) {
+        core.dismissStartupConflict(serviceId: serviceID)
+        refresh()
+    }
+
     /// Deletes a Service: its Run is stopped first, then the configuration
     /// goes. Returns the toast once the Supervisor has removed it.
     func deleteService(_ serviceID: UInt64) async -> String {

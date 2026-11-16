@@ -6,6 +6,11 @@ To release: `scripts/version.sh --set X.Y.Z` turns **Unreleased** into a dated s
 
 ## [Unreleased]
 
+### Added
+
+- Open at login in Settings › General: macOS opens Bunode in the menu bar when you log in. Off until you turn it on.
+- Start with Bunode on each Service: the Service gets a Run every time Bunode opens, whether you opened it or macOS did. A Service whose port is taken or whose command can't start says so on its own row, and the others still start.
+
 ## [0.1.1] - 2026-11-16
 
 ### Added

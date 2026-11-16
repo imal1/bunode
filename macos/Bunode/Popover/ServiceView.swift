@@ -41,6 +41,9 @@ struct ServiceView: View {
                 if model.rowNotice?.serviceID == serviceID {
                     RowNoticeView(model: model, router: router)
                         .padding(EdgeInsets(top: 0, leading: 2, bottom: 10, trailing: 2))
+                } else if let conflict = service.startupConflict {
+                    StartupConflictView(model: model, serviceID: serviceID, conflict: conflict)
+                        .padding(EdgeInsets(top: 0, leading: 2, bottom: 10, trailing: 2))
                 }
                 PopoverScroll {
                     VStack(alignment: .leading, spacing: 10) {
@@ -83,6 +86,15 @@ struct ServiceView: View {
                                 Toggle("Run through shell", isOn: Binding(
                                     get: { service.runThroughShell },
                                     set: { save(service, shell: $0) }
+                                ))
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                            }
+                            // Saved on its own: a live Run has nothing to apply.
+                            CardRow(title: "Start with Bunode", help: "Each time Bunode opens") {
+                                Toggle("Start with Bunode", isOn: Binding(
+                                    get: { service.startWithBunode },
+                                    set: { problem = model.setStartWithBunode(serviceID, $0) }
                                 ))
                                 .labelsHidden()
                                 .toggleStyle(.switch)
