@@ -4,10 +4,13 @@ name: Release
 # commit count) to build a universal Bunode.app and publish it as a GitHub
 # release, with that version's CHANGELOG.md section as the notes. A tag
 # with a suffix (v0.1.N-pre.1, from any branch) publishes a pre-release
-# of that commit, with the Unreleased section as the notes.
+# of that commit, with the Unreleased section as the notes. So does
+# running this workflow by hand on a branch: it tags the branch's head
+# v0.1.N-pre.<run number> itself.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,6 +29,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check the tag is this commit's version
+        if: github.event_name == 'push'
         run: |
           tag=$(scripts/version.sh --tag)
           case "$GITHUB_REF_NAME" in
@@ -53,12 +57,16 @@ jobs:
           version=$(scripts/version.sh)
           # A pre-release has no section of its own yet.
           section=$version
-          title="Bunode $version"
-          kind=()
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+          tag=$GITHUB_REF_NAME
+          kind=(--verify-tag)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            # Run by hand: the release makes the tag, on this commit.
+            tag="v$version-pre.$GITHUB_RUN_NUMBER"
+            kind=(--target "$GITHUB_SHA")
+          fi
+          if [ "$tag" != "v$version" ]; then
             section=Unreleased
-            title="Bunode ${GITHUB_REF_NAME#v}"
-            kind=(--prerelease)
+            kind+=(--prerelease)
           fi
           awk -v v="$section" '
             $0 ~ "^## \\[" v "\\]" { on = 1; next }
@@ -78,5 +86,5 @@ jobs:
 
           Unzip, move **Bunode.app** to Applications and open it. This build is not notarized yet, so the first time, Control-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Bunode.app`.
           EOF
-          gh release create "$GITHUB_REF_NAME" "build/Bunode-$version.zip" \
-            --verify-tag --title "$title" --notes-file notes.md "${kind[@]}" "${generate[@]}"
+          gh release create "$tag" "build/Bunode-$version.zip" \
+            --title "Bunode ${tag#v}" --notes-file notes.md "${kind[@]}" "${generate[@]}"
