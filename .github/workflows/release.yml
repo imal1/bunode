@@ -2,7 +2,9 @@ name: Release
 
 # Push the tag scripts/version.sh --release made (v0.1.N, N being the
 # commit count) to build a universal Bunode.app and publish it as a GitHub
-# release, with that version's CHANGELOG.md section as the notes.
+# release, with that version's CHANGELOG.md section as the notes. A tag
+# with a suffix (v0.1.N-pre.1, from any branch) publishes a pre-release
+# of that commit, with the Unreleased section as the notes.
 on:
   push:
     tags: ["v*.*.*"]
@@ -26,10 +28,13 @@ jobs:
       - name: Check the tag is this commit's version
         run: |
           tag=$(scripts/version.sh --tag)
-          if [ "$tag" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME, but this commit is $tag (scripts/version.sh --release tags the right one)"
-            exit 1
-          fi
+          case "$GITHUB_REF_NAME" in
+            "$tag" | "$tag"-*) ;;
+            *)
+              echo "::error::Tag $GITHUB_REF_NAME, but this commit is $tag (scripts/version.sh --release tags the right one)"
+              exit 1
+              ;;
+          esac
 
       - name: Install tools
         run: |
@@ -46,7 +51,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(scripts/version.sh)
-          awk -v v="$version" '
+          # A pre-release has no section of its own yet.
+          section=$version
+          title="Bunode $version"
+          kind=()
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            section=Unreleased
+            title="Bunode ${GITHUB_REF_NAME#v}"
+            kind=(--prerelease)
+          fi
+          awk -v v="$section" '
             $0 ~ "^## \\[" v "\\]" { on = 1; next }
             on && /^## \[/ { exit }
             on && /^\[[^]]+\]: / { exit }
@@ -65,4 +79,4 @@ jobs:
           Unzip, move **Bunode.app** to Applications and open it. This build is not notarized yet, so the first time, Control-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Bunode.app`.
           EOF
           gh release create "$GITHUB_REF_NAME" "build/Bunode-$version.zip" \
-            --verify-tag --title "Bunode $version" --notes-file notes.md "${generate[@]}"
+            --verify-tag --title "$title" --notes-file notes.md "${kind[@]}" "${generate[@]}"
