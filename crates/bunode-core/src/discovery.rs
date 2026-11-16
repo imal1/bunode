@@ -129,7 +129,7 @@ pub fn source_of(ancestors: &[&ProcessInfo]) -> Option<String> {
     None
 }
 
-/// What stays the same while a process lives, so it is read once.
+/// Command and directory details, cached until the process name changes.
 #[derive(Debug, Clone)]
 pub(crate) struct Details {
     pub(crate) args: Option<Vec<String>>,
@@ -139,7 +139,7 @@ pub(crate) struct Details {
 /// Scans the machine for Discovered Processes, remembering what it read.
 #[derive(Default)]
 pub struct Scanner {
-    details: HashMap<(i32, u64), Details>,
+    details: HashMap<(i32, u64, String), Details>,
 }
 
 impl Scanner {
@@ -158,9 +158,12 @@ impl Scanner {
         let me = std::process::id() as i32;
         let infos = sys::processes();
 
-        // Forget processes that are gone.
-        self.details
-            .retain(|(pid, start), _| infos.get(pid).is_some_and(|p| p.start == *start));
+        // Forget processes that exited or changed their executable.
+        self.details.retain(|(pid, start, name), _| {
+            infos
+                .get(pid)
+                .is_some_and(|p| p.start == *start && p.name == *name)
+        });
 
         let details: HashMap<i32, Details> = infos
             .values()
@@ -294,7 +297,7 @@ impl Scanner {
 
     fn details_of(&mut self, info: &ProcessInfo) -> Details {
         self.details
-            .entry((info.pid, info.start))
+            .entry((info.pid, info.start, info.name.clone()))
             .or_insert_with(|| Details {
                 args: sys::arguments(info.pid),
                 cwd: sys::cwd(info.pid).map(|p| p.display().to_string()),
@@ -478,6 +481,48 @@ mod tests {
             start: 1,
             name: name.into(),
         }
+    }
+
+    #[test]
+    fn refreshes_details_after_exec() {
+        use std::io::{Read, Write};
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        let mut child = Command::new("sh")
+            .args(["-c", "printf ready; read line; exec sleep 60"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id() as i32;
+        let mut ready = [0; 5];
+        child.stdout.take().unwrap().read_exact(&mut ready).unwrap();
+        let before = sys::process(pid).unwrap();
+        let mut scanner = Scanner::default();
+        let old = scanner.details_of(&before);
+        child.stdin.take().unwrap().write_all(b"\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let after = loop {
+            let info = sys::process(pid).unwrap();
+            if info.name != before.name || Instant::now() >= deadline {
+                break info;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let new = scanner.details_of(&after);
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        assert_ne!(before.name, after.name);
+        assert_eq!(before.start, after.start);
+        assert_eq!(
+            display_command(old.args.as_deref().unwrap())
+                .split_whitespace()
+                .next(),
+            Some("sh")
+        );
+        assert_eq!(display_command(new.args.as_deref().unwrap()), "sleep 60");
     }
 
     #[test]

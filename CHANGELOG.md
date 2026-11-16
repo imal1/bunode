@@ -6,8 +6,15 @@ To release: `scripts/version.sh --set X.Y.Z` turns **Unreleased** into a dated s
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-16
+
+### Added
+
+- Every successful main-branch CI build now provides a downloadable universal macOS app.
+
 ### Fixed
 
+- Discovered Processes refresh their command and directory after an executable change instead of keeping the launching shell's details.
 - A Service whose command starts its server in a new process group, like `pnpm dev` with pnpm 12, now shows the server's port, and Stop, Force Stop, a crash of Bunode or a killed runner end the server too ([ADR-0010](docs/adr/0010-a-run-is-its-group-and-its-descendants.md)).
 
 ## [0.1.0] - 2026-11-11
@@ -30,5 +37,6 @@ The first release.
 - App icon in light and dark.
 - The app menu bar, with About Bunode, while the Settings window is open.
 
-[Unreleased]: https://github.com/imal1/bunode/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/imal1/bunode/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/imal1/bunode/releases/tag/v0.1.1
 [0.1.0]: https://github.com/imal1/bunode/releases/tag/v0.1.0

@@ -68,6 +68,10 @@ Read [`GLOSSARY.md`](GLOSSARY.md) before naming things, and the ADRs in [`docs/a
 - Every new user-facing string goes through `String(localized:)` or a SwiftUI `Text` and gets a Simplified Chinese entry in `Localizable.xcstrings`; a test fails otherwise.
 - Add a line under **Unreleased** in [`CHANGELOG.md`](CHANGELOG.md) for anything a user would notice.
 
+## Online builds
+
+`main` is the shared branch. The [CI workflow](.github/workflows/ci.yml) runs on every push to `main`, on pull requests and on manual dispatch. It lints, runs the Rust and Swift tests, and builds a universal app. After a successful run, download `Bunode-<version>-<commit>` from the run's **Artifacts** section; it contains `Bunode-<version>.zip`. Artifacts are kept for 30 days. The build number uses the full commit history.
+
 ## Versions and releases
 
 There is one version for the crates and the app: `[workspace.package] version` in `Cargo.toml`. `make project` writes it into the app's `CFBundleShortVersionString`, with the commit count as `CFBundleVersion`. The popover footer and About Bunode show both.
