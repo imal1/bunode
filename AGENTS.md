@@ -30,4 +30,4 @@ Never launch a development build while the user's own Bunode is running: at laun
 
 ## Versions and releases
 
-One version, in `Cargo.toml` (`[workspace.package] version`); `make project` puts it and the commit count into the app. `scripts/version.sh --set X.Y.Z` bumps it and dates the CHANGELOG.md section; pushing the tag `vX.Y.Z` runs `.github/workflows/release.yml`. User-visible changes get a line under **Unreleased** in `CHANGELOG.md`. See `CONTRIBUTING.md`.
+The version is `0.1.N`: the series from `Cargo.toml` (`[workspace.package] version`, patch always 0) and N the commit count, so every commit has its own and nothing is bumped by hand; `make project` puts it into the app. `scripts/version.sh --release` dates the CHANGELOG.md section, commits and tags `v0.1.N`; pushing that tag runs `.github/workflows/release.yml`. User-visible changes get a line under **Unreleased** in `CHANGELOG.md`. See `CONTRIBUTING.md`.

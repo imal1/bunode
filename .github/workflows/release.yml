@@ -1,8 +1,8 @@
 name: Release
 
-# Push a tag vX.Y.Z (scripts/version.sh --set X.Y.Z first) to build a
-# universal Bunode.app and publish it as a GitHub release, with that
-# version's CHANGELOG.md section as the notes.
+# Push the tag scripts/version.sh --release made (v0.1.N, N being the
+# commit count) to build a universal Bunode.app and publish it as a GitHub
+# release, with that version's CHANGELOG.md section as the notes.
 on:
   push:
     tags: ["v*.*.*"]
@@ -20,14 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # The build number is the commit count.
+          # The version's last number is the commit count.
           fetch-depth: 0
 
-      - name: Check the tag matches Cargo.toml
+      - name: Check the tag is this commit's version
         run: |
-          version=$(scripts/version.sh)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME, but Cargo.toml says $version"
+          tag=$(scripts/version.sh --tag)
+          if [ "$tag" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME, but this commit is $tag (scripts/version.sh --release tags the right one)"
             exit 1
           fi
 
@@ -52,6 +52,12 @@ jobs:
             on && /^\[[^]]+\]: / { exit }
             on { print }
           ' CHANGELOG.md > notes.md
+          # A tag pushed without a CHANGELOG section gets the commits since
+          # the last release as its notes.
+          generate=()
+          if ! grep -q '[^[:space:]]' notes.md; then
+            generate=(--generate-notes)
+          fi
           cat >> notes.md <<'EOF'
 
           ### Install
@@ -59,4 +65,4 @@ jobs:
           Unzip, move **Bunode.app** to Applications and open it. This build is not notarized yet, so the first time, Control-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Bunode.app`.
           EOF
           gh release create "$GITHUB_REF_NAME" "build/Bunode-$version.zip" \
-            --title "Bunode $version" --notes-file notes.md
+            --verify-tag --title "Bunode $version" --notes-file notes.md "${generate[@]}"

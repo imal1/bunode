@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: App and Help menus
 
-    /// The standard About panel: icon, name, `Version 0.1.0 (42)` from the
+    /// The standard About panel: icon, name, `Version 0.1.74 (74)` from the
     /// bundle (scripts/version.sh), the copyright and a link to the repository.
     @objc func showAbout(_ sender: Any?) {
         let credits = NSMutableAttributedString(

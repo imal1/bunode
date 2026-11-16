@@ -74,15 +74,15 @@ Read [`GLOSSARY.md`](GLOSSARY.md) before naming things, and the ADRs in [`docs/a
 
 ## Versions and releases
 
-There is one version for the crates and the app: `[workspace.package] version` in `Cargo.toml`. `make project` writes it into the app's `CFBundleShortVersionString`, with the commit count as `CFBundleVersion`. The popover footer and About Bunode show both.
+Bunode's version is `0.1.N`, where N is the number of commits up to the one being built: `0.1.74` is the 74th commit. Every commit on `main` therefore has its own version, each higher than the last, and nothing is bumped by hand. `scripts/version.sh` prints it. `make project` writes it into the app's `CFBundleShortVersionString`, with N alone as `CFBundleVersion`; the popover footer and About Bunode show it.
 
-To release `X.Y.Z`:
+The `0.1` in front is the series, taken from `[workspace.package] version` in `Cargo.toml`, whose patch number stays 0. `scripts/version.sh --set 0.2` starts a new series; N keeps counting.
+
+To release, on an up-to-date `main` with nothing uncommitted:
 
 ```bash
-scripts/version.sh --set X.Y.Z   # bumps Cargo.toml and Cargo.lock, dates the Unreleased notes
-git commit -am "chore: release X.Y.Z"
-git tag vX.Y.Z
-git push origin main vX.Y.Z
+scripts/version.sh --release     # dates the Unreleased notes as the next version, commits and tags it
+git push origin main v0.1.N      # the command it prints
 ```
 
-The [Release workflow](.github/workflows/release.yml) checks that the tag matches `Cargo.toml`, builds the universal app, zips it and publishes a GitHub release with that version's CHANGELOG section as the notes. Releases are signed ad hoc and not notarized yet.
+The [Release workflow](.github/workflows/release.yml) checks that the tag is the version of the commit it is on, builds the universal app, zips it and publishes a GitHub release with that version's CHANGELOG section as the notes (or, without one, the commits since the last release). The count needs the full history, so a shallow clone has to `git fetch --unshallow` first. Releases are signed ad hoc and not notarized yet.

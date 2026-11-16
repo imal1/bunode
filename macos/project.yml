@@ -9,7 +9,7 @@ options:
 
 settings:
   base:
-    # Filled in by `make project` from Cargo.toml and the commit count
+    # Filled in by `make project`: 0.1.N and N, the commit count
     # (scripts/version.sh). Generate the project with make, not xcodegen alone.
     MARKETING_VERSION: "${BUNODE_VERSION}"
     CURRENT_PROJECT_VERSION: "${BUNODE_BUILD}"
