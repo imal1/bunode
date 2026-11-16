@@ -222,7 +222,8 @@ fn every_failure_stays_on_its_own_service() {
     set_port(&supervisor, conflict_a, port_a);
     set_port(&supervisor, conflict_b, port_b);
     drop(supervisor);
-    let gone_path = gone.path().display().to_string();
+    // As the Project has it: on macOS the temporary folder is behind a link.
+    let gone_path = gone.path().canonicalize().unwrap().display().to_string();
     drop(gone);
 
     let supervisor = relaunch(data.path());
